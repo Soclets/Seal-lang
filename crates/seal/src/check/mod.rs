@@ -2385,6 +2385,34 @@ pub(crate) mod tests {
         );
     }
 
+    // trace: D73
+    #[test]
+    fn d73_a_list_moves_between_limits() {
+        let bags = "small_bag: List<Text>[len.max: 3] = [\"a\"]\nbig_bag = [\"a\", \"b\"]\n";
+        let shown = "show_msg(be.Text(moved.len))\n";
+        assert!(
+            whats(&format!("{bags}moved: List<Text>[len.max: 10] = small_bag\nunused other = big_bag\n{shown}"))
+                .is_empty()
+        );
+        assert!(whats(&format!("{bags}moved: List<Text> = small_bag\nunused other = big_bag\n{shown}")).is_empty());
+        assert_eq!(
+            whats(&format!("{bags}moved: List<Text>[len.max: 2] = small_bag\nunused other = big_bag\n{shown}")),
+            vec!["refused: this can fail with `full`, and nothing deals with the failure"]
+        );
+        assert!(
+            whats(&format!("{bags}moved: List<Text>[len.max: 2] = big_bag ?? []\nunused other = small_bag\n{shown}"))
+                .is_empty()
+        );
+        assert_eq!(
+            whats("few: List<Whole>[len.max: 2] = [1, 2, 3]\nshow_msg(be.Text(few.len))\n"),
+            vec!["refused: this list has 3 items, but its `len.max` is 2"]
+        );
+        assert_eq!(
+            whats("ages = [\"ann\": 1, \"ann\": 3]\nshow_msg(be.Text(ages.len))\n"),
+            vec!["refused: the key \"ann\" is written twice in this dictionary"]
+        );
+    }
+
     #[test]
     fn every_test_script_passes_checking() {
         let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");

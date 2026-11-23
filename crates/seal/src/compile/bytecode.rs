@@ -214,6 +214,13 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// Moves a list into a name whose `len.max` it might not fit: with at most `limit` items, `to` gets it with a
+    /// holder's count of its own; with more, this fails with `full` (D73).
+    FitList {
+        to: Register,
+        from: Register,
+        limit: Register,
+    },
     /// Makes the value in a register singly held, copying it first when it's shared, so that a part of it can be
     /// changed in place (D15, D62).
     Own {

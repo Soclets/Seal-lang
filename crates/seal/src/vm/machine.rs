@@ -1175,6 +1175,17 @@ pub fn run(
                 }
                 count_work!();
             }
+            // trace: D73
+            Instruction::FitList { to, from, limit } => {
+                let handle = get!(from);
+                let length = items!(handle).len();
+                if i64::try_from(length).unwrap_or(i64::MAX) > whole!(limit) {
+                    failure = full;
+                } else {
+                    heap.retain(handle);
+                    set!(to, handle);
+                }
+            }
             Instruction::CheckRoom { list, limit } => {
                 let limit = whole!(limit);
                 let length = items!(get!(list)).len();

@@ -10,8 +10,45 @@ use crate::syntax::lexer::cook_text;
 use crate::syntax::tree::{self as syntax, BinaryOperator, UnaryOperator};
 
 impl Checker<'_> {
-    #[allow(clippy::too_many_lines)] // one case per kind of expression
+    /// Checks an expression, used where a value of the type `wanted` goes, when that's known.
     pub(super) fn expression(&mut self, expression: &syntax::Expression, wanted: Option<TypeId>) -> Expression {
+        let checked = self.expression_as_written(expression, wanted);
+        match wanted {
+            Some(wanted) => self.fit_limit(checked, wanted),
+            None => checked,
+        }
+    }
+
+    /// trace: D73. A list moves freely into a `len.max` at least as big as its own, or into none. Into a smaller
+    /// one, or from none into one, it might not fit: that's a failure, `full`, like a `Dict`'s missing key.
+    fn fit_limit(&mut self, value: Expression, wanted: TypeId) -> Expression {
+        let found = self.program.types.resolve(value.type_id);
+        let wanted = self.program.types.resolve(wanted);
+        let (Type::List { item: found_item, max: from }, Type::List { item: wanted_item, max: to }) =
+            (self.program.types.get(found).clone(), self.program.types.get(wanted).clone())
+        else {
+            return value;
+        };
+        if from == to || !self.program.types.unify(found_item, wanted_item) {
+            return value;
+        }
+        let place = value.place;
+        match (from, to) {
+            (_, None) => Expression { type_id: wanted, ..value },
+            (Some(from), Some(to)) if from <= to => Expression { type_id: wanted, ..value },
+            (_, Some(limit)) => Expression {
+                kind: ExpressionKind::Convert {
+                    conversion: super::tree::Conversion::ListToLimit(limit),
+                    value: Box::new(value),
+                },
+                type_id: wanted,
+                place,
+            },
+        }
+    }
+
+    #[allow(clippy::too_many_lines)] // one case per kind of expression
+    fn expression_as_written(&mut self, expression: &syntax::Expression, wanted: Option<TypeId>) -> Expression {
         use syntax::ExpressionKind as Kind;
         let place = expression.place;
         match &expression.kind {
@@ -606,8 +643,13 @@ impl Checker<'_> {
         match wanted_kind {
             Some(Type::List { item, max }) => {
                 let checked: Vec<Expression> = items.iter().map(|value| self.item(value, item)).collect();
-                if max.is_some_and(|max| i64::try_from(checked.len()).unwrap_or(i64::MAX) > max) {
-                    self.not_designed(place, "a list written with more items than its `len.max`");
+                if let Some(max) = max.filter(|&max| i64::try_from(checked.len()).unwrap_or(i64::MAX) > max) {
+                    // trace: D73
+                    self.refuse_why(
+                        place,
+                        format!("this list has {} items, but its `len.max` is {max}", checked.len()),
+                        "a list never holds more than its `len.max`.",
+                    );
                 }
                 Expression { kind: ExpressionKind::List(checked), type_id: wanted.unwrap_or(ERROR), place }
             }
@@ -707,7 +749,12 @@ impl Checker<'_> {
             };
             if let Some(plain) = plain {
                 if plain_keys.contains(&plain) {
-                    self.not_designed(key.place, format!("the same key, {plain}, written twice in one dictionary"));
+                    // trace: D73
+                    self.refuse_why(
+                        key.place,
+                        format!("the key {plain} is written twice in this dictionary"),
+                        "a dictionary holds one value for each key, so one of the two would vanish.",
+                    );
                 }
                 plain_keys.push(plain);
             }
@@ -730,7 +777,9 @@ impl Checker<'_> {
             // A change to a part can fail as the change itself can (D62).
             ExpressionKind::Inside { change, .. } => self.is_failable(change),
             ExpressionKind::Lookup { .. } | ExpressionKind::DictRemove { .. } => true,
-            ExpressionKind::Convert { conversion, .. } => *conversion == super::tree::Conversion::TextToWhole,
+            ExpressionKind::Convert { conversion, .. } => {
+                matches!(conversion, super::tree::Conversion::TextToWhole | super::tree::Conversion::ListToLimit(_))
+            }
             ExpressionKind::ListAdd { variable, .. } => {
                 matches!(self.program.types.get(self.variable_type(*variable)), Type::List { max: Some(_), .. })
             }
@@ -747,6 +796,13 @@ impl Checker<'_> {
         place: Place,
     ) -> Expression {
         let checked = self.expression(call, None);
+        // trace: D73. A list moved into a `len.max` it might not fit can fail with `full`, which this deals with.
+        let checked = match wanted {
+            Some(wanted) if !matches!(self.program.types.get(checked.type_id), Type::Maybe(_)) => {
+                self.fit_limit(checked, wanted)
+            }
+            _ => checked,
+        };
         if matches!(checked.kind, ExpressionKind::Error) {
             if let syntax::Fallback::Value(value) = fallback {
                 self.expression(value, wanted);

@@ -270,8 +270,12 @@ impl Translator<'_> {
                 }
                 Some((name.to_owned(), arguments.iter().map(|argument| (None, argument)).collect()))
             }
+            ExpressionKind::Convert { conversion: Conversion::ListToLimit(_), .. } => {
+                return not_shared("a list moved into a smaller `len.max`");
+            }
             ExpressionKind::Convert { conversion, value } => {
                 let name = match conversion {
+                    Conversion::ListToLimit(_) => "",
                     Conversion::ToText => "be.Text",
                     Conversion::WholeToFloat => "be.Float",
                     Conversion::TextToWhole => "be.Whole",

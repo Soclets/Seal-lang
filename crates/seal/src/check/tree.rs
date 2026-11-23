@@ -244,6 +244,8 @@ pub enum Conversion {
     WholeToFloat,
     /// `be.Whole` on text, which fails with `not_a_whole` (Unio D95, D156).
     TextToWhole,
+    /// A list moved into a name whose `len.max` it might not fit, which fails with `full` (D73).
+    ListToLimit(i64),
     FloatToWhole(Rounding),
 }
 

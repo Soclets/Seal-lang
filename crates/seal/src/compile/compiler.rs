@@ -1538,6 +1538,14 @@ impl<'p> Compiler<'p> {
                         self.emit(Instruction::TextToWhole { to, from });
                         false
                     }
+                    // trace: D73
+                    Conversion::ListToLimit(limit) => {
+                        let limit_register = self.allocate();
+                        self.load_whole(limit_register, *limit);
+                        self.place = expression.place;
+                        self.emit(Instruction::FitList { to, from, limit: limit_register });
+                        true
+                    }
                     Conversion::FloatToWhole(rounding) => {
                         let rounding = match rounding {
                             Rounding::Floor => 0,

@@ -187,6 +187,7 @@ impl Facts<'_> {
                 .unwrap_or_default(),
             ExpressionKind::Lookup { .. } | ExpressionKind::DictRemove { .. } => named("missing"),
             ExpressionKind::Convert { conversion: Conversion::TextToWhole, .. } => named("not_a_whole"),
+            ExpressionKind::Convert { conversion: Conversion::ListToLimit(_), .. } => named("full"),
             ExpressionKind::ListAdd { variable, .. } => {
                 let limited = self.program.variable(*variable).is_some_and(|variable| {
                     matches!(self.program.types.get(variable.type_id), Type::List { max: Some(_), .. })
