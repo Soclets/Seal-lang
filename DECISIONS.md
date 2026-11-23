@@ -1379,3 +1379,40 @@ building session's to propose.
 
 **Tankun's words.** Asked "Should Seal be one workspace with these five parts, the library alone being what hosts
 depend on?", the owner chose: "yea".
+
+## D48. The host's side: doors as typed Rust closures, chosen per script, and errors, never crashes
+
+2026-11-23.
+
+**Chosen.** The shape of embedding Seal from Rust; the exact names are the building session's:
+- **A door is an ordinary Rust closure,** and Seal reads its types from the closure's signature, an `i64` being a
+  `Whole` (D16), so the host never describes types twice.
+- **The host chooses each script's doors and limits** when it loads it (D11, D14).
+- **Loading checks everything and runs the top level** (D4, D17), and the host gets a handle to the loaded script. A
+  refused script comes back as an error holding its messages (D26).
+- **Calling in is checked by name and types.** A call to a procedure that doesn't exist, or with the wrong types, is
+  refused; a script stopped by a failed check or a limit comes back as an error too, and the host carries on (D14).
+- **Records and `one_of` cross the doors by deriving,** as `#[derive(Seal)]` on a Rust struct or enum (D27, D35).
+
+```rust
+let mut doors = Doors::new();
+doors.add("show_msg", |text: String| println!("{text}"));
+doors.add("damage", |id: i64, amount: i64| world.damage(id, amount));
+
+let mut goblin_script = Script::load("goblin.seal", &source, &doors,
+                                     Limits { steps: 1_000_000, memory: 16 * 1024 * 1024 })?;
+goblin_script.call("on_hit", (10,))?;
+```
+
+A script's own data lives inside it, as `mut hp = 30`; the host's own data is reached by ID through doors (D15).
+
+**Weighed.**
+- Doors described by hand, their names and types listed apart from the closure. The types would be written twice, and
+  could disagree.
+- One set of doors for every script a host loads. A UI script would get an enemy's `damage`.
+
+**Why this won.** A host writes plain Rust, Seal checks every crossing, and nothing a script does can crash the host.
+
+**Tankun's words.** "Wait, isn't goblin made by Seal insdie?", then, asked "Should the host's side work this way: doors
+as typed Rust closures, doors and limits chosen per script, and loading and calling returning errors, never
+crashing?", the owner chose: "yea".
