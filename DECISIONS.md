@@ -824,3 +824,28 @@ themselves.
 
 **Tankun's words.** "I think `&` should auto-convert where good", then, asked "Should `&` in Seal turn a `Whole` or a
 `Bool` into text by itself, while a `Float`, a list or a record is still refused?", the owner chose: "yea".
+
+## D30. A name's type is written `name: Type = value`, required only when the value can't say it
+
+2026-11-23.
+
+**Chosen.** A name's type may be written after it, as `name: Type = value`, the shape a parameter's type has (D21). It's
+optional everywhere, and required only when the value can't say the type, as with an empty list; that is refused with a
+message saying the type has to be written. It reads the same after `mut` or `unused`.
+
+```
+mut bag = []                            // refused: a list of what?
+mut bag: List<Text> = []
+mut bag: List<Text>[len.max: 10] = []
+lives: Whole = 3                        // allowed, though 3 already says it
+```
+
+**Weighed.**
+- Types never written on names, only on parameters. An empty list, or a list with a limit, couldn't be made.
+- Writing the type before the name, as `List<Text> bag = []`, as C and Java do. Unlike every other type Seal writes,
+  which comes after a name and `:`.
+
+**Why this won.** It's the shape Unio writes and Seal's parameters already use, written only where it's needed.
+
+**Tankun's words.** Asked "Should a name's type be written `name: Type = value`, optional, and required only when the
+value can't say it?", the owner chose: "yea".

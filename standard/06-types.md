@@ -28,8 +28,10 @@ mut bag: List<Text>[len.max: 10] = []
 board: Array<Whole>[len: 64] = [all: 0]
 ```
 
-**Not decided:** how a type is written on a name in Seal, as in the example's `bag: List<Text>[len.max: 10]`, when it
-can't be worked out from the value; maps and other types.
+A name's type can be written after it, as `name: Type = value`. It's optional, and required only when the value can't
+say the type, as with an empty list: `mut bag = []` is refused (D30).
+
+**Not decided:** maps and other types.
 
 ## Records
 
