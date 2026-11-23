@@ -64,7 +64,10 @@ goblin.hp = goblin.hp - 5
   a method allowed at the end, as `goblin.items.add("Gem")`; a `Dict` key partway along isn't decided (D62).
 - **At the doors a record is a Rust struct** (D27).
 
-**Not decided:** defaults for fields; methods on records; records inside records.
+- **A record can hold a record,** and a type can hold itself where a value can end, through a `one_of` case, a
+  `List`, a `Dict` or a `Maybe`; with no way to end, as a field `next: Node` in `record Node`, it's refused (D72).
+
+**Not decided:** defaults for fields; methods on records.
 
 ## Dictionaries
 

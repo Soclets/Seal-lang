@@ -2158,3 +2158,41 @@ word now and then. Seal's building session asked, after test d038 relied on a pa
 
 **Tankun's words.** Asked "Should a name be refused wherever its spelling already means something there, with no
 shadowing at all?", the owner chose: "??".
+
+## D72. Records inside records, and a type holding itself where a value can end
+
+2026-11-23.
+
+**Chosen.**
+- **A record can hold a record,** as a field of a record type. It's one bigger value, copied as a whole (D15) and
+  changeable deep down through a `mut` name (D62).
+- **A type can hold itself where a value can end:** through a `one_of` case, as `node[left: Tree, right: Tree]` beside
+  `leaf`, or through a `List`, a `Dict` or a `Maybe`, all of which can be empty.
+- **A type holding itself with no way to end is refused,** as a `record Node` with a field `next: Node`; the fix wraps
+  it, as `next: Maybe<Node>`.
+- **No box is needed,** unlike Cyborg (Cyborg D453), since Seal's VM keeps such values on its own heap; and since no
+  reference can be kept (D15), they're always trees, never cycles.
+
+```
+record Dialogue
+    line: Text
+    choices: List<Dialogue>
+end
+
+one_of Tree
+    leaf
+    node[left: Tree, right: Tree]
+end
+```
+
+This lets D57's set-aside benchmark, binary-trees, join.
+
+**Weighed.**
+- Flat records only, with branching faked by numbered IDs into one big list. A missing ID is found only while running,
+  where Seal could check the real thing at load time.
+
+**Why this won.** Games are full of things made of parts and things that branch: stats inside an enemy, dialogue trees,
+behaviour trees, menus, skill trees and bags inside bags.
+
+**Tankun's words.** "What for?", then, asked "Should records be allowed inside records, and a type allowed to hold
+itself only where a value can end, through a `one_of` case, a list, a `Dict` or a `Maybe`?", the owner chose: "??".
