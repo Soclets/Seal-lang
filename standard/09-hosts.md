@@ -25,7 +25,9 @@ calls Seal is the building session's to propose.
 
 - **A door can fail,** with failures the host declares, handled like any other (D44).
 
-**Not decided:** labels and defaults on doors.
+- **A door can have labels,** chosen by its host, as `wait(seconds: 2)` (D55).
+
+**Not decided:** defaults on doors.
 
 ## Scripts apart, and pausing
 
