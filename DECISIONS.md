@@ -232,3 +232,30 @@ going.
 
 **Tankun's words.** "What does that make?", then, asked "Should a statement end at the end of its line, with no `;`,
 carrying on only inside an open `(` or `[`?", the owner chose: "yea".
+
+## D9. Lines that open a block have no `:`
+
+2026-11-23.
+
+**Chosen.** `if`, `elif`, `else`, `while` and every other line that opens a block end with no `:`. The block is the
+deeper-indented lines after it, closed by its `end` line, and indentation is required.
+
+```
+if guess < secret
+    show_msg("Too low")
+elif guess > secret
+    show_msg("Too high")
+end if
+```
+
+**Weighed.**
+- Unio's `:` (Unio D8). It marks where a block starts, but in Seal the deeper indentation and the closing `end` line
+  already say so.
+
+**Why this won.** The `:` repeats what the indentation and the `end` line both say; dropping it leaves nothing to
+forget, and a wrongly indented line is still refused.
+
+How `elif` is spelt is its own decision; this one is about the `:` only.
+
+**Tankun's words.** Asked "Should block-opening lines like `if` and `while` have no `:` in Seal?", the owner chose:
+"yea".
