@@ -539,3 +539,36 @@ Csmith, which found hundreds of bugs in GCC and LLVM by comparing compilers.
 
 **Tankun's words.** "Should Seal compare behaviour with Ralph?", then, asked "Should Seal compare its shared behaviour
 with Ralph's, as a black box, through a translator and the fuzzer?", the owner chose: "yea".
+
+## D20. Every block closes with a plain `end`
+
+2026-11-23.
+
+**Chosen.** Every block in Seal, `if`, `while`, a procedure and the rest, closes with a plain `end`, at the depth of the
+line that opened it. An `end` at the wrong depth is refused, and a missing one is reported naming the block it should
+close, as in "the `while` on line 3 has no `end`".
+
+```
+proc on_hit[points]
+    if points > 10
+        play_sound("crit.wav")
+    end
+    score = score + points
+end
+```
+
+**Weighed.**
+- Unio's `end` with what it closes, `end while` and `end proc on_hit` (Unio D8). It reads well on paper, without an
+  editor; in Seal, required indentation already says which block a line belongs to, and the language server shows
+  which block an `end` closes (D7).
+- `end proc` with no name, as the design claude first proposed. It breaks Unio's rule that a block closes with what it
+  closes, which for a procedure includes its name, as Tankun pointed out.
+- No closer at all, as Python has it. A visible bottom keeps a block's end clear, and survives text pasted with its
+  indentation lost.
+
+**Why this won.** Seal's indentation and editors already carry what `end while` would repeat, so one short word is
+enough, as in Lua and Luau, which most game scripters know. It changes Tankun's sketch's `end if` and `end while`.
+
+**Tankun's words.** "`ebd proc`? The fuck", "Wait, wait. Doesn't Unio use `end while` too? Because it doesn't have a
+name, but `proc` does", "What if we went just `end`?", then, asked "Should every block in Seal close with a plain
+`end`?", the owner chose: "yea".
