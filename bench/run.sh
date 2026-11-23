@@ -16,8 +16,12 @@ RUSTFLAGS="--cfg seal_measure_without_float_checks" cargo build -q -j "$cores" -
 variants="$variants --variant Checks.the-float-check=target/variants/no-float-checks/release/seal-bench"
 
 # Ceil.program and Ceil.machine.program: the VM built with a profile of the benchmarks' own run. This needs
-# `llvm-profdata` from Rust's own tools (`rustup component add llvm-tools`); without it these two kinds are left out.
+# `llvm-profdata`: Rust's own when it's installed, or the one that comes with Xcode, which reads the same profiles.
+# Without either, these two kinds are left out.
 profdata=$(find "$(rustc --print sysroot)" -name llvm-profdata 2>/dev/null | head -1)
+if [ -z "$profdata" ]; then
+    profdata=$(xcrun --find llvm-profdata 2>/dev/null || true)
+fi
 if [ -n "$profdata" ]; then
     for kind in program machine.program; do
         flags=""

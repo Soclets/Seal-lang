@@ -111,8 +111,19 @@ The VM, and its optimizations (Building rule 5):
 
 `bench/RESULTS.md` has every number. In short, judged Normal against Normal (D58):
 
-- **Faster than Luau's interpreter:** met on all eight: `fib`, n-body, spectral-norm, fannkuch, word count, text
-  building, binary-trees, and the patrolling scripts (loading, resuming, footprint).
+- **Faster than Luau's interpreter:** met on all eight as the benchmarks are defined: `fib`, n-body, spectral-norm,
+  fannkuch, word count, text building, binary-trees, and the patrolling scripts as a whole run (1,000 scripts loaded
+  from one text, each resumed 100 times), with resuming and footprint each better than Luau's.
+- **Where Seal is behind Luau: loading a script.** Timed apart from the rest of the patrol run, loading is slower in
+  Seal. From the same text, where Seal reuses what it compiled and Luau compiles once and makes each script from
+  that, a script takes Seal about 225 ns and Luau about 195 ns. From a text of its own, with nothing reused, a
+  12-line script takes Seal about 10 µs and Luau about 5 µs (Node about 1.2 µs, which puts most of its compiling off
+  until a function first runs). Seal reads, type-checks and compiles the whole script before it runs any of it, and
+  the time goes on many small allocations spread across the reader, the checker and the compiler; no one place
+  dominates. Tried: the reader now reuses one buffer for every line and gives each line's tokens their room at once
+  (14 µs to 10 µs). Closing the rest needs the reader and checker to stop allocating for each word and each node,
+  which is a rework, not a fix. A 10,000-line script still loads in 8 ms, far inside goal 4, so this only shows on
+  very small scripts loaded in great numbers from different texts.
 - **n-body, and what D62 changed.** Until D62, a body's fields could only be changed by copying the body out, changing
   it and putting it back. With D62 the plain way is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the
   Normal program, and the copy-out one is kept as `nbody.ceil.seal`, the Ceil.source program. Written the plain way it
@@ -127,8 +138,10 @@ The VM, and its optimizations (Building rule 5):
 - **A 10,000-line script loads in under 100 ms:** met, about 9 ms.
 - **Footprint:** a paused patrolling script holds 512 bytes of its cap, about 1.8 KB of real memory.
 - **Pausing costs about as much as a call:** met; resuming is cheaper than a host call.
-- **Ceil.program and Ceil.machine.program** need `llvm-profdata` (`rustup component add llvm-tools`), which Tankun
-  was asked about on 2026-11-23. Without it, `bench/run.sh` leaves those two kinds out and says so.
+- **Ceil.program and Ceil.machine.program** need `llvm-profdata` to merge the profile. Rust's own isn't installed,
+  and Tankun was asked on 2026-11-23 whether it may be; meanwhile the one that comes with Xcode turned out to read
+  Rust's profiles, so nothing needed installing, and `bench/run.sh` uses whichever is there. One profile is taken
+  from all eight benchmarks' Normal runs, and every Ceil.program row uses the VM built with it.
 - **Ceil.source programs:** only n-body has one. For the others the Normal program stands in, and each such row says so;
   the Benchmarks Game's hand-tuned Lua and JavaScript programs weren't fetched.
 
