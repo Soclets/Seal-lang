@@ -4,10 +4,10 @@
 //! and anything that doesn't add up stops the script and says so, as a bug in Seal to report.
 
 use super::crossing::{CrossingError, to_slot, to_value};
-use super::dict::{Dict, hash_bits, hash_text};
+use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use crate::check::tree::Rounding;
-use crate::compile::bytecode::{BULK_UNIT, Compiled, FAR, Instruction, Layout, PLAIN_CASE, ProcedureEntry};
+use crate::compile::bytecode::{BULK_UNIT, Compiled, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry};
 use crate::host::Value;
 use crate::number::{float_to_text, float_to_whole, text_to_whole};
 
@@ -186,7 +186,9 @@ fn append_whole(text: &mut String, value: i64) {
     if value < 0 {
         text.push('-');
     }
-    text.push_str(std::str::from_utf8(digits.get(place..).unwrap_or(&[])).unwrap_or(""));
+    for digit in digits.get(place..).unwrap_or(&[]) {
+        text.push(char::from(*digit));
+    }
 }
 
 /// Grows a task's stack to hold `needed` slots, counting it against the memory cap (D14).
@@ -239,30 +241,6 @@ impl Task {
         self.frames = Vec::new();
         self.waiting = None;
     }
-}
-
-/// Appends to the text in `target`, in place. `write` adds to the text and the cap is counted for any growth.
-fn append_with(heap: &mut Heap, target: u64, extra: usize, write: impl FnOnce(&mut String)) -> Result<(), HeapError> {
-    let Object::Text(text) = heap.get(target)? else {
-        return Err(HeapError::Broken("a handle that should lead to text"));
-    };
-    let (length, capacity) = (text.len(), text.capacity());
-    let needed = length.saturating_add(extra);
-    let mut reserve = None;
-    if needed > capacity {
-        // Doubling, so joining onto a text many times costs a fixed amount per byte on average.
-        let new_capacity = needed.max(capacity.saturating_mul(2)).max(16);
-        heap.charge(new_capacity - capacity)?;
-        reserve = Some(new_capacity - length);
-    }
-    heap.work = heap.work.saturating_add(extra as u64);
-    if let Object::Text(text) = heap.get_mut(target)? {
-        if let Some(reserve) = reserve {
-            text.reserve_exact(reserve);
-        }
-        write(text);
-    }
-    Ok(())
 }
 
 /// Runs a task until it finishes, pauses or stops.
@@ -425,39 +403,63 @@ pub fn run(
     macro_rules! own {
         ($register:expr) => {{
             let handle = get!($register);
-            let own = heap_try!(heap.make_own(handle, layouts));
-            if own != handle {
+            // The usual case first: the register is the value's only holder.
+            if heap.has_one_holder(handle) {
+                handle
+            } else {
+                let own = heap_try!(heap.make_own(handle, layouts));
                 set!($register, own);
+                own
             }
-            own
         }};
     }
-    macro_rules! key_hash {
+    // Looks a key up in a dictionary: how it was looked up, which pair it is when it's there, how many places were
+    // looked at, and its value.
+    macro_rules! lookup {
         ($dict:expr, $key:expr) => {
             match heap.get($dict) {
-                Ok(Object::Dict(dict)) if dict.text_keys => hash_text(heap_try!(heap.text($key))),
-                Ok(Object::Dict(_)) => hash_bits($key),
-                Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
-                Err(error) => return Err((Stop::from(error), pc)),
-            }
-        };
-    }
-    macro_rules! find_key {
-        ($dict:expr, $key:expr, $hash:expr) => {
-            match heap.get($dict) {
                 Ok(Object::Dict(dict)) => {
-                    let (found, looked) = if dict.text_keys {
-                        let wanted = heap_try!(heap.text($key));
-                        dict.find($hash, |stored| heap.text(stored).is_ok_and(|stored| stored == wanted))
-                    } else {
-                        dict.find($hash, |stored| stored == $key)
-                    };
-                    (found, looked, dict.value_at(found.unwrap_or(usize::MAX)))
+                    let probe =
+                        if dict.text_keys { Probe::of_text(heap_try!(heap.text($key))) } else { Probe::of_bits($key) };
+                    let (found, looked) = dict.find(&probe, |stored| {
+                        heap.text(stored).is_ok_and(|stored| heap.text($key).is_ok_and(|wanted| stored == wanted))
+                    });
+                    (probe, found, looked, found.and_then(|number| dict.value_at(number)))
                 }
                 Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
                 Err(error) => return Err((Stop::from(error), pc)),
             }
         };
+    }
+    // Adds a key that isn't in a dictionary yet, with the memory it takes counted first.
+    macro_rules! add_key {
+        ($handle:expr, $probe:expr, $key:expr, $value:expr) => {{
+            let (growth, text_keys) = match heap.get($handle) {
+                Ok(Object::Dict(dict)) => (dict.growth_for_one_more(), dict.text_keys),
+                Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
+                Err(error) => return Err((Stop::from(error), pc)),
+            };
+            heap_try!(heap.charge(growth));
+            if text_keys {
+                // The dictionary becomes one more holder of a key it keeps.
+                heap.retain($key);
+            }
+            if let Ok(Object::Dict(dict)) = heap.get_mut($handle) {
+                dict.add(&$probe, $key, $value);
+            }
+        }};
+    }
+    // Gives a pair that's already there a new value, freeing the old one when it was a heap value.
+    macro_rules! replace_value {
+        ($handle:expr, $number:expr, $value:expr) => {{
+            let old = match heap.get_mut($handle) {
+                Ok(Object::Dict(dict)) => dict.replace_value($number, $value).filter(|_| dict.reference_values),
+                _ => None,
+            };
+            if let Some(old) = old {
+                heap.release(old, layouts);
+            }
+        }};
     }
 
     loop {
@@ -489,6 +491,7 @@ pub fn run(
                 }
             }
             Instruction::Retain { register } => heap.retain(get!(register)),
+            Instruction::ReleaseText { register } => heap.release_text(get!(register)),
             Instruction::Release { register } => {
                 heap.release(get!(register), layouts);
                 count_work!();
@@ -504,6 +507,45 @@ pub fn run(
                     None if right < 0 => return Err(overflow(left, "-", -i64::from(right), pc)),
                     None => return Err(overflow(left, "+", i64::from(right), pc)),
                 }
+            }
+            Instruction::AddWholeConstant { to, left, constant }
+            | Instruction::MultiplyWholeConstant { to, left, constant } => {
+                let Some(right) = constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
+                    return Err(broken("a constant that isn't there", pc));
+                };
+                let left = whole!(left);
+                let adding = matches!(instruction, Instruction::AddWholeConstant { .. });
+                match if adding { left.checked_add(right) } else { left.checked_mul(right) } {
+                    Some(result) => set!(to, result.cast_unsigned()),
+                    None => return Err(overflow(left, if adding { "+" } else { "*" }, right, pc)),
+                }
+            }
+            Instruction::DivideFloorConstant { to, left, constant }
+            | Instruction::RemainderFloorConstant { to, left, constant } => {
+                let Some(right) = constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
+                    return Err(broken("a constant that isn't there", pc));
+                };
+                let left = whole!(left);
+                // The compiler only uses these for a constant that's neither 0 nor -1, so nothing here can fail.
+                let remainder = left.wrapping_rem(right);
+                let uneven = remainder != 0 && ((remainder < 0) != (right < 0));
+                let result = if matches!(instruction, Instruction::DivideFloorConstant { .. }) {
+                    // The quotient comes from the remainder already in hand, with no second division.
+                    let quotient = left.wrapping_sub(remainder).wrapping_div(right);
+                    if uneven { quotient.wrapping_sub(1) } else { quotient }
+                } else if uneven {
+                    remainder.wrapping_add(right)
+                } else {
+                    remainder
+                };
+                set!(to, result.cast_unsigned());
+            }
+            Instruction::DivideFloorByPowerOfTwo { to, left, shift } => {
+                set!(to, whole!(left).wrapping_shr(u32::from(shift)).cast_unsigned());
+            }
+            Instruction::RemainderFloorByPowerOfTwo { to, left, bits } => {
+                let mask = 1u64.wrapping_shl(u32::from(bits)).wrapping_sub(1);
+                set!(to, get!(left) & mask);
             }
             Instruction::NegateWhole { to, from } => {
                 let value = whole!(from);
@@ -570,6 +612,38 @@ pub fn run(
             Instruction::MultiplyFloat { to, left, right } => float_maths!(to, left, right, *, "*"),
             Instruction::DivideFloat { to, left, right } => {
                 let (left, right) = (float!(left), float!(right));
+                if right == 0.0 {
+                    return Err(divided_by_zero(&float_to_text(left), "/", pc));
+                }
+                let result = left / right;
+                if !result.is_finite() {
+                    return Err(float_not_real(left, "/", right, pc));
+                }
+                set!(to, result.to_bits());
+            }
+            Instruction::AddFloatConstant { to, left, constant }
+            | Instruction::MultiplyFloatConstant { to, left, constant }
+            | Instruction::DivideFloatConstant { to, left, constant } => {
+                let Some(right) = constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits)) else {
+                    return Err(broken("a constant that isn't there", pc));
+                };
+                let left = float!(left);
+                let (result, operator) = match instruction {
+                    Instruction::AddFloatConstant { .. } => (left + right, "+"),
+                    Instruction::MultiplyFloatConstant { .. } => (left * right, "*"),
+                    _ => (left / right, "/"),
+                };
+                // trace: D18
+                if !result.is_finite() {
+                    return Err(float_not_real(left, operator, right, pc));
+                }
+                set!(to, result.to_bits());
+            }
+            Instruction::DivideConstantByFloat { to, constant, right } => {
+                let Some(left) = constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits)) else {
+                    return Err(broken("a constant that isn't there", pc));
+                };
+                let right = float!(right);
                 if right == 0.0 {
                     return Err(divided_by_zero(&float_to_text(left), "/", pc));
                 }
@@ -773,62 +847,88 @@ pub fn run(
             Instruction::ClearFailure => failure = 0,
             Instruction::Crash => return Err((Stop::Crashed { failure }, pc)),
 
-            Instruction::NewText { to } => set!(to, heap_try!(heap.new_text("", 0))),
-            Instruction::Append { to, from } => {
-                let target = own!(to);
-                let source = get!(from);
-                if target == source {
-                    // A text joined onto itself: its own bytes are copied before it grows.
-                    let copy = heap_try!(heap.text(source)).to_owned();
-                    heap_try!(append_with(heap, target, copy.len(), |text| text.push_str(&copy)));
-                } else {
-                    let extra = heap_try!(heap.text(source)).len();
-                    // The target is taken out so the source can be read while it grows.
-                    let needed = match heap.get(target) {
-                        Ok(Object::Text(text)) => (text.len(), text.capacity()),
-                        Ok(_) => return Err(broken("a handle that should lead to text", pc)),
-                        Err(error) => return Err((Stop::from(error), pc)),
-                    };
-                    let (length, capacity) = needed;
-                    let wanted = length.saturating_add(extra);
-                    let mut reserve = 0;
-                    if wanted > capacity {
-                        let new_capacity = wanted.max(capacity.saturating_mul(2)).max(16);
-                        heap_try!(heap.charge(new_capacity - capacity));
-                        reserve = new_capacity - length;
-                    }
-                    heap.work = heap.work.saturating_add(extra as u64);
-                    let mut taken = heap_try!(heap.take(target));
-                    if let Object::Text(text) = &mut taken {
-                        if reserve > 0 {
-                            text.reserve_exact(reserve);
+            Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
+                let appending = matches!(instruction, Instruction::AppendPieces { .. });
+                let Some(pieces) = compiled.joins.get(site as usize) else {
+                    return Err(broken("a join that isn't there", pc));
+                };
+                // How long the pieces are together, so the text is given its room once.
+                let mut extra = 0usize;
+                for piece in pieces {
+                    extra = extra.saturating_add(match *piece {
+                        JoinPiece::Constant(text) => compiled.texts.get(text as usize).map_or(0, String::len),
+                        JoinPiece::Text(register) => heap_try!(heap.text(get!(register))).len(),
+                        JoinPiece::Whole(register) => {
+                            let value = whole!(register);
+                            value.unsigned_abs().checked_ilog10().map_or(1, |digits| digits as usize + 1)
+                                + usize::from(value < 0)
                         }
-                        match heap.text(source) {
-                            Ok(source) => text.push_str(source),
-                            Err(error) => {
-                                heap.put_back(target, taken);
-                                return Err((Stop::from(error), pc));
+                        JoinPiece::Bool(_) => 5,
+                        JoinPiece::Float(_) => 24,
+                    });
+                }
+                // The text being built is held here, outside the heap, while the pieces are read from the heap.
+                let (target, mut built, old_room) = if appending {
+                    let target = own!(to);
+                    match heap_try!(heap.take(target)) {
+                        Object::Text(text) => {
+                            let room = text.capacity();
+                            (target, text, room)
+                        }
+                        other => {
+                            heap.put_back(target, other);
+                            return Err(broken("a handle that should lead to text", pc));
+                        }
+                    }
+                } else {
+                    (0, heap.spare_text(extra), 0)
+                };
+                let original = built.len();
+                let needed = original.saturating_add(extra);
+                if appending && needed > built.capacity() {
+                    // Doubling, so joining onto a text many times costs a fixed amount per byte on average.
+                    let room = needed.max(built.capacity().saturating_mul(2)).max(16);
+                    if let Err(error) = heap.charge(room - old_room) {
+                        heap.put_back(target, Object::Text(built));
+                        return Err((Stop::from(error), pc));
+                    }
+                    built.reserve_exact(room - original);
+                }
+                for piece in pieces {
+                    match *piece {
+                        JoinPiece::Constant(text) => {
+                            built.push_str(compiled.texts.get(text as usize).map_or("", String::as_str));
+                        }
+                        JoinPiece::Text(register) => {
+                            let source = get!(register);
+                            if appending && source == target {
+                                // A text joined onto itself: its own start is what's joined.
+                                let own = built.get(..original).unwrap_or("").to_owned();
+                                built.push_str(&own);
+                            } else {
+                                match heap.text(source) {
+                                    Ok(source) => built.push_str(source),
+                                    Err(error) => {
+                                        if appending {
+                                            heap.put_back(target, Object::Text(built));
+                                        }
+                                        return Err((Stop::from(error), pc));
+                                    }
+                                }
                             }
                         }
+                        JoinPiece::Whole(register) => append_whole(&mut built, whole!(register)),
+                        JoinPiece::Bool(register) => built.push_str(if get!(register) == 0 { "false" } else { "true" }),
+                        JoinPiece::Float(register) => built.push_str(&float_to_text(float!(register))),
                     }
-                    heap.put_back(target, taken);
                 }
-                count_work!();
-            }
-            Instruction::AppendWhole { to, from } => {
-                let target = own!(to);
-                let value = whole!(from);
-                heap_try!(append_with(heap, target, 20, |text| append_whole(text, value)));
-            }
-            Instruction::AppendBool { to, from } => {
-                let target = own!(to);
-                let word = if get!(from) == 0 { "false" } else { "true" };
-                heap_try!(append_with(heap, target, word.len(), |text| text.push_str(word)));
-            }
-            Instruction::AppendFloat { to, from } => {
-                let target = own!(to);
-                let shown = float_to_text(float!(from));
-                heap_try!(append_with(heap, target, shown.len(), |text| text.push_str(&shown)));
+                heap.work = heap.work.saturating_add(extra as u64);
+                if appending {
+                    heap.put_back(target, Object::Text(built));
+                } else {
+                    let room = built.capacity();
+                    set!(to, heap_try!(heap.allocate(Object::Text(built), room)));
+                }
                 count_work!();
             }
             Instruction::TextToWhole { to, from } => match text_to_whole(heap_try!(heap.text(get!(from)))) {
@@ -1082,8 +1182,7 @@ pub fn run(
             }
             Instruction::GetKey { to, dict, key } => {
                 let (dict, key) = (get!(dict), get!(key));
-                let hash = key_hash!(dict, key);
-                let (_, looked, value) = find_key!(dict, key, hash);
+                let (_, _, looked, value) = lookup!(dict, key);
                 heap.work = heap.work.saturating_add(looked.saturating_sub(4));
                 match value {
                     Some(value) => set!(to, value),
@@ -1091,52 +1190,82 @@ pub fn run(
                 }
                 count_work!();
             }
+            Instruction::GetKeyIfAny { to, dict, key } => {
+                let (dict, key) = (get!(dict), get!(key));
+                let (_, _, looked, value) = lookup!(dict, key);
+                heap.work = heap.work.saturating_add(looked.saturating_sub(4));
+                if let Some(value) = value {
+                    set!(to, value);
+                }
+                count_work!();
+            }
+            Instruction::GetFoundIfAny { to, dict, found } => {
+                let value = match heap.get(get!(dict)) {
+                    Ok(Object::Dict(dict)) => {
+                        usize::try_from(get!(found)).ok().and_then(|number| dict.value_at(number))
+                    }
+                    Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                if let Some(value) = value {
+                    set!(to, value);
+                }
+            }
             Instruction::HasKey { to, dict, key } => {
                 let (dict, key) = (get!(dict), get!(key));
-                let hash = key_hash!(dict, key);
-                let (found, looked, _) = find_key!(dict, key, hash);
+                let (_, found, looked, _) = lookup!(dict, key);
                 heap.work = heap.work.saturating_add(looked.saturating_sub(4));
                 set!(to, u64::from(found.is_some()));
                 count_work!();
             }
+            Instruction::FindKey { to, dict, key } => {
+                let key = get!(key);
+                let handle = own!(dict);
+                let (_, found, looked, _) = lookup!(handle, key);
+                heap.work = heap.work.saturating_add(looked.saturating_sub(4));
+                set!(to, found.map_or(u64::MAX, |number| number as u64));
+                count_work!();
+            }
+            Instruction::GetFound { to, dict, found } => {
+                let value = match heap.get(get!(dict)) {
+                    Ok(Object::Dict(dict)) => {
+                        usize::try_from(get!(found)).ok().and_then(|number| dict.value_at(number))
+                    }
+                    Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                match value {
+                    Some(value) => set!(to, value),
+                    None => failure = missing,
+                }
+            }
+            Instruction::SetFound { dict, found, key } => {
+                let (handle, key) = (get!(dict), get!(key));
+                let (number, value) = (get!(found), get!(found + 1));
+                match usize::try_from(number) {
+                    Ok(number) if number != usize::MAX => replace_value!(handle, number, value),
+                    _ => {
+                        let (probe, _, _, _) = lookup!(handle, key);
+                        add_key!(handle, probe, key, value);
+                    }
+                }
+            }
             Instruction::SetKey { dict, key, value } => {
                 let (key, value) = (get!(key), get!(value));
                 let handle = own!(dict);
-                let hash = key_hash!(handle, key);
-                let (found, looked, _) = find_key!(handle, key, hash);
+                let (probe, found, looked, _) = lookup!(handle, key);
                 heap.work = heap.work.saturating_add(looked.saturating_sub(4));
-                let (growth, text_keys) = match heap.get(handle) {
-                    Ok(Object::Dict(dict)) => {
-                        (if found.is_some() { 0 } else { dict.growth_for_one_more() }, dict.text_keys)
-                    }
-                    _ => (0, false),
-                };
-                heap_try!(heap.charge(growth));
-                if found.is_none() && text_keys {
-                    // The dictionary becomes one more holder of a key it keeps.
-                    heap.retain(key);
-                }
-                let old = match heap.get_mut(handle) {
-                    Ok(Object::Dict(dict)) => {
-                        if let Some(number) = found {
-                            dict.replace_value(number, value).filter(|_| dict.reference_values)
-                        } else {
-                            dict.add(hash, key, value);
-                            None
-                        }
-                    }
-                    _ => None,
-                };
-                if let Some(old) = old {
-                    heap.release(old, layouts);
+                if let Some(number) = found {
+                    replace_value!(handle, number, value);
+                } else {
+                    add_key!(handle, probe, key, value);
                 }
                 count_work!();
             }
             Instruction::RemoveKey { dict, key } => {
                 let key = get!(key);
                 let handle = own!(dict);
-                let hash = key_hash!(handle, key);
-                let (found, looked, _) = find_key!(handle, key, hash);
+                let (_, found, looked, _) = lookup!(handle, key);
                 heap.work = heap.work.saturating_add(looked.saturating_sub(4));
                 match found {
                     None => failure = missing,

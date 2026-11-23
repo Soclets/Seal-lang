@@ -114,6 +114,28 @@ pub enum Instruction {
         left: Register,
         right: i16,
     },
+    /// Maths with a number written in the script on the right, taken from the constants. The divisions' constant
+    /// is never 0 or -1, so they have no check left to fail (D17).
+    AddWholeConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    MultiplyWholeConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    DivideFloorConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    RemainderFloorConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
     NegateWhole {
         to: Register,
         from: Register,
@@ -147,6 +169,28 @@ pub enum Instruction {
     SquareRoot {
         to: Register,
         from: Register,
+    },
+    AddFloatConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    MultiplyFloatConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    /// `left / constant`, where the constant is never zero.
+    DivideFloatConstant {
+        to: Register,
+        left: Register,
+        constant: u16,
+    },
+    /// `constant / right`.
+    DivideConstantByFloat {
+        to: Register,
+        constant: u16,
+        right: Register,
     },
 
     // ---- comparing, giving a `Bool` ----
@@ -314,26 +358,15 @@ pub enum Instruction {
     Crash,
 
     // ---- text ----
-    /// A new, empty text.
-    NewText {
+    /// A new text joined from the pieces `site` lists, in one go (D12, D29).
+    JoinPieces {
         to: Register,
+        site: u32,
     },
-    /// Joins `from` onto the end of `to`, in place when `to` has one holder (D15).
-    Append {
+    /// Joins the pieces `site` lists onto the end of the text in `to`, in place when `to` is its only holder (D15).
+    AppendPieces {
         to: Register,
-        from: Register,
-    },
-    AppendWhole {
-        to: Register,
-        from: Register,
-    },
-    AppendBool {
-        to: Register,
-        from: Register,
-    },
-    AppendFloat {
-        to: Register,
-        from: Register,
+        site: u32,
     },
     /// `be.Whole` on text, which can fail with `not_a_whole` (Unio D95, D156).
     TextToWhole {
@@ -480,6 +513,56 @@ pub enum Instruction {
         dict: Register,
         key: Register,
     },
+    /// Looks `key` up once, for a statement that reads a key and then sets it, as
+    /// `counts[key: word] = (counts[key: word] ?? 0) + 1`: leaves where the key was found in `to`, or all ones when
+    /// it's missing. The dictionary is made this name's own first.
+    FindKey {
+        to: Register,
+        dict: Register,
+        key: Register,
+    },
+    /// `left div.floor 2ⁿ`, which is a shift, and `left rem.floor 2ⁿ`, which keeps the low bits: the same answers
+    /// as dividing, for every `Whole`, with nothing to check (D17).
+    DivideFloorByPowerOfTwo {
+        to: Register,
+        left: Register,
+        shift: u16,
+    },
+    RemainderFloorByPowerOfTwo {
+        to: Register,
+        left: Register,
+        bits: u16,
+    },
+    /// Counts one holder fewer of a text, as [`Instruction::Release`] does for any value.
+    ReleaseText {
+        register: Register,
+    },
+    /// `dict[key: k] ?? plain`, with the plain value already in `to`: the key's value replaces it when the key is
+    /// there, and nothing fails when it isn't.
+    GetKeyIfAny {
+        to: Register,
+        dict: Register,
+        key: Register,
+    },
+    /// The same for a key [`Instruction::FindKey`] looked up.
+    GetFoundIfAny {
+        to: Register,
+        dict: Register,
+        found: Register,
+    },
+    /// The value [`Instruction::FindKey`] found, or the failure `missing`.
+    GetFound {
+        to: Register,
+        dict: Register,
+        found: Register,
+    },
+    /// Sets the key [`Instruction::FindKey`] looked up to the value in `found + 1`: in place when the key was
+    /// found, added when it was missing.
+    SetFound {
+        dict: Register,
+        found: Register,
+        key: Register,
+    },
     /// One pass of `for each` over a dictionary: with the dictionary in `base` and the place reached in
     /// `base + 1`, puts the next value in `to` and its key in `to + 1`, and jumps back by `offset`.
     NextEntry {
@@ -546,6 +629,16 @@ pub enum Instruction {
 
     /// A place the compiler knows can't be reached. Reaching it is a bug in Seal.
     Unreachable,
+}
+
+/// One piece of a text being joined: one of the script's own texts, or a value in a register.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JoinPiece {
+    Constant(u32),
+    Text(Register),
+    Whole(Register),
+    Bool(Register),
+    Float(Register),
 }
 
 /// How a record or a case is laid out on the heap: which of its values are heap values themselves.
@@ -653,6 +746,8 @@ pub struct Compiled {
     pub global_references: Vec<bool>,
     pub layouts: Vec<Layout>,
     pub door_sites: Vec<DoorSite>,
+    /// The pieces each text join is made of, by the join's number.
+    pub joins: Vec<Vec<JoinPiece>>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame

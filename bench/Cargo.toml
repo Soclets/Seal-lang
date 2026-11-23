@@ -10,3 +10,11 @@ workspace = true
 
 [dependencies]
 seal = { path = "../crates/seal" }
+
+[[bin]]
+name = "seal-bench"
+path = "src/main.rs"
+
+[[bin]]
+name = "seal-dump"
+path = "src/dump.rs"

@@ -1,6 +1,6 @@
 //! Values crossing between a script's heap and its host (D15, D48): always as copies.
 
-use super::dict::{Dict, hash_bits, hash_text};
+use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use crate::compile::bytecode::{Crossing, Layout, PLAIN_CASE};
 use crate::host::Value;
@@ -84,19 +84,17 @@ pub fn to_slot(value: &Value, crossing: &Crossing, heap: &mut Heap, layouts: &[L
             let mut dict = Dict::new(text_keys, value_crossing.is_reference());
             for (key, value) in pairs {
                 // The same key twice keeps the later value, as setting a key twice does (D32).
-                let hash = match key {
-                    Value::Text(text) => hash_text(text),
-                    Value::Whole(whole) => hash_bits(whole.cast_unsigned()),
-                    Value::Bool(flag) => hash_bits(u64::from(*flag)),
+                let probe = match key {
+                    Value::Text(text) => Probe::of_text(text),
+                    Value::Whole(whole) => Probe::of_bits(whole.cast_unsigned()),
+                    Value::Bool(flag) => Probe::of_bits(u64::from(*flag)),
                     _ => return Err(wrong(key_crossing, key)),
                 };
                 let found = match key {
                     Value::Text(text) => {
-                        dict.find(hash, |stored| heap.text(stored).is_ok_and(|stored| stored == text)).0
+                        dict.find(&probe, |stored| heap.text(stored).is_ok_and(|stored| stored == text)).0
                     }
-                    Value::Whole(whole) => dict.find(hash, |stored| stored == whole.cast_unsigned()).0,
-                    Value::Bool(flag) => dict.find(hash, |stored| stored == u64::from(*flag)).0,
-                    _ => None,
+                    _ => dict.find(&probe, |_| true).0,
                 };
                 let value_slot = to_slot(value, value_crossing, heap, layouts)?;
                 if let Some(number) = found {
@@ -108,7 +106,7 @@ pub fn to_slot(value: &Value, crossing: &Crossing, heap: &mut Heap, layouts: &[L
                 } else {
                     let key_slot = to_slot(key, key_crossing, heap, layouts)?;
                     heap.charge(dict.growth_for_one_more())?;
-                    dict.add(hash, key_slot, value_slot);
+                    dict.add(&probe, key_slot, value_slot);
                 }
             }
             heap.work = heap.work.saturating_add(pairs.len() as u64);

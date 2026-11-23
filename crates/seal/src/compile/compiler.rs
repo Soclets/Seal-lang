@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 
 use super::bytecode::{
-    Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction, Layout,
-    ProcedureEntry, Register,
+    Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction, JoinPiece,
+    Layout, ProcedureEntry, Register,
 };
 use crate::check::tree::{
     Block, Conversion, Expression, ExpressionKind, HandleFallback, Procedure, Program, Rounding, Statement,
@@ -53,6 +53,10 @@ struct Function {
     /// value is the callee's, so this frame neither frees it nor lists it as held.
     moved_name: Option<VariableId>,
     moved_register: Option<Register>,
+    /// The dictionary and key a statement has already looked up, and the registers saying where it was found.
+    found: Option<(VariableId, VariableId, Register)>,
+    /// The held registers known to hold a text.
+    texts: std::collections::HashSet<Register>,
     /// Names that take over a parameter's value where the parameter is last used: each lives where its parameter did.
     takeovers: HashMap<VariableId, VariableId>,
 }
@@ -338,10 +342,25 @@ impl<'p> Compiler<'p> {
         self.function.held.push(register);
     }
 
+    /// Notes that a register holds a text, so that freeing it can take the short way.
+    fn hold_text(&mut self, register: Register) {
+        self.function.texts.insert(register);
+        self.hold(register);
+    }
+
+    fn release_instruction(&self, register: Register) -> Instruction {
+        if self.function.texts.contains(&register) {
+            Instruction::ReleaseText { register }
+        } else {
+            Instruction::Release { register }
+        }
+    }
+
     /// Stops counting a register as held: its value has been handed on.
     fn hand_on(&mut self, register: Register) {
         if let Some(position) = self.function.held.iter().rposition(|&held| held == register) {
             self.function.held.remove(position);
+            self.function.texts.remove(&register);
         }
     }
 
@@ -349,7 +368,9 @@ impl<'p> Compiler<'p> {
     fn release_from(&mut self, mark: usize) {
         while self.function.held.len() > mark {
             if let Some(register) = self.function.held.pop() {
-                self.emit(Instruction::Release { register });
+                let release = self.release_instruction(register);
+                self.emit(release);
+                self.function.texts.remove(&register);
             }
         }
     }
@@ -360,7 +381,8 @@ impl<'p> Compiler<'p> {
         let held: Vec<Register> = self.function.held.get(mark..).unwrap_or(&[]).to_vec();
         for register in held.into_iter().rev() {
             if Some(register) != except && Some(register) != self.function.moved_register {
-                self.emit(Instruction::Release { register });
+                let release = self.release_instruction(register);
+                self.emit(release);
             }
         }
     }
@@ -620,7 +642,9 @@ impl<'p> Compiler<'p> {
                     self.release_from(held_mark);
                     self.function.next = temporaries;
                     self.function.locations.insert(*variable, Location::Register(register));
-                    if reference {
+                    if matches!(self.kind(value.type_id), Type::Text) {
+                        self.hold_text(register);
+                    } else if reference {
                         self.hold(register);
                     }
                 }
@@ -678,6 +702,27 @@ impl<'p> Compiler<'p> {
                         Instruction::SetItemAtPosition { list, index, value }
                     });
                 });
+            }
+            StatementKind::SetKey { variable, key, value }
+                if matches!(self.location(*variable), Location::Register(_))
+                    && matches!(&key.kind, ExpressionKind::Variable(read) if matches!(self.location(*read), Location::Register(_)))
+                    && matches!(&key.kind, ExpressionKind::Variable(read) if lookups_and_other_uses(value, *variable, *read) == (1, 0)) =>
+            {
+                // `dict[key: k] = … dict[key: k] …` looks the key up once, for the read and the write together.
+                let (Location::Register(dict), ExpressionKind::Variable(key_variable)) =
+                    (self.location(*variable), &key.kind)
+                else {
+                    return;
+                };
+                let Location::Register(key_register) = self.location(*key_variable) else { return };
+                let found = self.allocate_many(2);
+                self.emit(Instruction::FindKey { to: found, dict, key: key_register });
+                self.function.found = Some((*variable, *key_variable, found));
+                // The new value is worked out straight into the register after the one saying where the key is.
+                self.held_into(value, found + 1);
+                self.function.found = None;
+                self.place = statement.place;
+                self.emit(Instruction::SetFound { dict, found, key: key_register });
             }
             StatementKind::SetKey { variable, key, value } => {
                 let key = self.value(key);
@@ -867,12 +912,11 @@ impl<'p> Compiler<'p> {
             && matches!(first.kind, ExpressionKind::Variable(first) if first == variable)
             && !rest.iter().any(|part| mentions(part, variable))
         {
-            let parts: Vec<(Register, TypeId)> = rest.iter().map(|part| (self.value(part), part.type_id)).collect();
+            let pieces = self.pieces(rest);
             self.place = value.place;
+            let site = self.join_site(&pieces);
             self.change_in_place(variable, |compiler, text| {
-                for (part, part_type) in parts {
-                    compiler.append(text, part, part_type);
-                }
+                compiler.emit(Instruction::AppendPieces { to: text, site });
             });
             return;
         }
@@ -930,14 +974,34 @@ impl<'p> Compiler<'p> {
         }
     }
 
-    fn append(&mut self, text: Register, part: Register, part_type: TypeId) {
-        let instruction = match self.kind(part_type) {
-            Type::Whole => Instruction::AppendWhole { to: text, from: part },
-            Type::Bool => Instruction::AppendBool { to: text, from: part },
-            Type::Float => Instruction::AppendFloat { to: text, from: part },
-            _ => Instruction::Append { to: text, from: part },
-        };
-        self.emit(instruction);
+    /// Works out the pieces a text is joined from. A piece written in the script as text stays a constant.
+    fn pieces(&mut self, parts: &[Expression]) -> Vec<Piece> {
+        parts
+            .iter()
+            .map(|part| match &part.kind {
+                ExpressionKind::Text(text) => Piece::Constant(self.text(text)),
+                _ => Piece::Register(self.value(part), part.type_id),
+            })
+            .collect()
+    }
+
+    /// Records the pieces of one join, giving the join's number.
+    fn join_site(&mut self, pieces: &[Piece]) -> u32 {
+        let site = u32::try_from(self.out.joins.len()).unwrap_or(u32::MAX);
+        let pieces = pieces
+            .iter()
+            .map(|piece| match *piece {
+                Piece::Constant(text) => JoinPiece::Constant(text),
+                Piece::Register(register, piece_type) => match self.kind(piece_type) {
+                    Type::Whole => JoinPiece::Whole(register),
+                    Type::Bool => JoinPiece::Bool(register),
+                    Type::Float => JoinPiece::Float(register),
+                    _ => JoinPiece::Text(register),
+                },
+            })
+            .collect();
+        self.out.joins.push(pieces);
+        site
     }
 
     /// trace: D33, Unio D171, D173, D174
@@ -1249,6 +1313,18 @@ impl<'p> Compiler<'p> {
                 });
                 false
             }
+            ExpressionKind::Lookup { dict, key }
+                if self.function.found.is_some_and(|(found_dict, found_key, _)| {
+                    matches!(dict.kind, ExpressionKind::Variable(read) if read == found_dict)
+                        && matches!(key.kind, ExpressionKind::Variable(read) if read == found_key)
+                }) =>
+            {
+                let Some((found_dict, _, found)) = self.function.found else { return false };
+                if let Location::Register(dict) = self.location(found_dict) {
+                    self.emit(Instruction::GetFound { to, dict, found });
+                }
+                false
+            }
             ExpressionKind::Lookup { dict, key } => {
                 let key = self.value(key);
                 let dict = self.reading(dict);
@@ -1327,8 +1403,8 @@ impl<'p> Compiler<'p> {
                 self.place = expression.place;
                 match conversion {
                     Conversion::ToText => {
-                        self.emit(Instruction::NewText { to });
-                        self.append(to, from, value_type);
+                        let site = self.join_site(&[Piece::Register(from, value_type)]);
+                        self.emit(Instruction::JoinPieces { to, site });
                         true
                     }
                     Conversion::WholeToFloat => {
@@ -1384,17 +1460,10 @@ impl<'p> Compiler<'p> {
                     return self.value_into(only, to);
                 }
                 // The pieces are worked out first, so that a piece that reads `to`'s old value still can.
-                let pieces: Vec<(Register, TypeId)> =
-                    parts.iter().map(|part| (self.value(part), part.type_id)).collect();
+                let pieces = self.pieces(parts);
                 self.place = expression.place;
-                let built = if pieces.iter().any(|(piece, _)| *piece == to) { self.allocate() } else { to };
-                self.emit(Instruction::NewText { to: built });
-                for (piece, piece_type) in pieces {
-                    self.append(built, piece, piece_type);
-                }
-                if built != to {
-                    self.emit(Instruction::Move { to, from: built });
-                }
+                let site = self.join_site(&pieces);
+                self.emit(Instruction::JoinPieces { to, site });
                 true
             }
             ExpressionKind::BuildRecord { fields, .. } => {
@@ -1491,6 +1560,40 @@ impl<'p> Compiler<'p> {
                 let here = self.here();
                 self.patch(fine, here);
                 held
+            }
+            ExpressionKind::Handle { call, fallback: HandleFallback::Value(fallback) }
+                if !reference
+                    && matches!(call.kind, ExpressionKind::Lookup { .. })
+                    && matches!(
+                        fallback.kind,
+                        ExpressionKind::Whole(_) | ExpressionKind::Float(_) | ExpressionKind::Bool(_)
+                    ) =>
+            {
+                // A plain fallback goes in first, and the key's value replaces it when the key is there: no failure
+                // is raised only to be dealt with at once.
+                let ExpressionKind::Lookup { dict, key } = &call.kind else { return false };
+                let already_found = self.function.found.filter(|(found_dict, found_key, _)| {
+                    matches!(dict.kind, ExpressionKind::Variable(read) if read == *found_dict)
+                        && matches!(key.kind, ExpressionKind::Variable(read) if read == *found_key)
+                });
+                if let Some((found_dict, _, found)) = already_found
+                    && let Location::Register(dict) = self.location(found_dict)
+                {
+                    self.value_into(fallback, to);
+                    self.emit(Instruction::GetFoundIfAny { to, dict, found });
+                    return false;
+                }
+                let key = self.value(key);
+                let dict = self.reading(dict);
+                // The dictionary and key are in hand before the fallback lands, in case `to` is one of them.
+                let result = if to == key || to == dict { self.allocate() } else { to };
+                self.value_into(fallback, result);
+                self.place = expression.place;
+                self.emit(Instruction::GetKeyIfAny { to: result, dict, key });
+                if result != to {
+                    self.emit(Instruction::Move { to, from: result });
+                }
+                false
             }
             ExpressionKind::Handle { call, fallback } => {
                 let held = self.value_into(call, to);
@@ -1735,6 +1838,99 @@ impl<'p> Compiler<'p> {
         base
     }
 
+    /// Maths with a number written in the script on one side, as one instruction that reads it from the
+    /// constants. Gives nothing when there's no such instruction for it.
+    fn constant_maths(
+        &mut self,
+        operator: BinaryOperator,
+        left: &Expression,
+        right: &Expression,
+        is_float: bool,
+        to: Register,
+    ) -> Option<Instruction> {
+        use BinaryOperator::{Add, DivFloor, Divide, Multiply, RemFloor, Subtract};
+        let constant = |compiler: &mut Self, bits: u64| u16::try_from(compiler.constant(bits)).ok();
+        if is_float {
+            let number = |expression: &Expression| match expression.kind {
+                ExpressionKind::Float(value) => Some(value),
+                _ => None,
+            };
+            return match (operator, number(left), number(right)) {
+                (Add, None, Some(value)) => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::AddFloatConstant { to, left: self.value(left), constant })
+                }
+                (Add, Some(value), None) => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::AddFloatConstant { to, left: self.value(right), constant })
+                }
+                // `x - c` is `x + (-c)`, bit for bit.
+                (Subtract, None, Some(value)) => {
+                    let constant = constant(self, (-value).to_bits())?;
+                    Some(Instruction::AddFloatConstant { to, left: self.value(left), constant })
+                }
+                (Multiply, None, Some(value)) => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::MultiplyFloatConstant { to, left: self.value(left), constant })
+                }
+                (Multiply, Some(value), None) => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::MultiplyFloatConstant { to, left: self.value(right), constant })
+                }
+                (Divide, None, Some(value)) if value != 0.0 => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::DivideFloatConstant { to, left: self.value(left), constant })
+                }
+                (Divide, Some(value), None) => {
+                    let constant = constant(self, value.to_bits())?;
+                    Some(Instruction::DivideConstantByFloat { to, constant, right: self.value(right) })
+                }
+                _ => None,
+            };
+        }
+        let number = |expression: &Expression| match expression.kind {
+            ExpressionKind::Whole(value) => Some(value),
+            _ => None,
+        };
+        match (operator, number(left), number(right)) {
+            (Add, None, Some(value)) => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::AddWholeConstant { to, left: self.value(left), constant })
+            }
+            (Add, Some(value), None) => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::AddWholeConstant { to, left: self.value(right), constant })
+            }
+            (Multiply, None, Some(value)) => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::MultiplyWholeConstant { to, left: self.value(left), constant })
+            }
+            (Multiply, Some(value), None) => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::MultiplyWholeConstant { to, left: self.value(right), constant })
+            }
+            // Dividing by a plain number that's neither 0 nor -1 has no check left that can fail (D17).
+            // A power of two divides by shifting, and leaves what the low bits hold.
+            (DivFloor, None, Some(value)) if value > 1 && value.count_ones() == 1 => {
+                let shift = u16::try_from(value.trailing_zeros()).ok()?;
+                Some(Instruction::DivideFloorByPowerOfTwo { to, left: self.value(left), shift })
+            }
+            (RemFloor, None, Some(value)) if value > 1 && value.count_ones() == 1 => {
+                let bits = u16::try_from(value.trailing_zeros()).ok()?;
+                Some(Instruction::RemainderFloorByPowerOfTwo { to, left: self.value(left), bits })
+            }
+            (DivFloor, None, Some(value)) if value != 0 && value != -1 => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::DivideFloorConstant { to, left: self.value(left), constant })
+            }
+            (RemFloor, None, Some(value)) if value != 0 && value != -1 => {
+                let constant = constant(self, value.cast_unsigned())?;
+                Some(Instruction::RemainderFloorConstant { to, left: self.value(left), constant })
+            }
+            _ => None,
+        }
+    }
+
     fn binary(
         &mut self,
         operator: BinaryOperator,
@@ -1778,6 +1974,11 @@ impl<'p> Compiler<'p> {
             self.emit(Instruction::AddWholeSmall { to, left, right: small });
             return;
         }
+        if let Some(instruction) = self.constant_maths(operator, left, right, is_float, to) {
+            self.place = whole.place;
+            self.emit(instruction);
+            return;
+        }
         let left = self.value(left);
         let right = self.value(right);
         self.place = whole.place;
@@ -1812,6 +2013,38 @@ impl<'p> Compiler<'p> {
             }
         };
         self.emit(instruction);
+    }
+}
+
+/// A piece of a text being joined: a value in a register, or one of the script's own texts.
+#[derive(Clone, Copy)]
+enum Piece {
+    Register(Register, TypeId),
+    Constant(u32),
+}
+
+/// How many times an expression looks `key` up in `dict`, and how many other times it uses `dict` at all.
+fn lookups_and_other_uses(expression: &Expression, dict: VariableId, key: VariableId) -> (usize, usize) {
+    match &expression.kind {
+        ExpressionKind::Lookup { dict: read, key: read_key }
+            if matches!(read.kind, ExpressionKind::Variable(read) if read == dict)
+                && matches!(read_key.kind, ExpressionKind::Variable(read) if read == key) =>
+        {
+            (1, 0)
+        }
+        ExpressionKind::Binary { left, right, .. } => {
+            let (left_lookups, left_uses) = lookups_and_other_uses(left, dict, key);
+            let (right_lookups, right_uses) = lookups_and_other_uses(right, dict, key);
+            (left_lookups + right_lookups, left_uses + right_uses)
+        }
+        ExpressionKind::Handle { call, fallback: HandleFallback::Value(fallback) } => {
+            let (lookups, uses) = lookups_and_other_uses(call, dict, key);
+            (lookups, uses + usize::from(expression_uses(fallback, dict)))
+        }
+        ExpressionKind::Negate(inner) | ExpressionKind::Convert { value: inner, .. } => {
+            lookups_and_other_uses(inner, dict, key)
+        }
+        _ => (0, usize::from(expression_uses(expression, dict))),
     }
 }
 

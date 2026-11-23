@@ -9,6 +9,10 @@ use crate::compile::bytecode::{Layout, PLAIN_CASE};
 
 /// What every heap value costs beyond its contents, in bytes of the memory cap.
 pub const VALUE_COST: usize = 48;
+/// The longest text, in bytes of room, whose room is kept for reuse when it's freed, and how many are kept.
+const POOLED_TEXT: usize = 128;
+const SPARE_TEXTS: usize = 8;
+
 /// What one slot costs: an item of a list, a field, a register.
 pub const SLOT_COST: usize = 8;
 
@@ -59,6 +63,8 @@ pub struct Heap {
     cap: usize,
     /// Bulk work done since it was last asked about, in items and bytes, to be counted as steps (D14).
     pub work: u64,
+    /// Freed short texts, emptied, whose room the next short texts reuse.
+    spare_texts: Vec<String>,
 }
 
 impl Heap {
@@ -102,7 +108,8 @@ impl Heap {
         if let Some(index) = self.free.pop()
             && let Some(slot) = self.entries.get_mut(index as usize)
         {
-            *slot = entry;
+            // A freed place holds nothing, so what was there is set aside without being looked through.
+            std::mem::forget(std::mem::replace(slot, entry));
             return Ok(u64::from(index));
         }
         let index = self.entries.len();
@@ -120,12 +127,43 @@ impl Heap {
     /// Fails when the script would hold more than its cap (D14).
     pub fn new_text(&mut self, text: &str, capacity: usize) -> Result<u64, HeapError> {
         let capacity = capacity.max(text.len());
+        // A short text reuses the room of one freed earlier, when there is one.
+        if capacity <= POOLED_TEXT
+            && let Some(mut owned) = self.spare_texts.pop()
+        {
+            if owned.capacity() >= capacity {
+                owned.push_str(text);
+                let room = owned.capacity();
+                return match self.allocate(Object::Text(owned), room) {
+                    Ok(handle) => Ok(handle),
+                    Err(error) => Err(error),
+                };
+            }
+            self.spare_texts.push(owned);
+        }
         self.charge(VALUE_COST.saturating_add(capacity))?;
         let mut owned = String::new();
         owned.reserve_exact(capacity);
         owned.push_str(text);
         self.refund(VALUE_COST.saturating_add(capacity));
         self.allocate(Object::Text(owned), capacity)
+    }
+
+    /// An empty text with room for `room` bytes, to be built outside the heap and then put on it. A short one
+    /// reuses the room of a text freed earlier, when there is one.
+    #[must_use]
+    pub fn spare_text(&mut self, room: usize) -> String {
+        if room <= POOLED_TEXT
+            && let Some(spare) = self.spare_texts.pop()
+        {
+            if spare.capacity() >= room {
+                return spare;
+            }
+            self.spare_texts.push(spare);
+        }
+        let mut text = String::new();
+        text.reserve_exact(room);
+        text
     }
 
     #[inline]
@@ -189,6 +227,30 @@ impl Heap {
         }
     }
 
+    /// Counts one holder fewer of a text, freeing it when that was the last: [`Heap::release`], for a slot known
+    /// to hold a text, which has nothing inside it to free in turn.
+    #[inline]
+    pub fn release_text(&mut self, slot: u64) {
+        let Some(entry) = self.entry_mut(slot) else { return };
+        if entry.holders > 1 {
+            entry.holders -= 1;
+            return;
+        }
+        let Object::Text(text) = &mut entry.object else { return };
+        let mut text = std::mem::take(text);
+        entry.holders = 0;
+        entry.object = Object::Free;
+        let room = text.capacity();
+        if room <= POOLED_TEXT && self.spare_texts.len() < SPARE_TEXTS {
+            text.clear();
+            self.spare_texts.push(text);
+        }
+        self.refund(VALUE_COST.saturating_add(room));
+        if let Ok(index) = u32::try_from(slot) {
+            self.free.push(index);
+        }
+    }
+
     /// Counts one holder fewer of the value in a slot, freeing it, and what only it held, when that was the last.
     pub fn release(&mut self, slot: u64, layouts: &[Layout]) {
         if slot & PLAIN_CASE != 0 {
@@ -216,7 +278,16 @@ impl Heap {
             let object = std::mem::replace(&mut entry.object, Object::Free);
             let size = match object {
                 Object::Free | Object::Taken => continue,
-                Object::Text(text) => text.capacity(),
+                Object::Text(mut text) => {
+                    let room = text.capacity();
+                    // A short text's room is kept for the next short text, so making and freeing small texts in a
+                    // loop doesn't go to the system for memory each time. What's kept is small and bounded.
+                    if room <= POOLED_TEXT && self.spare_texts.len() < SPARE_TEXTS {
+                        text.clear();
+                        self.spare_texts.push(text);
+                    }
+                    room
+                }
                 Object::List { items, references } => {
                     if references {
                         waiting.extend_from_slice(&items);
