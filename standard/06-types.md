@@ -121,6 +121,22 @@ end
 - **A case's values come out by name,** read-only, for that case's body (D37).
 - **A case runs until the next `case`,** and one `end` closes the `match` (D37).
 
+## `Maybe`
+
+Seal has no `nil`, `null` or `None`: a name of a type always holds a real value of that type (D38). "Might not be
+there" is `Maybe<T>`, a built-in `one_of` with the cases `none` and `some[value: T]`, read with `match` or given a
+fallback with `??`, and Rust's `Option<T>` at the doors (D38):
+
+```
+target = nearest_enemy()
+match target
+    case some[value]
+        attack(value)
+    case none
+end
+id = nearest_enemy() ?? 0
+```
+
 ## `fmt`
 
 `fmt("…")` fills in the names in its braces and gives back a `Text` (D12):

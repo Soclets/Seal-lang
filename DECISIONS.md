@@ -1071,3 +1071,38 @@ and a new case can't be forgotten anywhere.
 
 **Tankun's words.** Asked "Should Seal have `match`, with a `case` for every case, values taken out by name, and one
 `end` closing it, the same for `otherwise`'s cases?", the owner chose: "yea".
+
+## D38. No `nil`: "might not be there" is a built-in `Maybe<T>`
+
+2026-11-23.
+
+**Chosen.**
+- **Seal has no `nil`, `null` or `None`.** A name of a type always holds a real value of that type.
+- **`Maybe<T>` is built in,** a `one_of` (D35, D36) with two cases: `none`, and `some[value: T]`. It's read with
+  `match`, which must cover both (D37), and `??` gives a fallback when it's `none`, as for a failure (Unio D23).
+- **At the doors it's Rust's `Option<T>`,** so a door like `nearest_enemy()` can say it found nothing.
+
+```
+target = nearest_enemy()
+match target
+    case some[value]
+        attack(value)
+    case none
+end
+id = nearest_enemy() ?? 0
+```
+
+**Weighed.**
+- `nil`, as Luau has it. It sneaks into every type, and the crash comes later, elsewhere; Tony Hoare, who invented
+  null, called it his "billion-dollar mistake".
+- No built-in, each script or host writing its own `one_of`, as the design claude first proposed. Every host would
+  invent its own for Rust's `Option`, each named differently.
+- `Option`, as Rust has it: Seal already calls `one_of`'s cases its options. `Optional`, as Swift has it: longer.
+  `Nullable`, as C# has it: built on null.
+
+**Why this won.** Nothing is ever missing silently, "might not be there" is said in the type, and the host's
+`Option<T>` crosses the doors one for one. `Maybe` reads as what it means, "maybe a whole number", as in Haskell and
+Elm.
+
+**Tankun's words.** "Why not?", "Why `Maybe`?", then, asked "Should Seal have no `nil`, but a built-in `Maybe<T>`, a
+`one_of` with `none` and `some[value]`, usable with `match` and `??`?", the owner chose: "yea".
