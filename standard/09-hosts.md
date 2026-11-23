@@ -22,7 +22,9 @@ calls Seal is the building session's to propose.
   refused at load time, with the door's real narrowings listed (D13, Unio D102).
 - **Values cross the doors as copies,** and the host's own objects arrive as IDs (D15).
 
-**Not decided:** whether a door can fail, and how its failures are listed; labels on doors.
+- **A door can fail,** with failures the host declares, handled like any other (D44).
+
+**Not decided:** labels and defaults on doors.
 
 ## Limits
 

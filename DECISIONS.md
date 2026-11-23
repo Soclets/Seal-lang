@@ -1255,3 +1255,39 @@ the same for a host's doors and their narrowings, declared together (D13).
 
 **Tankun's words.** "Why no `fam`?", "You do know `fam` houses handlers too, right?", then, asked "Should Seal take
 Unio's families, `fam.proc` now and `fam.handler` once Seal has handlers?", the owner chose: "yea".
+
+## D44. `fail name` fails on purpose, and a procedure's failures are worked out from its body
+
+2026-11-23.
+
+**Chosen.**
+- **`fail name` fails on purpose,** with a plain failure name, as Cyborg writes it.
+- **A procedure's failures are worked out from its body:** every `fail` in it, and every failure it passes up with `?`,
+  as its types are (D5, D6), so they never need listing by hand.
+- **They may be written, as `fails [not_found, broken]`, on the first line,** after `returns` if that's written, in
+  `[ ]` since it describes the procedure (Unio D165). Written, they must match what the body does.
+- **A door can fail too:** the host declares its failures, in Rust a `Result` with its error cases, and a script
+  handles them like any other.
+
+```
+proc load_level[name]
+    if not level_exists(name)
+        fail not_found
+    end
+    return read_level(name)?
+end
+
+level = load_level("cave") ?? default_level
+```
+
+**Weighed.**
+- Failures always listed, as Unio's D39 has them after `returns`. Seal already works out what the body says (D5, D6).
+- `fails` at the top of the body, beside `labels` and `defaults`. Those say how to call a procedure; a failure is what
+  a call can give back, so it goes with `returns`, as in Unio and Cyborg.
+
+**Why this won.** Failing on purpose gets a plain word, and failures are handled the way types are: worked out, and
+written only where wanted.
+
+**Tankun's words.** "Why is it there?", then, asked "Should Seal fail on purpose with `fail name`, with a procedure's
+failures worked out from its body, optionally written as `fails [ … ]` on the first line?", the owner chose: "yea.
+Should Seal have `->` instead of `returns`?"

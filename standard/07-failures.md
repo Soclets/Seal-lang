@@ -28,4 +28,19 @@ In a script, `?? crash` stops the script, not the host, which is told (D14, chap
 
 Each `case` runs until the next `case`, as in Unio (D37).
 
-**Not decided:** how a procedure lists the failures it can give; failing on purpose; handler families.
+## Failing on purpose
+
+`fail name` fails on purpose, and a procedure's failures are worked out from its body: every `fail`, and every failure
+passed up with `?` (D44). They may be written on the first line as `fails [not_found, broken]`, after `returns` if
+that's written, and must then match the body (D44). A door can fail too, with failures its host declares (D44).
+
+```
+proc load_level[name]
+    if not level_exists(name)
+        fail not_found
+    end
+    return read_level(name)?
+end
+```
+
+**Not decided:** handler families, which come with handlers (D43).
