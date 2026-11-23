@@ -432,3 +432,28 @@ cycles, counting holders is all an interpreter needs, and copies at the doors ke
 
 **Tankun's words.** Asked "Should Seal use Unio's memory model, with every variable owning its value, no kept
 references, no garbage collector, and values crossing the doors as copies?", the owner chose: "yea".
+
+## D16. Seal's types are Unio's, with Unio's rules for them
+
+2026-11-23.
+
+**Chosen.** Seal's types are Unio's, with Unio's rules for them:
+- **`Whole`,** a 64-bit integer that stops with a failed check on overflow (Unio D15, D46).
+- **`Float`,** IEEE 754 binary64, with `~` on inexact literals and Unio's rules for showing, rounding and comparing
+  (Unio D155, D157, D175 to D184).
+- **`Bool`** and **`Text`.**
+- **`List<T>`** and **`Array<T>[len: n]`** (Unio D167).
+- **No quiet mixing of `Whole` and `Float`** (Unio D162), and **a condition must be a `Bool`** (Unio D187).
+
+At the doors they're Rust's `i64`, `f64`, `bool`, `String` and `Vec`. Records, maps and other types come later, as
+Seal or Unio needs them.
+
+**Weighed.**
+- Types of Seal's own. Nothing in Seal's purpose asks for different ones, and sharing them keeps a Unio programmer at
+  home in Seal.
+
+**Why this won.** Unio's types are already designed and tested, and map one for one onto the Rust types a host passes
+through its doors.
+
+**Tankun's words.** Asked "Should Seal's types be Unio's (`Whole`, `Float`, `Bool`, `Text`, `List` and `Array`), with
+Unio's rules for them?", the owner chose: "yea".
