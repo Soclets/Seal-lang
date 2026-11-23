@@ -285,3 +285,31 @@ end if
 Bash. Tankun's sketch used it.
 
 **Tankun's words.** Asked "Should Seal use `elif`, taught as short for "else if"?", the owner chose: "yea".
+
+## D11. Built-ins touch nothing outside the script, and every door is made and named by the host
+
+2026-11-23.
+
+**Chosen.**
+- **Seal's built-ins are only what touches nothing outside the script:** maths such as `sqrt`, `range`, conversions
+  such as `be.Whole`, text and lists. They behave the same in every host.
+- **Everything that touches the outside is a door the host makes and names itself:** showing text, asking, files,
+  time, sound, and randomness too. Seal defines none of them, not even a suggested set, so `rand`, `ask` and
+  `show_msg` in Tankun's sketch are what that host chose.
+- **Randomness is the host's,** so a host can control the seed, to replay a game exactly or keep two players in sync.
+
+**Weighed.**
+- Built-in showing and asking, as Unio has them. A script in a text editor or a game server has no terminal to show
+  text on; each host knows what showing means.
+- A suggested standard set of doors from Seal, as the design claude proposed. Tankun: hosts make their own, and they
+  differ too much for one set to fit.
+- Built-in randomness. A script could bring in randomness the host doesn't know about, breaking replays.
+
+**Why this won.** It keeps Seal's design about the language itself, as Luau's is apart from Roblox's functions, and the
+seal is exactly the set of doors each host chose to open.
+
+How `.fmt` works, since in Unio it narrows the built-in `show_msg`, isn't decided yet.
+
+**Tankun's words.** "Actually, we don't define host things. They make their own", then, asked "Should Seal's built-ins
+be only what touches nothing outside the script, with every door, randomness included, made and named by the host, and
+none defined by Seal?", the owner chose: "yea".
