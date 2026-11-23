@@ -680,3 +680,18 @@ checking them is the only way to keep scripts uniform.
 **Tankun's words.** "yea. What about Seal naming conventions? `GetService` or `get_service`" (quoted in D23), then,
 asked "Should Seal names, the host's door names included, follow Unio's D99: lowercase words joined by `_`, with types
 capitalised?", the owner chose: "yea".
+
+## D25. Seal scripts use the `.seal` extension
+
+2026-11-23.
+
+**Chosen.** A Seal script is a file ending in `.seal`, as in `goblin.seal`, matching Unio's `.unio`. Tools and the
+language server recognise Seal files by it.
+
+**Weighed.**
+- `.sl` or `.se`. Shorter, but `.sl` is already used by other tools, and neither says "Seal".
+
+**Why this won.** It's the language's own name, short, and not used by any well-known format. Tankun's first sketch
+was already `guessing_game.seal`.
+
+**Tankun's words.** Asked "Should Seal scripts use the `.seal` extension?", the owner chose: "yea".
