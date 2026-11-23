@@ -105,7 +105,21 @@ mut last = Event.hurt[amount: 5]
 - **A case is written as a narrowing of its type,** as `Event.hurt[amount: 5]` and `State.idle`; one the type doesn't
   have is refused at load time (D35, Unio D41).
 
-**Not decided:** reading which case a value is, and its values.
+`match` reads which case a value is (D37):
+
+```
+match last
+    case hurt[amount]
+        hp = hp - amount
+    case healed[amount, by]
+        show_msg(fmt("{by} healed you"))
+    case idle
+end
+```
+
+- **Every case must be covered;** there's no catch-all (D37).
+- **A case's values come out by name,** read-only, for that case's body (D37).
+- **A case runs until the next `case`,** and one `end` closes the `match` (D37).
 
 ## `fmt`
 

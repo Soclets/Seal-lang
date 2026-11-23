@@ -26,5 +26,6 @@ In a script, `?? crash` stops the script, not the host, which is told (D14, chap
 
 `otherwise` and `case` lines have no `:` (D9), and the `otherwise` closes with one `end` (D20).
 
-**Not decided:** whether each `case` closes with an `end` of its own, or runs until the next `case` as in Unio; how a
-procedure lists the failures it can give; failing on purpose; handler families.
+Each `case` runs until the next `case`, as in Unio (D37).
+
+**Not decided:** how a procedure lists the failures it can give; failing on purpose; handler families.

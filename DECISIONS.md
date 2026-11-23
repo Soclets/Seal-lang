@@ -1034,3 +1034,40 @@ end
 
 **Tankun's words.** "`one_of`?" (quoted in D35), then, asked "Should the keyword be `one_of`?", the owner chose:
 "yea".
+
+## D37. `match` reads which case a value is, covering every case
+
+2026-11-23.
+
+**Chosen.**
+- **`match value` opens a block with a `case` for each of the value's cases** (D35, D36), closed by one `end` (D20).
+  No `:` on either line (D9).
+- **Every case must be covered,** as `otherwise` requires for failures (Unio D40), so a case added later makes every
+  `match` that misses it refused at load time. There's no catch-all.
+- **A case's values come out by name,** as `case hurt[amount]`, as read-only names for that case's body.
+- **A case runs until the next `case`,** like `elif` and `else` inside one `if`, and one `end` closes the whole block.
+  The same holds for the cases of `otherwise`, which chapter 7 of the standard left open.
+
+```
+match last
+    case hurt[amount]
+        hp = hp - amount
+    case healed[amount, by]
+        hp = hp + amount
+        show_msg(fmt("{by} healed you"))
+    case idle
+end
+```
+
+**Weighed.**
+- A catch-all for every other case, as Rust's `_` and Swift's `default`. It would quietly swallow a case added later,
+  which is what covering every case is there to catch.
+- An `end` for each case. Unlike `if`, whose `elif` and `else` share one `end`.
+- A plainer word than `match`, as Unio's D40 chose `otherwise` over `match` for failures. `otherwise` follows a call
+  and reads as English there; `match` starts a line about a value, as in Cyborg, Rust and Python.
+
+**Why this won.** It reuses `case` and "cover every case" from `otherwise`, so options and failures are handled alike,
+and a new case can't be forgotten anywhere.
+
+**Tankun's words.** Asked "Should Seal have `match`, with a `case` for every case, values taken out by name, and one
+`end` closing it, the same for `otherwise`'s cases?", the owner chose: "yea".
