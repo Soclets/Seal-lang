@@ -81,7 +81,11 @@ for each count at key item in stock
 end
 ```
 
-**Not decided:** a `Dict`'s methods; which types can be keys.
+- **`.remove(key: k)`** takes a key out, failing with `missing` if it isn't there; **`.has(key: k)`** gives a `Bool`;
+  **`.len`** is the number of keys (D34).
+- **Keys can be `Whole`, `Text` or `Bool`;** a `Float` key is refused (D34).
+
+**Not decided:** lists and records as keys; other methods.
 
 ## `fmt`
 

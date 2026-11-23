@@ -936,3 +936,34 @@ in stock".
 **Tankun's words.** "`for each count at key item in stock`
 Holy shit, that's an entire sentence", then, asked "Should `for each` go through a `Dict`'s
 values, with `at key name` giving each key, in the order they were added?", the owner chose: "yea".
+
+## D34. A `Dict` has `.remove(key:)`, `.has(key:)` and `.len`, with `Whole`, `Text` or `Bool` keys
+
+2026-11-23.
+
+**Chosen.**
+- **`.remove(key: k)`** takes a key out, through a `mut` name, and fails with `missing` if it isn't there, as reading
+  one does (D32).
+- **`.has(key: k)`** gives a `Bool`: whether the key is there.
+- **`.len`** is the number of keys, a fact read without running anything, as for lists (Unio D79).
+- **Keys can be `Whole`, `Text` or `Bool`,** types whose equality is exact and unsurprising. A `Float` key is refused,
+  since two neighbouring floats that print alike are different keys (Unio D184).
+
+```
+stock.remove(key: "sword")
+if stock.has(key: "potion")
+    show_msg(fmt("{stock.len} kinds"))
+end
+```
+
+Lists and records as keys, and other methods, aren't decided yet.
+
+**Weighed.**
+- `Float` keys, as Python allows. `~0.1 + ~0.2` and `~0.3` would be two keys, the classic trap.
+- Removing a missing key quietly. Unlike Seal's reading of one, and a typo in the key would go unnoticed.
+
+**Why this won.** The methods take `key:` as lookups do, so a `Dict` reads alike everywhere, and keys stay to the types
+where "the same key" can't surprise anyone.
+
+**Tankun's words.** "Don't you have a tool for that?", then, asked "Should a `Dict` have `.remove(key:)`, `.has(key:)`
+and `.len`, with keys of `Whole`, `Text` or `Bool` only?", the owner chose: "yea".
