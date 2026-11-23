@@ -5,5 +5,6 @@ and meant to be easier to write. It's implemented in Rust.
 
 It's sealed: a Seal script can reach nothing outside itself except through the doors the program embedding it opens.
 
-Seal is being designed now; nothing is built yet. Every design choice is recorded in [DECISIONS.md](DECISIONS.md).
+Seal is being designed now; nothing is built yet. Every design choice is recorded in [DECISIONS.md](DECISIONS.md),
+and [standard/](standard/README.md) says what the rules are today.
 There's no license yet.
