@@ -1758,3 +1758,28 @@ what changed Cyborg's D440.
 **Tankun's words.** "measured all?", "That isn't what `Ceil.machine` means", "It means shit like PGO", "Shit, what does
 PGO mean", "Wait ,what the fuck. So, what does `Ceil.machine` do?", then, asked "Should Seal take Cyborg's benchmark
 rules as listed, with D57's goals on Normal against Normal?", the owner chose: "yea".
+
+## D59. Seal keeps `==` and `!=`, where Unio now writes `eq` and `not_eq`
+
+2026-11-23.
+
+**Chosen.** Seal keeps `==` and `!=` for comparing (D22), unchanged by Unio's D190, which replaced them with `eq` and
+`not_eq`. Seal's `!` before a failure list (D45) and its `!=` don't clash: `!=` is a symbol of its own, as a longer
+symbol always is (Unio D60).
+
+```
+if guess == secret
+if guess != secret
+proc load_level[name] -> Level ! [not_found, broken]
+```
+
+A deliberate difference from Unio, as D1 allows.
+
+**Weighed.**
+- `eq` and `not_eq`, following Unio's D190, as the design claude recommended, so that `!` has one job in Seal too.
+  Seal is meant to be quicker to write, `not_eq` is longer than `!=`, and Tankun judged the overlap no real trouble.
+
+**Why this won.** Seal keeps the short, familiar symbols, and Unio's reason, a beginner trap, matters less in a
+language written in an editor (D7).
+
+**Tankun's words.** "It's Seal, lol", "It's supposed to be shorter, that overlap isn't even that hard".
