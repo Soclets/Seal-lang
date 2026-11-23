@@ -159,6 +159,7 @@ impl Translator<'_> {
 
     fn statement(&mut self, statement: &Statement) -> Translated<()> {
         match &statement.kind {
+            StatementKind::Inside { .. } => return not_shared("a change to a part of a part"),
             StatementKind::Make { variable, value } => {
                 let Some(made) = self.program.variable(*variable) else { return not_shared("a name that isn't there") };
                 let word = if made.mutable { "var" } else { "let" };
@@ -384,6 +385,8 @@ impl Translator<'_> {
                 return not_shared("reaching into a text");
             }
             ExpressionKind::Split { .. } => return not_shared("splitting a text"),
+            // Unio changes one step inside a name (Unio D80); Seal's D62 reaches further.
+            ExpressionKind::Inside { .. } => return not_shared("a change to a part of a part"),
             ExpressionKind::Item { receiver, index, zero_based } => {
                 format!(
                     "{}[{}: {}]",

@@ -11,8 +11,8 @@ use super::bytecode::{
     Layout, ProcedureEntry, Register,
 };
 use crate::check::tree::{
-    Block, Conversion, Expression, ExpressionKind, HandleFallback, Procedure, Program, Rounding, Statement,
-    StatementKind, VariableId, VariableKind,
+    Block, Conversion, Expression, ExpressionKind, HandleFallback, Inside, PathStep, Procedure, Program, Rounding,
+    Statement, StatementKind, VariableId, VariableKind,
 };
 use crate::check::types::{Type, TypeId};
 use crate::host::Value;
@@ -535,6 +535,58 @@ impl<'p> Compiler<'p> {
         }
     }
 
+    /// Takes the way into a part of a name, then runs `change` on the part (D62). What the change needs was worked
+    /// out under hidden names first, so nothing runs between reaching the part and changing it.
+    fn inside(&mut self, path: &Inside, change: impl FnOnce(&mut Self)) {
+        let place = self.place;
+        for (hidden, value) in &path.lets {
+            let register = self.held_value(value);
+            self.function.locations.insert(*hidden, Location::Register(register));
+        }
+        let places: Vec<Option<(Register, bool)>> = path
+            .steps
+            .iter()
+            .map(|step| match step {
+                PathStep::Item { index, zero_based } => Some((self.value(index), *zero_based)),
+                PathStep::Field(_) => None,
+            })
+            .collect();
+        let fields: Vec<Option<u16>> = path
+            .steps
+            .iter()
+            .zip(&path.types)
+            .map(|(step, &inside)| match step {
+                PathStep::Field(name) => Some(self.field_index(inside, name)),
+                PathStep::Item { .. } => None,
+            })
+            .collect();
+        let part = path.part;
+        self.change_in_place(path.root, |compiler, root| {
+            compiler.place = place;
+            compiler.emit(Instruction::Own { register: root });
+            let mut reached = root;
+            for (item, field) in places.iter().zip(&fields) {
+                let to = compiler.allocate();
+                match (item, field) {
+                    (Some((index, true)), _) => {
+                        compiler.emit(Instruction::OwnItemAtOffset { to, list: reached, index: *index });
+                    }
+                    (Some((index, false)), _) => {
+                        compiler.emit(Instruction::OwnItemAtPosition { to, list: reached, index: *index });
+                    }
+                    (None, Some(field)) => {
+                        compiler.emit(Instruction::OwnField { to, record: reached, field: *field });
+                    }
+                    (None, None) => compiler.internal("a step into a part that's neither a field nor a place"),
+                }
+                reached = to;
+            }
+            // The part is read where it sits: its holder is the value it's a part of.
+            compiler.function.locations.insert(part, Location::Register(reached));
+            change(compiler);
+        });
+    }
+
     /// How many registers a name's record is kept in, when it's kept that way: a `mut` record local to its
     /// procedure, whose fields are all plain numbers and `Bool`s.
     fn keeps_in_registers(&self, variable: VariableId) -> Option<u32> {
@@ -613,6 +665,8 @@ impl<'p> Compiler<'p> {
         let held_mark = self.function.held.len();
         let register_mark = self.function.next;
         match &statement.kind {
+            // trace: D62
+            StatementKind::Inside { path, change } => self.inside(path, |compiler| compiler.statement(change)),
             StatementKind::Make { variable, value } => {
                 let reference = self.is_reference(value.type_id);
                 if let Some(&parameter) = self.function.takeovers.get(variable) {
@@ -1332,6 +1386,13 @@ impl<'p> Compiler<'p> {
                     Instruction::GraphemeAtPosition { to, text, index }
                 });
                 true
+            }
+            // trace: D62
+            ExpressionKind::Inside { path, change } => {
+                self.inside(path, |compiler| {
+                    compiler.value_into(change, to);
+                });
+                false
             }
             // trace: D65
             ExpressionKind::Split { text, by, keep_empty } => {
@@ -2106,6 +2167,7 @@ fn lookups_and_other_uses(expression: &Expression, dict: VariableId, key: Variab
 fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
     let uses = |inner: &Expression| expression_uses(inner, variable);
     match &expression.kind {
+        ExpressionKind::Inside { path, change } => inside_uses(path, variable) || uses(change),
         ExpressionKind::Variable(read) => *read == variable,
         ExpressionKind::Error
         | ExpressionKind::Whole(_)
@@ -2147,10 +2209,23 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
     }
 }
 
+/// Whether a way into a part reads or changes a name (D62).
+fn inside_uses(path: &Inside, variable: VariableId) -> bool {
+    path.root == variable
+        || path.lets.iter().any(|(_, value)| expression_uses(value, variable))
+        || path.steps.iter().any(|step| match step {
+            PathStep::Item { index, .. } => expression_uses(index, variable),
+            PathStep::Field(_) => false,
+        })
+}
+
 /// Whether any statement of a block reads or changes a name.
 fn block_uses(block: &[Statement], variable: VariableId) -> bool {
     let uses = |expression: &Expression| expression_uses(expression, variable);
     block.iter().any(|statement| match &statement.kind {
+        StatementKind::Inside { path, change } => {
+            inside_uses(path, variable) || block_uses(std::slice::from_ref(&**change), variable)
+        }
         StatementKind::Make { value, .. } | StatementKind::Evaluate(value) | StatementKind::Instead(value) => {
             uses(value)
         }

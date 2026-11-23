@@ -158,6 +158,8 @@ fn bad_position(label: &str, index: i64, length: usize, pc: usize) -> Stopped {
     // trace: Unio D46, D75
     let range = match (label, length) {
         (_, 0) => "the list is empty".to_owned(),
+        ("pos", 1) => "the list has 1 item, at `pos:` 1".to_owned(),
+        (_, 1) => "the list has 1 item, at `offset:` 0".to_owned(),
         ("pos", _) => format!("the list has {length} items, at `pos:` 1 to {length}"),
         _ => format!("the list has {length} items, at `offset:` 0 to {}", length - 1),
     };
@@ -174,6 +176,8 @@ fn bad_text_position(label: &str, index: i64, length: usize, pc: usize) -> Stopp
     // trace: D66, Unio D46
     let range = match (label, length) {
         (_, 0) => "the text is empty".to_owned(),
+        ("pos", 1) => "the text has 1 character, at `pos:` 1".to_owned(),
+        (_, 1) => "the text has 1 character, at `offset:` 0".to_owned(),
         ("pos", _) => format!("the text has {length} characters, at `pos:` 1 to {length}"),
         _ => format!("the text has {length} characters, at `offset:` 0 to {}", length - 1),
     };
@@ -1203,6 +1207,59 @@ pub fn run(
                     heap.release(old, layouts);
                 }
                 count_work!();
+            }
+            // trace: D62. A way into a part of a name: each step is made singly held where it sits, top down.
+            Instruction::Own { register } => {
+                own!(register);
+                count_work!();
+            }
+            Instruction::OwnField { to, record, field } => {
+                let parent = get!(record);
+                let child = match heap.get(parent) {
+                    Ok(Object::Record { fields, .. }) => fields.get(usize::from(field)).copied(),
+                    Ok(_) => None,
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                let Some(child) = child else {
+                    return Err(broken("a field reached in something that has none", pc));
+                };
+                let own = if heap.has_one_holder(child) {
+                    child
+                } else {
+                    let own = heap_try!(heap.make_own(child, layouts));
+                    if let Ok(Object::Record { fields, .. }) = heap.get_mut(parent)
+                        && let Some(slot) = fields.get_mut(usize::from(field))
+                    {
+                        *slot = own;
+                    }
+                    own
+                };
+                count_work!();
+                set!(to, own);
+            }
+            Instruction::OwnItemAtPosition { to, list, index } | Instruction::OwnItemAtOffset { to, list, index } => {
+                let zero_based = matches!(instruction, Instruction::OwnItemAtOffset { .. });
+                let index = whole!(index);
+                let parent = get!(list);
+                let items = items!(parent);
+                let length = items.len();
+                let place = item_place(index, zero_based, length);
+                let Some((place, child)) = place.and_then(|place| items.get(place).map(|child| (place, *child))) else {
+                    return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+                };
+                let own = if heap.has_one_holder(child) {
+                    child
+                } else {
+                    let own = heap_try!(heap.make_own(child, layouts));
+                    if let Ok(Object::List { items, .. }) = heap.get_mut(parent)
+                        && let Some(slot) = items.get_mut(place)
+                    {
+                        *slot = own;
+                    }
+                    own
+                };
+                count_work!();
+                set!(to, own);
             }
             // trace: D65, D66
             Instruction::TextLength { to, from, unit } => {

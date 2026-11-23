@@ -727,6 +727,8 @@ impl Checker<'_> {
             ExpressionKind::DoorCall { door, .. } => {
                 self.doors.get(*door as usize).is_some_and(|door| !door.failures.is_empty())
             }
+            // A change to a part can fail as the change itself can (D62).
+            ExpressionKind::Inside { change, .. } => self.is_failable(change),
             ExpressionKind::Lookup { .. } | ExpressionKind::DictRemove { .. } => true,
             ExpressionKind::Convert { conversion, .. } => *conversion == super::tree::Conversion::TextToWhole,
             ExpressionKind::ListAdd { variable, .. } => {

@@ -699,12 +699,14 @@ impl Checker<'_> {
             return Self::error(place);
         }
         // `.add` and `.remove` change their value, so they're called on a `mut` name (Unio D77).
-        let syntax::ExpressionKind::Name(name) = &receiver.kind else {
-            self.not_designed(receiver.place, "changing a part of a part, more than one step inside a name,");
-            return Self::error(place);
+        // trace: D62. The name's own value changes, or a part of it reached through fields and places.
+        let (variable, changeable, mut way) = if let syntax::ExpressionKind::Name(name) = &receiver.kind {
+            let Some(variable) = self.lookup(name, receiver.place) else { return Self::error(place) };
+            (variable, self.check_changeable(variable, name, receiver.place), None)
+        } else {
+            let Some((way, _, changeable)) = self.way_in(receiver) else { return Self::error(place) };
+            (way.part, changeable, Some(way))
         };
-        let Some(variable) = self.lookup(name, receiver.place) else { return Self::error(place) };
-        let changeable = self.check_changeable(variable, name, receiver.place);
         let variable_type = self.program.types.resolve(self.variable_type(variable));
         let result = match (self.program.types.get(variable_type).clone(), method.text.as_str()) {
             (Type::List { item, .. }, "add") => {
@@ -793,6 +795,31 @@ impl Checker<'_> {
         if !changeable {
             return Self::error(place);
         }
-        Expression { kind: result, type_id: NOTHING, place }
+        let Some(mut way) = way.take() else { return Expression { kind: result, type_id: NOTHING, place } };
+        // What the change needs is worked out before the way in is taken.
+        let change = match result {
+            ExpressionKind::ListAdd { variable, value, position } => {
+                let position =
+                    position.map(|(index, zero_based)| (Box::new(self.hoist(*index, &mut way.lets)), zero_based));
+                ExpressionKind::ListAdd { variable, value: Box::new(self.hoist(*value, &mut way.lets)), position }
+            }
+            ExpressionKind::ListRemove { variable, position, zero_based } => ExpressionKind::ListRemove {
+                variable,
+                position: Box::new(self.hoist(*position, &mut way.lets)),
+                zero_based,
+            },
+            ExpressionKind::DictRemove { variable, key } => {
+                ExpressionKind::DictRemove { variable, key: Box::new(self.hoist(*key, &mut way.lets)) }
+            }
+            other => other,
+        };
+        Expression {
+            kind: ExpressionKind::Inside {
+                path: Box::new(way),
+                change: Box::new(Expression { kind: change, type_id: NOTHING, place }),
+            },
+            type_id: NOTHING,
+            place,
+        }
     }
 }

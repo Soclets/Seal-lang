@@ -61,6 +61,12 @@ pub enum Kind {
     Maybe,
     /// The script's record of plain numbers, `Spot`.
     Spot,
+    /// The script's record of lists and a dictionary, `Pack`: parts to change parts of (D62).
+    Pack,
+    /// `List<List<Whole>>`.
+    Grid,
+    /// `List<Pack>`.
+    Packs,
 }
 
 impl Kind {
@@ -77,6 +83,9 @@ impl Kind {
             Kind::Event => "Event",
             Kind::Maybe => "Maybe<Whole>",
             Kind::Spot => "Spot",
+            Kind::Pack => "Pack",
+            Kind::Grid => "List<List<Whole>>",
+            Kind::Packs => "List<Pack>",
         }
     }
 }
@@ -191,6 +200,9 @@ impl Generator {
                 Kind::Maybe,
                 Kind::Spot,
                 Kind::Spot,
+                Kind::Pack,
+                Kind::Grid,
+                Kind::Packs,
             ]
         } else {
             vec![Kind::Whole, Kind::Whole, Kind::Bool, Kind::Text]
@@ -338,6 +350,18 @@ impl Generator {
                         }
                         None => self.whole_literal(),
                     },
+                    9 if self.seal() && self.random.chance(1, 3) => {
+                        // A part of a part, read (D62).
+                        if let Some(grid) = self.read_name(Kind::Grid) {
+                            format!("{grid}[pos: 1].len")
+                        } else if let Some(pack) = self.read_name(Kind::Pack) {
+                            format!("{pack}.items.len")
+                        } else if let Some(packs) = self.read_name(Kind::Packs) {
+                            format!("{packs}.len")
+                        } else {
+                            self.whole_literal()
+                        }
+                    }
                     9 if self.seal() => match self.read_name(Kind::Maybe) {
                         Some(maybe) => format!("({maybe} ?? {})", self.whole_literal()),
                         None => match self.read_name(Kind::Spot) {
@@ -488,6 +512,20 @@ impl Generator {
                     self.value(Kind::Text, 0)
                 ),
             },
+            Kind::Pack => {
+                format!(
+                    "Pack[items: {}, tags: {}, stock: {}]",
+                    self.value(Kind::WholeList, 1),
+                    self.value(Kind::TextList, 1),
+                    self.value(Kind::Dict, 1)
+                )
+            }
+            Kind::Grid | Kind::Packs => {
+                let inner = if kind == Kind::Grid { Kind::WholeList } else { Kind::Pack };
+                let count = self.random.below(3) + 1;
+                let items: Vec<String> = (0..count).map(|_| self.value(inner, 1)).collect();
+                format!("[{}]", items.join(", "))
+            }
             Kind::Spot => {
                 format!(
                     "Spot[x: {}, y: {}]",
@@ -595,11 +633,60 @@ impl Generator {
                 format!("show_msg(\"{name}: \" & {name})")
             }
             Kind::Whole | Kind::Bool | Kind::Text | Kind::Float => format!("show_msg(fmt(\"{name}: {{{name}}}\"))"),
-            Kind::WholeList | Kind::TextList | Kind::Dict => format!("show_msg(fmt(\"{name} has {{{name}.len}}\"))"),
+            Kind::WholeList | Kind::TextList | Kind::Dict | Kind::Grid | Kind::Packs => {
+                format!("show_msg(fmt(\"{name} has {{{name}.len}}\"))")
+            }
+            Kind::Pack => {
+                format!("show_msg(fmt(\"{name}: {{{name}.items.len}} {{{name}.tags.len}} {{{name}.stock.len}}\"))")
+            }
             Kind::Record => format!("show_msg(fmt(\"{name}: {{{name}.name}} {{{name}.hp}}\"))"),
             Kind::Spot => format!("show_msg(fmt(\"{name}: {{{name}.x}} {{{name}.y}}\"))"),
             Kind::Event | Kind::Maybe => String::new(),
         }
+    }
+
+    /// A change that reaches through fields and places of a `mut` name, or a method at the end of such a way (D62).
+    fn nested_change(&mut self) {
+        let place = |generator: &mut Generator| {
+            if generator.random.chance(1, 2) {
+                format!("pos: {}", generator.random.below(3) + 1)
+            } else {
+                format!("offset: {}", generator.random.below(3))
+            }
+        };
+        let pack = self.changeable_name(Kind::Pack);
+        let grid = self.changeable_name(Kind::Grid);
+        let packs = self.changeable_name(Kind::Packs);
+        // The way to a pack: a name that's one, or an item of a list of them.
+        let pack_way = match (pack, packs) {
+            (Some(pack), Some(packs)) if self.random.chance(1, 2) => {
+                let _ = pack;
+                Some(format!("{packs}[{}]", place(self)))
+            }
+            (Some(pack), _) => Some(pack),
+            (None, Some(packs)) => Some(format!("{packs}[{}]", place(self))),
+            (None, None) => None,
+        };
+        let line = match (pack_way, grid) {
+            (Some(way), grid) if grid.is_none() || self.random.chance(2, 3) => match self.random.below(8) {
+                0 => format!("{way}.items.add({})", self.value(Kind::Whole, 1)),
+                1 => format!("{way}.items[{}] = {}", place(self), self.value(Kind::Whole, 1)),
+                2 => format!("{way}.items.remove({})", place(self)),
+                3 => format!("{way}.tags.add({})", self.value(Kind::Text, 1)),
+                4 => format!("{way}.tags[{}] = {}", place(self), self.value(Kind::Text, 1)),
+                5 => format!("{way}.stock[key: {}] = {}", self.value(Kind::Text, 0), self.value(Kind::Whole, 1)),
+                6 => format!("{way}.stock.remove(key: {}) ?? ignore", self.value(Kind::Text, 0)),
+                _ => format!("{way}.items.add({}, {})", self.value(Kind::Whole, 1), place(self)),
+            },
+            (_, Some(grid)) => match self.random.below(4) {
+                0 => format!("{grid}[{}].add({})", place(self), self.value(Kind::Whole, 1)),
+                1 => format!("{grid}[{}][{}] = {}", place(self), place(self), self.value(Kind::Whole, 1)),
+                2 => format!("{grid}[{}].remove({})", place(self), place(self)),
+                _ => format!("{grid}[{}] = {}", place(self), self.value(Kind::WholeList, 1)),
+            },
+            _ => return,
+        };
+        self.line(&line);
     }
 
     /// Ends a block: every name it made and never read is shown, so that none is refused as unused (D2).
@@ -844,6 +931,8 @@ impl Generator {
                     self.freeze(&dict, false);
                 }
             }
+            // A change to a part of a part, through fields and places (D62).
+            17 if self.seal() && self.random.chance(1, 2) => self.nested_change(),
             17 if self.seal() => {
                 if let Some(record) = self.changeable_name(Kind::Record) {
                     let value = self.value(Kind::Whole, 1);
@@ -1082,7 +1171,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
         }
         for _ in 0..self.random.below(4) {
             self.budget = 12;

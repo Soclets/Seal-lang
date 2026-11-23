@@ -4,8 +4,8 @@
 use std::collections::{BTreeSet, HashMap};
 
 use super::tree::{
-    Block, Conversion, Expression, ExpressionKind, FailureId, HandleFallback, ProcedureId, Program, Statement,
-    StatementKind, VariableId,
+    Conversion, Expression, ExpressionKind, FailureId, HandleFallback, Inside, PathStep, ProcedureId, Program,
+    Statement, StatementKind, VariableId,
 };
 use super::types::{BOOL, ERROR, FLOAT, TEXT, Type, TypeId, WHOLE};
 use super::{Checker, Pending, Requirement};
@@ -19,10 +19,26 @@ trait Visitor {
     fn expression(&mut self, _expression: &Expression, _handled: bool) {}
 }
 
-fn walk_block(block: &Block, visitor: &mut dyn Visitor) {
+/// Looks at what a way into a part works out: its hidden names' values and its steps' places (D62).
+fn walk_inside(path: &Inside, visitor: &mut dyn Visitor) {
+    for (_, value) in &path.lets {
+        walk_expression(value, false, visitor);
+    }
+    for step in &path.steps {
+        if let PathStep::Item { index, .. } = step {
+            walk_expression(index, false, visitor);
+        }
+    }
+}
+
+fn walk_block(block: &[Statement], visitor: &mut dyn Visitor) {
     for statement in block {
         visitor.statement(statement);
         match &statement.kind {
+            StatementKind::Inside { path, change } => {
+                walk_inside(path, visitor);
+                walk_block(std::slice::from_ref(&**change), visitor);
+            }
             StatementKind::Make { value, .. }
             | StatementKind::Set { value, .. }
             | StatementKind::SetField { value, .. }
@@ -125,6 +141,8 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
                 plain(position);
             }
         }
+        // The change itself was looked at with its way in: everything it needs is among the way's hidden names.
+        ExpressionKind::Inside { path, .. } => walk_inside(path, visitor),
         ExpressionKind::Try(inner) => walk_expression(inner, true, visitor),
         ExpressionKind::Handle { call, fallback } => {
             walk_expression(call, true, visitor);
@@ -157,6 +175,8 @@ impl Facts<'_> {
     fn failures_of(&self, expression: &Expression) -> Vec<FailureId> {
         let named = |name: &str| self.known_failure(name).into_iter().collect::<Vec<_>>();
         match &expression.kind {
+            // A change to a part fails as the change itself does (D62).
+            ExpressionKind::Inside { change, .. } => self.failures_of(change),
             ExpressionKind::Call { procedure, .. } => {
                 self.program.procedure(*procedure).map(|procedure| procedure.failures.clone()).unwrap_or_default()
             }
@@ -305,10 +325,17 @@ impl Visitor for WriteCollector {
         {
             self.writes.insert(*variable);
         }
+        // A change to a part of a name changes the name (D62).
+        if let StatementKind::Inside { path, .. } = &statement.kind {
+            self.writes.insert(path.root);
+        }
     }
 
     fn expression(&mut self, expression: &Expression, _handled: bool) {
         match &expression.kind {
+            ExpressionKind::Inside { path, .. } => {
+                self.writes.insert(path.root);
+            }
             ExpressionKind::ListAdd { variable, .. }
             | ExpressionKind::ListRemove { variable, .. }
             | ExpressionKind::DictRemove { variable, .. } => {

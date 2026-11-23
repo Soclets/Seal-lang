@@ -13,8 +13,8 @@ use crate::message::{Message, MessageKind, Place};
 use crate::signature::{DoorSignature, HostType};
 use crate::syntax::tree as syntax;
 use tree::{
-    Block, Expression, ExpressionKind, FailureId, MatchArm, Procedure, ProcedureId, Program, Statement, StatementKind,
-    Variable, VariableId, VariableKind,
+    Block, Expression, ExpressionKind, FailureId, Inside, MatchArm, PathStep, Procedure, ProcedureId, Program,
+    Statement, StatementKind, Variable, VariableId, VariableKind,
 };
 use types::{BOOL, CaseType, ERROR, FLOAT, NOTHING, OneOfType, RecordType, TEXT, Type, TypeId, WHOLE};
 
@@ -1091,6 +1091,7 @@ impl<'a> Checker<'a> {
                         Self::without_handling(&checked).kind,
                         // A call that was refused has had its message already.
                         ExpressionKind::Error
+                            | ExpressionKind::Inside { .. }
                             | ExpressionKind::Call { .. }
                             | ExpressionKind::DoorCall { .. }
                             | ExpressionKind::ListAdd { .. }
@@ -1393,15 +1394,18 @@ impl<'a> Checker<'a> {
             syntax::ExpressionKind::Bracketed { receiver, entries } => (receiver, Step::Reach(entries)),
             _ => return None,
         };
-        let syntax::ExpressionKind::Name(name) = &receiver.kind else {
-            self.not_designed(target.place, "changing a part of a part, more than one step inside a name,");
-            return None;
+        // trace: D62. The change is made to a name's own value, or to a part of it reached through fields and places.
+        let (variable, described, changeable, way) = if let syntax::ExpressionKind::Name(name) = &receiver.kind {
+            let Some(variable) = self.lookup(name, receiver.place) else {
+                self.refuse(receiver.place, format!("there's no name `{name}` here"));
+                return None;
+            };
+            (variable, format!("`{name}`"), self.check_changeable(variable, name, receiver.place), None)
+        } else {
+            let (way, described, changeable) = self.way_in(receiver)?;
+            (way.part, described, changeable, Some(way))
         };
-        let Some(variable) = self.lookup(name, receiver.place) else {
-            self.refuse(receiver.place, format!("there's no name `{name}` here"));
-            return None;
-        };
-        let changeable = self.check_changeable(variable, name, receiver.place);
+        let name = described.as_str();
         let variable_type = self.program.types.resolve(self.variable_type(variable));
         let kind = self.program.types.get(variable_type).clone();
         let statement = match step {
@@ -1409,7 +1413,7 @@ impl<'a> Checker<'a> {
                 let Type::Record(record) = kind else {
                     if !matches!(kind, Type::Error) {
                         let found = self.describe(variable_type);
-                        self.refuse(field.place, format!("`{name}` is {found}, which has no fields to change"));
+                        self.refuse(field.place, format!("{name} is {found}, which has no fields to change"));
                     }
                     return None;
                 };
@@ -1473,13 +1477,190 @@ impl<'a> Checker<'a> {
                     }
                     _ => {
                         let found = self.describe(variable_type);
-                        self.refuse(target.place, format!("`{name}` is {found}, which has no items to change"));
+                        self.refuse(target.place, format!("{name} is {found}, which has no items to change"));
                         return None;
                     }
                 }
             }
         };
-        changeable.then_some(statement)
+        if !changeable {
+            return None;
+        }
+        let Some(way) = way else { return Some(statement) };
+        Some(self.change_inside(way, statement, target.place))
+    }
+
+    /// Wraps a change in the way to the part it's made in, with what it needs worked out before the way in is
+    /// taken (D62).
+    fn change_inside(&mut self, mut way: Inside, statement: StatementKind, place: Place) -> StatementKind {
+        let change = match statement {
+            StatementKind::SetField { variable, field, value } => {
+                StatementKind::SetField { variable, field, value: self.hoist(value, &mut way.lets) }
+            }
+            StatementKind::SetItem { variable, index, zero_based, value } => {
+                let index = self.hoist(index, &mut way.lets);
+                StatementKind::SetItem { variable, index, zero_based, value: self.hoist(value, &mut way.lets) }
+            }
+            StatementKind::SetKey { variable, key, value } => {
+                let key = self.hoist(key, &mut way.lets);
+                StatementKind::SetKey { variable, key, value: self.hoist(value, &mut way.lets) }
+            }
+            other => other,
+        };
+        StatementKind::Inside { path: way, change: Box::new(Statement { kind: change, place }) }
+    }
+
+    /// A hidden name, for a value worked out ahead of a change or for the part being changed (D62).
+    fn hidden(&mut self, type_id: TypeId, place: Place, mutable: bool) -> VariableId {
+        self.new_variable(Variable {
+            name: String::new(),
+            type_id,
+            kind: VariableKind::Named,
+            mutable,
+            marked_unused: false,
+            read: true,
+            top_level: false,
+            captured: false,
+            made_at: 0,
+            place,
+        })
+    }
+
+    /// Puts a value under a hidden name, to be worked out ahead of a change to a part (D62). A plain value or a
+    /// name stays as it is: reading it runs nothing.
+    pub(super) fn hoist(&mut self, value: Expression, lets: &mut Vec<(VariableId, Expression)>) -> Expression {
+        if matches!(
+            value.kind,
+            ExpressionKind::Error
+                | ExpressionKind::Whole(_)
+                | ExpressionKind::Float(_)
+                | ExpressionKind::Bool(_)
+                | ExpressionKind::Text(_)
+                | ExpressionKind::Variable(_)
+        ) {
+            return value;
+        }
+        let (type_id, place) = (value.type_id, value.place);
+        let hidden = self.hidden(type_id, place, false);
+        lets.push((hidden, value));
+        Expression { kind: ExpressionKind::Variable(hidden), type_id, place }
+    }
+
+    /// The name a change starts from and the steps written after it, outermost first (D62).
+    fn written_way<'w>(&mut self, receiver: &'w syntax::Expression) -> Option<WrittenWay<'w>> {
+        let mut written = Vec::new();
+        let mut current = receiver;
+        loop {
+            match &current.kind {
+                syntax::ExpressionKind::Name(name) => {
+                    written.reverse();
+                    return Some((name, current.place, written));
+                }
+                syntax::ExpressionKind::Member { receiver, name } => {
+                    written.push((Step::Field(name), current.place));
+                    current = receiver;
+                }
+                syntax::ExpressionKind::Bracketed { receiver, entries } => {
+                    written.push((Step::Reach(entries), current.place));
+                    current = receiver;
+                }
+                _ => {
+                    self.refuse_why(
+                        current.place,
+                        "a change reaches into a `mut` name, and this isn't a name",
+                        "a change is a name changing its own value.",
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+
+    /// The way from a `mut` name to a part of it, through fields and places (D62): the way, how to speak of the
+    /// part in a message, and whether the name can change here.
+    pub(super) fn way_in(&mut self, receiver: &syntax::Expression) -> Option<(Inside, String, bool)> {
+        let (name, name_place, written) = self.written_way(receiver)?;
+        let Some(root) = self.lookup(name, name_place) else {
+            self.refuse(name_place, format!("there's no name `{name}` here"));
+            return None;
+        };
+        let changeable = self.check_changeable(root, name, name_place);
+        let mut way = Inside { lets: Vec::new(), root, steps: Vec::new(), types: Vec::new(), part: root };
+        let mut reached = self.program.types.resolve(self.variable_type(root));
+        for (step, place) in written {
+            let kind = self.program.types.get(reached).clone();
+            let found = self.describe(reached);
+            way.types.push(reached);
+            match step {
+                Step::Field(field) => {
+                    let Type::Record(record) = kind else {
+                        if !matches!(kind, Type::Error) {
+                            self.refuse(field.place, format!("this is {found}, which has no fields"));
+                        }
+                        return None;
+                    };
+                    let field_type = self
+                        .program
+                        .types
+                        .records
+                        .get(record as usize)
+                        .and_then(|record| record.fields.iter().find(|(known, _)| *known == field.text))
+                        .map(|(_, field_type)| *field_type);
+                    let Some(field_type) = field_type else {
+                        self.refuse(field.place, format!("{found} has no field `{}`", field.text));
+                        return None;
+                    };
+                    way.steps.push(PathStep::Field(field.text.clone()));
+                    reached = self.program.types.resolve(field_type);
+                }
+                Step::Reach(entries) => {
+                    let [entry] = entries else {
+                        self.refuse(place, "an item is reached with one of `pos:`, `offset:` or `key:`");
+                        return None;
+                    };
+                    let label = entry.label.as_ref().map(|label| label.text.as_str());
+                    match (kind, label) {
+                        (Type::List { item, .. } | Type::Array { item, .. }, Some(label @ ("pos" | "offset"))) => {
+                            let index = self.expression(&entry.value, Some(WHOLE));
+                            self.expect(&index, WHOLE, &format!("`{label}:`"));
+                            let index = self.hoist(index, &mut way.lets);
+                            way.steps.push(PathStep::Item { index, zero_based: label == "offset" });
+                            reached = self.program.types.resolve(item);
+                        }
+                        (Type::Dict { .. }, _) => {
+                            self.not_designed(
+                                place,
+                                "a `Dict`'s key partway along a change, with more steps after it,",
+                            );
+                            return None;
+                        }
+                        (Type::Error, _) => return None,
+                        (Type::List { .. } | Type::Array { .. }, _) => {
+                            // trace: Unio D75
+                            self.refuse_why(
+                                place,
+                                "a list's item is reached with `pos:` or `offset:`",
+                                "`pos:` counts from 1 and `offset:` from 0, so a bare number is never guessed at.",
+                            );
+                            return None;
+                        }
+                        (Type::Variable(_), _) => {
+                            self.not_built(
+                                place,
+                                "working out a type from a later line (D5), which this change needs, isn't",
+                            );
+                            return None;
+                        }
+                        _ => {
+                            self.refuse(place, format!("this is {found}, which has no items"));
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+        way.part = self.hidden(reached, receiver.place, true);
+        Some((way, format!("this part of `{name}`"), changeable))
     }
 
     /// trace: D6, Unio D57
@@ -1874,6 +2055,9 @@ impl<'a> Checker<'a> {
             })
     }
 }
+
+/// The name a change starts from, where it's written, and the steps after it with their places (D62).
+type WrittenWay<'a> = (&'a String, Place, Vec<(Step<'a>, Place)>);
 
 enum Step<'a> {
     Field(&'a syntax::Word),

@@ -124,8 +124,35 @@ pub struct MatchArm {
     pub body: Block,
 }
 
+/// One step from a value to a part of it (D62).
+#[derive(Clone, Debug)]
+pub enum PathStep {
+    Field(String),
+    Item { index: Expression, zero_based: bool },
+}
+
+/// The way from a `mut` name to the part of it a change is made in, as `bodies[pos: 1]` in
+/// `bodies[pos: 1].vx = 2.0` (D62).
+#[derive(Clone, Debug)]
+pub struct Inside {
+    /// What the change needs worked out, each under a hidden name, before the way in is taken: nothing else may
+    /// run between reaching the part and changing it.
+    pub lets: Vec<(VariableId, Expression)>,
+    pub root: VariableId,
+    pub steps: Vec<PathStep>,
+    /// The type each step goes into, in order.
+    pub types: Vec<TypeId>,
+    /// The hidden name the part goes by while it's changed.
+    pub part: VariableId,
+}
+
 #[derive(Clone, Debug)]
 pub enum StatementKind {
+    /// A change to a part of a part of a `mut` name: `change` is made to `path.part` (D62).
+    Inside {
+        path: Inside,
+        change: Box<Statement>,
+    },
     /// Makes a new name (D2).
     Make {
         variable: VariableId,
@@ -257,6 +284,11 @@ pub enum ExpressionKind {
     Has {
         dict: Box<Expression>,
         key: Box<Expression>,
+    },
+    /// `.add` or `.remove` on a part of a part of a `mut` name: `change` is made to `path.part` (D62).
+    Inside {
+        path: Box<Inside>,
+        change: Box<Expression>,
     },
     /// `text.split(by: t)`, and `text.split.no_empty(by: t)`, which drops the empty pieces (D65).
     Split {

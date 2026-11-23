@@ -214,6 +214,29 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// Makes the value in a register singly held, copying it first when it's shared, so that a part of it can be
+    /// changed in place (D15, D62).
+    Own {
+        register: Register,
+    },
+    /// Reaches a record's field to change it: the field's value is made singly held where it sits in the record,
+    /// which is singly held itself, and `to` gets it with no count taken (D62).
+    OwnField {
+        to: Register,
+        record: Register,
+        field: u16,
+    },
+    /// The same for a list's item at a place, checked like any place (D62).
+    OwnItemAtPosition {
+        to: Register,
+        list: Register,
+        index: Register,
+    },
+    OwnItemAtOffset {
+        to: Register,
+        list: Register,
+        index: Register,
+    },
     /// A text's length: `unit` 0 counts graphemes, 1 Unicode code points, 2 UTF-8 bytes (D65, D66).
     TextLength {
         to: Register,
