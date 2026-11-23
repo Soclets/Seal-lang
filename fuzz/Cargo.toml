@@ -1,0 +1,13 @@
+[package]
+name = "seal-fuzzer"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+seal = { path = "../crates/seal" }
+seal-to-unio = { path = "../crates/seal-to-unio" }

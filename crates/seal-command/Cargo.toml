@@ -1,0 +1,16 @@
+[package]
+name = "seal-command"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+seal = { path = "../seal" }
+
+[[bin]]
+name = "seal"
+path = "src/main.rs"

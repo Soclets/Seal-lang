@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/seal",
+    "crates/seal-derive",
+    "crates/seal-command",
+    "crates/seal-language-server",
+    "crates/seal-to-unio",
+    "crates/seal-check-all",
+    "fuzz",
+    "bench",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+rust-version = "1.96"
+publish = false
+
+# IMPLEMENTATION.md, Building rule 3: the same lints in every package, and the one command turns warnings into errors.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+pedantic = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Unwinding stays on so the library can catch a bug of its own and hand the host an error (Building rule 3).
+panic = "unwind"
