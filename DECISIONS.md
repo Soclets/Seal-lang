@@ -406,3 +406,29 @@ Luau and Wasmtime, a sandbox for WebAssembly, do the same.
 
 **Tankun's words.** Asked "Should the host set a step budget and a memory cap for each script, with a script that
 passes either stopped and the host told, never crashed?", the owner chose: "yea".
+
+## D15. Unio's memory model: every variable owns its value, with no garbage collector
+
+2026-11-23.
+
+**Chosen.** Seal takes Unio's memory model (Unio D130):
+- **Every variable owns its own value.** After `b = a`, changing `b` never touches `a`, lists included.
+- **No reference can be kept,** so nothing dangles, nothing leaks, and no cycles can form.
+- **No garbage collector.** The interpreter counts the holders of each big value, copies one only when it's written
+  while shared (copy-on-write), and frees it the moment its last holder ends, so there are no pauses mid-frame.
+- **Values cross the doors as copies,** so neither the host nor the script can change the other's value behind its
+  back.
+- **Things shared with the host, such as a game's enemies, are held by ID,** and changed through the host's doors, as
+  in `damage(enemy_id, 10)`, keeping the host in charge of its own objects.
+
+**Weighed.**
+- A garbage collector, as Lua and JavaScript have. Pauses a host can't time, and needed only because references can
+  form cycles.
+- Shared references between script and host. A script could change a host's object behind its back, or keep it alive
+  after the host ended it.
+
+**Why this won.** It's the model Unio chose for its simplicity and safety, and it suits a sandbox even better: with no
+cycles, counting holders is all an interpreter needs, and copies at the doors keep the seal tight.
+
+**Tankun's words.** Asked "Should Seal use Unio's memory model, with every variable owning its value, no kept
+references, no garbage collector, and values crossing the doors as copies?", the owner chose: "yea".
