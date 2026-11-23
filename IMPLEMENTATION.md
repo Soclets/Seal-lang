@@ -112,9 +112,10 @@ From Unio's rules:
 
 ## Prompting
 
-From Unio's rules. Before prompting a subagent or a new session, a session downloads the current prompting guide for
-that AI as Markdown and reads the file itself, in full, and again after every compaction; never through a fetch tool's
-summary. Delete the downloaded guide once you've read it. Prompts for other sessions are written in `design/` as one
+From Unio's rules. Before prompting a subagent or a new session, a session downloads, as Markdown, the current prompting
+guide for that model, and any other guide it points to for what it doesn't cover itself, whether it says "read" or
+"see"; if the model has no guide of its own, the general prompting best practices. It reads each file itself, in full,
+and again after every compaction; never through a fetch tool's summary (owner, 2026-11-23). Delete the downloaded guide once you've read it. Prompts for other sessions are written in `design/` as one
 copiable block, checked against the guide before they're handed over, including how a long-running session keeps going
 and when it stops. A prompt that's already been pasted is never the fix: changes go to that session as a message. A
 subagent's prompt includes this file's rules, since the hook doesn't reach a subagent.
