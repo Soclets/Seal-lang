@@ -511,3 +511,31 @@ spare Seal's VM the type checks a dynamic VM makes on every operation.
 **Tankun's words.** "yea, but how do you check? The optimized way or the other way?" (quoted in D17), "What does Luau
 do?", "What the fuck did I just hear", "Would our static help with speed?", then, asked "Should Seal check floats after
 every operation, so every failed check names its exact line?", the owner chose: "yea".
+
+## D19. Seal compares what it shares with Unio against Ralph, as a black box
+
+2026-11-23.
+
+**Chosen.**
+- **What Seal shares with Unio is checked against Ralph,** Unio's proven oracle: values, `Whole` and `Float` maths,
+  overflow, float printing and rounding, comparisons and lists (D15, D16).
+- **A small translator turns a Seal script into the same Unio program,** adding `$`, `let` or `var`, `;` and `:`, and
+  wrapping it in `proc.main`, with a test host whose doors `show_msg` and `ask` become Unio's built-ins.
+- **The fuzzer feeds both:** random scripts using the shared parts run on Seal's VM and, translated, on Ralph. A
+  difference is a bug in one of them, and the decisions say which.
+- **Unio's tests of shared meaning get Seal versions,** with the same expected output.
+- **Ralph stays a black box:** Seal's building session runs Ralph's program but never reads `oracle/` in Unio's
+  repository, so their bugs can't agree (as Unio's Building rule 12).
+
+What's Seal's alone, such as type inference, doors and limits, is covered by Seal's own tests and the fuzzer.
+
+**Weighed.**
+- Seal tested on its own. Its interpreter has no proofs, and the shared meaning, above all float printing, is where
+  subtle bugs hide.
+- Reusing Ralph's code in Seal. OCaml inside a Rust sandbox, and a copied bug would agree with itself.
+
+**Why this won.** It lends Seal some of Ralph's proven certainty for the price of a translator, the same idea as
+Csmith, which found hundreds of bugs in GCC and LLVM by comparing compilers.
+
+**Tankun's words.** "Should Seal compare behaviour with Ralph?", then, asked "Should Seal compare its shared behaviour
+with Ralph's, as a black box, through a translator and the fuzzer?", the owner chose: "yea".
