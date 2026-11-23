@@ -308,8 +308,42 @@ Bash. Tankun's sketch used it.
 **Why this won.** It keeps Seal's design about the language itself, as Luau's is apart from Roblox's functions, and the
 seal is exactly the set of doors each host chose to open.
 
-How `.fmt` works, since in Unio it narrows the built-in `show_msg`, isn't decided yet.
+How `.fmt` works, since in Unio it narrows the built-in `show_msg`, isn't decided yet. (Decided by D12: `fmt("…")`.)
 
 **Tankun's words.** "Actually, we don't define host things. They make their own", then, asked "Should Seal's built-ins
 be only what touches nothing outside the script, with every door, randomness included, made and named by the host, and
 none defined by Seal?", the owner chose: "yea".
+
+## D12. `fmt("…")` is a built-in that fills in braces and gives a `Text`
+
+2026-11-23.
+
+**Chosen.** `fmt("…")` fills in the names in its braces and gives back a `Text`, usable anywhere a `Text` is, with any
+host's door:
+
+```
+mut msg = fmt("Hello, {player}")
+show_msg(fmt("Correct! You got it in {tries} tries"))
+show_msg("{tries}")                    // plain text, shown as written
+```
+
+- **Braces hold only names,** never a calculation or a call, and a name that doesn't exist is refused when the script
+  loads (Unio D29).
+- **Text is plain unless it goes through `fmt`.**
+- **It's a built-in under D11,** since it touches nothing outside the script, so no host has to do anything for it.
+
+**Weighed.**
+- Unio's `.fmt` narrowing on `show_msg` (Unio D29). In Seal `show_msg` is the host's door, which Seal can't add to.
+- `.fmt` as Seal's narrowing on any procedure whose first value is text, as the design claude proposed. It works, but
+  bolts a Seal word onto every host's doors.
+- Every text filling in its braces, as Swift, Kotlin and Ruby do, which the design claude proposed first. A literal
+  `{` would always need `\{`, and text would stop being plain by default.
+- Cyborg's `@fmt`, which gives a "format value" that becomes text where it's used, because Cyborg makes every memory
+  allocation visible. Seal doesn't, so `fmt` gives a plain `Text`.
+
+**Why this won.** One built-in makes text with values in it, anywhere, for every host alike. Tankun proposed it, after
+Cyborg's.
+
+**Tankun's words.** "Hm... If Seal itself can make narrowings, the host should be able", Tankun's message proposing
+`fmt` like Cyborg's (has code), then, asked "Should Seal fill text with a built-in `fmt("…")` that gives a `Text`,
+with braces holding only names, checked at load time?", the owner chose: "yea".
