@@ -974,7 +974,7 @@ and `.len`, with keys of `Whole`, `Text` or `Bool` only?", the owner chose: "yea
 
 **Chosen.**
 - **One construct declares a type whose value is exactly one of several cases,** listed one per line and closed with
-  `end` (D20). Its keyword isn't decided yet; `enum` stands in for it below.
+  `end` (D20). Its keyword isn't decided yet; `enum` stands in for it below. (Decided by D36: `one_of`.)
 - **A case may carry values,** named in `[ ]`, as `hurt[amount: Whole]`, built as a record is (D27). A case with none
   is a plain option.
 - **A case is written as a narrowing of its type:** `Event.hurt[amount: 5]`, "a hurt kind of Event", and `State.idle`
@@ -1007,3 +1007,30 @@ built as records are, and a typo in a case is caught at load time.
 narrowings?", "What does Enumeration mean in maths", "Does Seal have `match`?", then, asked "Should Seal have one
 construct for options, plain ones and ones carrying values in `[ ]`, with its cases as narrowings, as Cyborg's tagged
 union does?", the owner chose: "yea".
+
+## D36. Options are declared with `one_of`
+
+2026-11-23.
+
+**Chosen.** D35's construct is declared with `one_of`: "an Event is one of these".
+
+```
+one_of Event
+    idle
+    hurt[amount: Whole]
+    healed[amount: Whole, by: Text]
+end
+```
+
+**Weighed.**
+- `enum`, short for enumeration, as C, Rust, Swift and Roblox's `Enum` have it. In maths, an enumeration counts a set
+  out member by member, which is exact for plain options but not for cases carrying values, such as
+  `Event.hurt[amount: 5]`, which can't be counted out. Rust and Swift stretched the word.
+- `union.tagged`, as Cyborg has it (Cyborg D33). Precise, but jargon twice over for Seal.
+- `choice`. Plain, but no more accurate than `one_of`, and it says less.
+
+**Why this won.** It's exact for the whole construct, plain and in the style of `at_least`, and Protocol Buffers'
+`oneof` means the same thing. The cost is one new word for scripters who know `Enum`.
+
+**Tankun's words.** "`one_of`?" (quoted in D35), then, asked "Should the keyword be `one_of`?", the owner chose:
+"yea".
