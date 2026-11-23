@@ -695,3 +695,31 @@ language server recognise Seal files by it.
 was already `guessing_game.seal`.
 
 **Tankun's words.** Asked "Should Seal scripts use the `.seal` extension?", the owner chose: "yea".
+
+## D26. Every message goes to the host as Unio-style text and as its separate parts
+
+2026-11-23.
+
+**Chosen.** A message, from a script refused at load time or stopped while running, goes to the host two ways:
+- **as ready-made text,** in Unio's layout (Unio D54), which a host can show as it is;
+- **as its parts:** its kind (`refused` or `check failed`), file, line, column, and its `what`, `when`, `fix` and
+  `why`, so a host can show them its own way, such as underlining the word in its editor.
+
+The wording follows Unio's rules: plain sentences, no error codes, no "did you mean" guesses (Unio D54).
+
+```
+refused: goblin.seal:4:5, line 4 column 5
+ 4 |     tires = tries + 1
+   |     ^^^^^
+ what:    `tires` is never used
+```
+
+**Weighed.**
+- Text only, as Unio prints it. A host showing messages in its own editor would have to take the text apart again.
+- Parts only. Every host would have to lay messages out itself, and they'd differ.
+
+**Why this won.** A Seal message's reader is the host, which may print it, log it or show it in an editor; both forms
+cost little and suit each.
+
+**Tankun's words.** Asked "Should Seal give every message to the host both as Unio-style text and as its separate
+parts?", the owner chose: "yea".
