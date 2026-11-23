@@ -38,6 +38,17 @@ struct Opener {
     indentation: u32,
 }
 
+/// A line indented by anything but 4 spaces a level is refused, with the line indented right as the fix (D63, Unio
+/// D10).
+fn wrong_indentation(line: &Line, wanted: u32) -> Message {
+    Message::refused(
+        Place::new(line.place.line, 1, line.indentation.max(1)),
+        format!("this line is indented {} spaces, where its block's body is indented {wanted}", line.indentation),
+    )
+    .with_indentation_fix(wanted)
+    .with_why("one level of indentation is 4 spaces.")
+}
+
 /// Reads a script's text into its syntax tree.
 ///
 /// # Errors
@@ -243,10 +254,7 @@ impl Parser {
         if self.first_keyword() == Some(Keyword::End) {
             return Err(wrong_end());
         }
-        Err(Message::not_designed_yet(
-            Place::new(line.place.line, 1, line.indentation.max(1)),
-            format!("indentation other than {LEVEL} spaces a level"),
-        ))
+        Err(wrong_indentation(line, body))
     }
 
     /// trace: D20
@@ -703,10 +711,7 @@ impl Parser {
                 break;
             }
             if line.indentation != case.indentation + LEVEL {
-                return Err(Message::not_designed_yet(
-                    Place::new(line.place.line, 1, line.indentation.max(1)),
-                    format!("indentation other than {LEVEL} spaces a level"),
-                ));
+                return Err(wrong_indentation(line, case.indentation + LEVEL));
             }
             body.push(self.statement()?);
         }

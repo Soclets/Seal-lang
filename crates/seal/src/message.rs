@@ -97,8 +97,14 @@ pub struct MessageParts {
     pub place: Place,
     /// The script's line the message is about, as written. Empty when the message has no line.
     pub source_line: String,
+    /// More places on the same line that get a `^`, as each gap of a line with several spacing mistakes does
+    /// (Unio D100).
+    pub more_places: Vec<Place>,
     /// The whole corrected line, when there's exactly one fix (Unio D84, D101).
     pub fix: Option<String>,
+    /// How many spaces the line should start with, when the fix is the line indented right (D63, Unio D10). The
+    /// corrected line itself is made when the message is given its source.
+    pub fix_indentation: Option<u32>,
     pub what: Option<String>,
     pub when: Option<String>,
     pub because: Option<Because>,
@@ -128,7 +134,9 @@ impl Message {
                 file: String::new(),
                 place,
                 source_line: String::new(),
+                more_places: Vec::new(),
                 fix: None,
+                fix_indentation: None,
                 what: Some(what.into()),
                 when: None,
                 because: None,
@@ -175,6 +183,19 @@ impl Message {
         self
     }
 
+    /// The fix is the same line, starting with this many spaces (D63, Unio D10).
+    #[must_use]
+    pub fn with_indentation_fix(mut self, spaces: u32) -> Self {
+        self.fix_indentation = Some(spaces);
+        self
+    }
+
+    #[must_use]
+    pub fn with_more_places(mut self, places: Vec<Place>) -> Self {
+        self.more_places = places;
+        self
+    }
+
     #[must_use]
     pub fn with_when(mut self, when: impl Into<String>) -> Self {
         self.when = Some(when.into());
@@ -197,6 +218,10 @@ impl Message {
     pub fn locate(&mut self, file: &str, source: &str) {
         file.clone_into(&mut self.file);
         self.source_line = source_line(source, self.place.line);
+        if let Some(spaces) = self.fix_indentation {
+            let written = self.source_line.trim_start_matches([' ', '\t']);
+            self.fix = Some(format!("{}{written}", " ".repeat(spaces as usize)));
+        }
         if let Some(because) = &mut self.because {
             because.source_line = source_line(source, because.place.line);
         }
@@ -225,7 +250,7 @@ impl Message {
                 self.place.line,
                 self.place.column
             )?;
-            write_source_line(out, self.place, &self.source_line)?;
+            write_source_line(out, self.place, &self.more_places, &self.source_line)?;
         }
         // Unio D101: `fix:` stands in place of `what:` when there's exactly one fix that can be shown as a line.
         if let Some(fix) = &self.fix {
@@ -238,7 +263,7 @@ impl Message {
         }
         if let Some(because) = &self.because {
             writeln!(out, " {:<8} {}", "because:", because.sentence)?;
-            write_source_line(out, because.place, &because.source_line)?;
+            write_source_line(out, because.place, &[], &because.source_line)?;
         }
         if let Some(why) = &self.why {
             writeln!(out, " {:<8} {}", "why:", why)?;
@@ -257,13 +282,25 @@ impl fmt::Display for Message {
     }
 }
 
-fn write_source_line(out: &mut String, place: Place, line: &str) -> fmt::Result {
+fn write_source_line(out: &mut String, place: Place, more: &[Place], line: &str) -> fmt::Result {
     let number = place.line.to_string();
     writeln!(out, " {number} | {line}")?;
     let gutter = " ".repeat(number.len());
-    let indent = " ".repeat(place.column.saturating_sub(1) as usize);
-    let marks = "^".repeat(place.width.max(1) as usize);
-    writeln!(out, " {gutter} | {indent}{marks}")
+    // A `^` under the place, and under every other place given on the same line (Unio D100).
+    let mut places: Vec<Place> = std::iter::once(place).chain(more.iter().copied()).collect();
+    places.sort_by_key(|place| place.column);
+    let mut marks = String::new();
+    for place in places {
+        let start = place.column.saturating_sub(1) as usize;
+        let end = start + place.width.max(1) as usize;
+        while marks.len() < start {
+            marks.push(' ');
+        }
+        while marks.len() < end {
+            marks.push('^');
+        }
+    }
+    writeln!(out, " {gutter} | {marks}")
 }
 
 /// Line `number` of `source`, counting from 1, or nothing if there's no such line.
@@ -271,7 +308,9 @@ fn source_line(source: &str, number: u32) -> String {
     if number == 0 {
         return String::new();
     }
-    source.split('\n').nth((number - 1) as usize).unwrap_or("").to_owned()
+    // A `\r` before the line break is part of the line break (D63, Unio D144).
+    let line = source.split('\n').nth((number - 1) as usize).unwrap_or("");
+    line.strip_suffix('\r').unwrap_or(line).to_owned()
 }
 
 /// Every message from one load, most often refusals (D17, D26).

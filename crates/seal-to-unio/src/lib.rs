@@ -364,7 +364,8 @@ impl Translator<'_> {
                 }
             }
             ExpressionKind::Bool(value) => value.to_string(),
-            ExpressionKind::Text(text) => format!("\"{text}\""),
+            // Unio writes a quote or a backslash inside text the same way, with a `\\` before it (Unio D30).
+            ExpressionKind::Text(text) => format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")),
             ExpressionKind::Variable(variable) => self.name(*variable),
             ExpressionKind::Member { receiver, name } => {
                 if name != "len" {

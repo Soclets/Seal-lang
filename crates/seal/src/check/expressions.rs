@@ -6,6 +6,7 @@ use super::types::{BOOL, ERROR, FLOAT, NOTHING, TEXT, Type, TypeId, WHOLE};
 use super::{Checker, Requirement};
 use crate::message::Place;
 use crate::number::read_float_literal;
+use crate::syntax::lexer::cook_text;
 use crate::syntax::tree::{self as syntax, BinaryOperator, UnaryOperator};
 
 impl Checker<'_> {
@@ -28,7 +29,8 @@ impl Checker<'_> {
             }
             Kind::Float { text, approximate } => self.float_literal(text, *approximate, false, place),
             Kind::Bool(value) => Expression { kind: ExpressionKind::Bool(*value), type_id: BOOL, place },
-            Kind::Text(text) => Expression { kind: ExpressionKind::Text(text.clone()), type_id: TEXT, place },
+            // The text is kept as written until here, where `\` makes its next character literal (D63).
+            Kind::Text(text) => Expression { kind: ExpressionKind::Text(cook_text(text)), type_id: TEXT, place },
             Kind::Name(name) => self.name(name, place),
             Kind::TypeName(word) => {
                 let name = &word.text;

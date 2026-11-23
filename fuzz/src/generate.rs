@@ -149,7 +149,19 @@ impl Generator {
         self.dialect == Dialect::Seal
     }
 
+    /// Writes a line, now and then with a comment on the line before it or after its statement (D63).
     fn line(&mut self, text: &str) {
+        if self.random.chance(1, 30) {
+            self.plain_line("// a note");
+        }
+        if self.random.chance(1, 30) {
+            self.plain_line(&format!("{text} // a note"));
+        } else {
+            self.plain_line(text);
+        }
+    }
+
+    fn plain_line(&mut self, text: &str) {
         for _ in 0..self.depth {
             self.out.push_str("    ");
         }
@@ -948,7 +960,11 @@ impl Generator {
         {
             let _ = write!(header, " -> {}", result.written());
         }
-        self.line(&header);
+        // Now and then a procedure says what it's for (D63).
+        if self.random.chance(1, 6) {
+            self.plain_line("/// Does some work.");
+        }
+        self.plain_line(&header);
         // The top level's names stay out of reach: a procedure may run before they're made (not designed yet).
         let outer = std::mem::replace(&mut self.scopes, vec![Vec::new()]);
         for (parameter, kind) in &names {

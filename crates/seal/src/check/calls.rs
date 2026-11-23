@@ -395,6 +395,11 @@ impl Checker<'_> {
         let mut index = 0;
         while let Some(&character) = characters.get(index) {
             match character {
+                // trace: D63, Unio D30. `\{` is a brace, `\"` a quote and `\\` a backslash.
+                '\\' => {
+                    plain.extend(characters.get(index + 1));
+                    index += 2;
+                }
                 '{' => {
                     let Some(length) =
                         characters.get(index..).and_then(|rest| rest.iter().position(|&next| next == '}'))
@@ -420,13 +425,7 @@ impl Checker<'_> {
                     }
                     index += length + 1;
                 }
-                '}' => {
-                    self.not_designed(
-                        Place::new(argument.place.line, column_of(index), 1),
-                        "a `}` with no `{` before it in `fmt` text",
-                    );
-                    return Self::error(place);
-                }
+                // A `}` with no open `{` is just a character (D63, Unio D30).
                 other => {
                     plain.push(other);
                     index += 1;

@@ -282,6 +282,8 @@ struct Lexer {
     open_brackets: Vec<(Symbol, Place)>,
     /// How many type `<` are open.
     type_depth: u32,
+    /// Spacing mistakes found while reading the statement's lines, beyond the gaps between its tokens.
+    mistakes: Vec<SpacingMistake>,
 }
 
 /// Splits a script's text into logical lines of tokens.
@@ -289,6 +291,7 @@ struct Lexer {
 /// # Errors
 ///
 /// Returns the first thing that can't be read, as a message.
+#[allow(clippy::too_many_lines)] // one pass over a script's lines: each kind of line is dealt with where it's met
 pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
     let mut lexer = Lexer {
         lines: Vec::new(),
@@ -297,57 +300,136 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         current_place: Place::default(),
         open_brackets: Vec::new(),
         type_depth: 0,
+        mistakes: Vec::new(),
     };
     let mut physical: Vec<&str> = source.split('\n').collect();
     // A file's last line break ends its last line; it doesn't start an empty one.
     if physical.last() == Some(&"") {
         physical.pop();
     }
+    // trace: D63, Unio D144. A `\r` right before a line break is part of the line break.
+    for line in &mut physical {
+        *line = line.strip_suffix('\r').unwrap_or(line);
+    }
     let mut blank_run = 0u32;
+    // The open block comment: its depth and where it starts (D63).
+    let mut comment_block: Option<(usize, Place)> = None;
+    // The first `///` line still waiting for its declaration (D63, Unio D74).
+    let mut pending_doc: Option<Place> = None;
+    let doc_without_declaration = |place: Place| {
+        Message::refused(place, "this `///` has no declaration after it")
+            .with_why("a `///` comment describes the declaration on the line after it.")
+    };
     for (index, text) in physical.iter().enumerate() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
-        let characters: Vec<char> = text.chars().collect();
+        let mut characters: Vec<char> = text.chars().collect();
+        let leading = characters.iter().take_while(|&&character| character == ' ').count();
+        if let Some((depth, _)) = comment_block {
+            // Everything inside a block comment is ignored; a plain `end` at its own depth closes it.
+            if leading == depth && characters.get(leading..) == Some(&['e', 'n', 'd']) {
+                comment_block = None;
+            }
+            continue;
+        }
         let width = u32::try_from(characters.len()).unwrap_or(u32::MAX);
         if let Some(position) = characters.iter().position(|&character| character == '\r') {
             return Err(Message::not_designed_yet(
                 Place::new(number, column_of(position), 1),
-                "a line ending other than a plain line break",
+                "a `\\r` that isn't right before a line break",
             ));
         }
         if characters.is_empty() {
+            if let Some(place) = pending_doc {
+                return Err(doc_without_declaration(place));
+            }
             blank_run += 1;
             if !lexer.open_brackets.is_empty() {
                 return Err(Message::not_designed_yet(Place::new(number, 1, 1), "a blank line inside an open bracket"));
             }
             if blank_run > 1 {
-                return Err(Message::not_designed_yet(Place::new(number, 1, 1), "two or more blank lines in a row"));
+                // trace: D63, Unio D97, D101
+                let extra = physical.get(index..).unwrap_or(&[]).iter().take_while(|line| line.is_empty()).count();
+                let lines = if extra == 1 { "line" } else { "lines" };
+                return Err(Message::refused(
+                    Place::new(number, 1, 1),
+                    format!("{extra} extra blank {lines}, after the one on line {}", number - 1),
+                )
+                .with_why("one blank line is enough to separate the parts of a script."));
             }
             continue;
         }
         blank_run = 0;
-        let leading = characters.iter().take_while(|&&character| character == ' ').count();
-        if leading == characters.len() {
-            return Err(Message::not_designed_yet(Place::new(number, 1, width), "a line of only spaces"));
+        // trace: D63, Unio D10. A tab in the indentation is refused, with the line indented by spaces as the fix.
+        let indentation = characters.iter().take_while(|&&character| character == ' ' || character == '\t').count();
+        if indentation > leading {
+            let tabs = characters.iter().take(indentation).filter(|&&character| character == '\t').count();
+            let rest: String = characters.get(indentation..).unwrap_or(&[]).iter().collect();
+            return Err(Message::refused(
+                Place::new(number, 1, u32::try_from(indentation).unwrap_or(1)),
+                "this line is indented with a tab",
+            )
+            .with_fix(format!("{}{}", " ".repeat(indentation - tabs + tabs * 4), rest.trim_end()))
+            .with_why("one level of indentation is 4 spaces."));
         }
-        if characters.get(leading) == Some(&'\t') {
-            return Err(Message::not_designed_yet(Place::new(number, column_of(leading), 1), "a tab in indentation"));
+        if leading == characters.len() {
+            // trace: D63, Unio D98
+            return Err(Message::refused(Place::new(number, 1, width), "this blank line has spaces on it")
+                .with_why("a blank line is empty."));
         }
         if characters.last() == Some(&' ') {
             let trailing = characters.iter().rev().take_while(|&&character| character == ' ').count();
-            return Err(Message::not_designed_yet(
-                Place::new(number, column_of(characters.len() - trailing), u32::try_from(trailing).unwrap_or(1)),
-                "spaces at the end of a line",
-            ));
+            characters.truncate(characters.len() - trailing);
+            lexer.mistakes.push(SpacingMistake {
+                line: number,
+                column: column_of(characters.len()),
+                actual: u32::try_from(trailing).unwrap_or(1),
+                wanted: 0,
+            });
         }
         let continued = !lexer.open_brackets.is_empty();
+        let rest = characters.get(leading..).unwrap_or(&[]);
+        // trace: D63, Unio D74. A line that's only a comment.
+        if rest.starts_with(&['/', '/']) {
+            let place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
+            if continued {
+                return Err(Message::not_designed_yet(place, "a comment inside an open bracket"));
+            }
+            if rest.starts_with(&['/', '/', '/']) && rest.get(3) != Some(&'/') {
+                pending_doc.get_or_insert(place);
+            } else if let Some(doc) = pending_doc {
+                return Err(doc_without_declaration(doc));
+            }
+            check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+            continue;
+        }
+        // trace: D20, D63. `comment name` on its own line opens a block comment.
+        if !continued && is_comment_opener(rest) {
+            if let Some(doc) = pending_doc {
+                return Err(doc_without_declaration(doc));
+            }
+            check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+            comment_block = Some((leading, Place::new(number, column_of(leading), 7)));
+            continue;
+        }
+        if let Some(doc) = pending_doc.take() {
+            check_documented(rest, doc)?;
+        }
+        let width = u32::try_from(characters.len()).unwrap_or(u32::MAX);
         if !continued {
             lexer.current_indentation = u32::try_from(leading).unwrap_or(u32::MAX);
             lexer.current_place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
         }
         lexer.line(number, &characters, leading, continued)?;
         if lexer.open_brackets.is_empty() {
-            lexer.finish_line()?;
+            lexer.finish_line(&physical)?;
         }
+    }
+    if let Some((_, place)) = comment_block {
+        return Err(Message::refused(place, "this `comment` is never closed with `end`")
+            .with_why("a block comment closes with `end`, at the depth of its `comment` line."));
+    }
+    if let Some(place) = pending_doc {
+        return Err(doc_without_declaration(place));
     }
     if let Some((symbol, place)) = lexer.open_brackets.last() {
         return Err(Message::refused(*place, format!("this `{}` is never closed", symbol.text())));
@@ -355,14 +437,54 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
     Ok(lexer.lines)
 }
 
+/// One gap that isn't the fixed spacing: where it starts, how many spaces it has, and how many it should have.
+#[derive(Clone, Copy, Debug)]
+struct SpacingMistake {
+    line: u32,
+    column: u32,
+    actual: u32,
+    wanted: u32,
+}
+
+/// Whether a line, past its indentation, is `comment name` and nothing else (D63).
+fn is_comment_opener(rest: &[char]) -> bool {
+    let Some(name) = rest.strip_prefix(&['c', 'o', 'm', 'm', 'e', 'n', 't', ' ']) else { return false };
+    name.first().is_some_and(|first| first.is_ascii_lowercase() || *first == '_')
+        && name
+            .iter()
+            .all(|&character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+}
+
+/// Checks that the line after a `///` comment is a declaration (D63, Unio D74). Which declarations take one isn't
+/// decided beyond the ones every example shows, so the rest stop as not designed yet.
+fn check_documented(rest: &[char], doc: Place) -> Result<(), Message> {
+    let line: String = rest.iter().collect();
+    let word: String =
+        line.chars().take_while(|&character| character.is_ascii_alphanumeric() || character == '_').collect();
+    let after = line.chars().nth(word.len());
+    if matches!(word.as_str(), "proc" | "record" | "one_of") || line.starts_with("fam.proc ") {
+        return Ok(());
+    }
+    let makes_a_name = matches!(word.as_str(), "mut" | "unused")
+        || (!Keyword::is_keyword(&word) && !word.is_empty() && after != Some('('));
+    if makes_a_name {
+        return Err(Message::not_designed_yet(
+            doc,
+            "a `///` before anything but a procedure, a family, a record or a `one_of`",
+        ));
+    }
+    Err(Message::refused(doc, "this `///` has no declaration after it")
+        .with_why("a `///` comment describes the declaration on the line after it."))
+}
+
 fn column_of(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX - 1).saturating_add(1)
 }
 
 impl Lexer {
-    fn finish_line(&mut self) -> Result<(), Message> {
+    fn finish_line(&mut self, physical: &[&str]) -> Result<(), Message> {
         let tokens = std::mem::take(&mut self.current);
-        check_spacing(&tokens)?;
+        check_spacing(&tokens, &std::mem::take(&mut self.mistakes), physical)?;
         self.type_depth = 0;
         self.lines.push(Line { indentation: self.current_indentation, tokens, place: self.current_place });
         Ok(())
@@ -449,12 +571,21 @@ impl Lexer {
                                 ));
                             }
                             Some('"') => break,
-                            Some('\\') => {
-                                return Err(Message::not_designed_yet(
-                                    Place::new(number, column_of(end), 1),
-                                    "a `\\` inside text",
-                                ));
-                            }
+                            // trace: D63, Unio D30. `\` makes the next character literal; the text is kept as
+                            // written, and read with `cook_text`, so that `fmt` can tell `\{` from `{`.
+                            Some('\\') => match characters.get(end + 1) {
+                                Some(&next @ ('"' | '\\' | '{')) => {
+                                    text.push('\\');
+                                    text.push(next);
+                                    end += 1;
+                                }
+                                _ => {
+                                    return Err(Message::not_designed_yet(
+                                        Place::new(number, column_of(end), 1),
+                                        "a `\\` in text before anything but `\"`, `\\` or `{`",
+                                    ));
+                                }
+                            },
                             Some('\t') => {
                                 return Err(Message::not_designed_yet(
                                     Place::new(number, column_of(end), 1),
@@ -471,8 +602,27 @@ impl Lexer {
                 _ => {
                     let next = characters.get(index + 1).copied();
                     let (symbol, length) = match (character_here, next) {
+                        // trace: D63, Unio D74. A comment after a statement runs to the end of the line.
                         ('/', Some('/')) => {
-                            return Err(Message::not_designed_yet(place_of(2), "a comment"));
+                            if !self.open_brackets.is_empty() {
+                                return Err(Message::not_designed_yet(place_of(2), "a comment inside an open bracket"));
+                            }
+                            match gap {
+                                Gap::Spaces(0) => {
+                                    return Err(Message::not_designed_yet(
+                                        place_of(2),
+                                        "a `//` comment touching what's before it",
+                                    ));
+                                }
+                                Gap::Spaces(actual) if actual > 1 => self.mistakes.push(SpacingMistake {
+                                    line: number,
+                                    column: column - actual,
+                                    actual,
+                                    wanted: 1,
+                                }),
+                                _ => {}
+                            }
+                            break;
                         }
                         ('=', Some('=')) => (Symbol::EqualEqual, 2),
                         ('!', Some('=')) => (Symbol::NotEqual, 2),
@@ -664,11 +814,27 @@ fn number_token(number: u32, characters: &[char], start: usize) -> Result<(Token
     }
 }
 
-/// Checks the spaces between a statement's tokens.
+/// What a text holds, from how it's written: `\` makes the next character literal (D63, Unio D30).
+#[must_use]
+pub fn cook_text(written: &str) -> String {
+    let mut text = String::with_capacity(written.len());
+    let mut characters = written.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            text.extend(characters.next());
+        } else {
+            text.push(character);
+        }
+    }
+    text
+}
+
+/// Checks the spaces between a statement's tokens, with the mistakes already found on its lines.
 ///
-/// Seal's spacing isn't decided (the standard, chapter 2). Unio's fixed spacing (Unio D98) is the one form every
-/// example and test uses, so that form is read, and anything else stops as not designed yet.
-fn check_spacing(tokens: &[Token]) -> Result<(), Message> {
+/// Spacing is fixed, as Unio's table has it (D63, Unio D98). Every mistake on a line makes one message, with a `^`
+/// under each gap and the whole corrected line as the fix (Unio D100).
+fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) -> Result<(), Message> {
+    let mut mistakes = found.to_vec();
     for (index, pair) in tokens.windows(2).enumerate() {
         let [before, after] = pair else { continue };
         let Gap::Spaces(actual) = after.gap else {
@@ -678,23 +844,33 @@ fn check_spacing(tokens: &[Token]) -> Result<(), Message> {
         let after_operator = ends_with_rounding(tokens.get(..=index).unwrap_or(&[]));
         let wanted = if after_operator { 1 } else { wanted_spaces(&before.kind, &after.kind) };
         if actual != wanted {
-            let column = before.place.column + before.place.width;
-            let place = Place::new(before.place.line, column, actual.max(1));
-            return Err(Message::not_designed_yet(
-                place,
-                format!(
-                    "spacing other than Unio's, which has {} here between {} and {},",
-                    match wanted {
-                        0 => "no space",
-                        _ => "one space",
-                    },
-                    before.kind.describe(),
-                    after.kind.describe()
-                ),
-            ));
+            mistakes.push(SpacingMistake {
+                line: before.place.line,
+                column: before.place.column + before.place.width,
+                actual,
+                wanted,
+            });
         }
     }
-    Ok(())
+    let Some(line) = mistakes.iter().map(|mistake| mistake.line).min() else { return Ok(()) };
+    mistakes.retain(|mistake| mistake.line == line);
+    mistakes.sort_by_key(|mistake| mistake.column);
+    let mut corrected: Vec<char> = physical.get(line.saturating_sub(1) as usize).unwrap_or(&"").chars().collect();
+    // The gaps are put right from the line's end backwards, so the places of the earlier ones stay true.
+    for mistake in mistakes.iter().rev() {
+        let start = (mistake.column.saturating_sub(1) as usize).min(corrected.len());
+        let end = (start + mistake.actual as usize).min(corrected.len());
+        corrected.splice(start..end, std::iter::repeat_n(' ', mistake.wanted as usize));
+    }
+    let mut places = mistakes.iter().map(|mistake| Place::new(mistake.line, mistake.column, mistake.actual.max(1)));
+    let first = places.next().unwrap_or_default();
+    Err(Message::refused(first, "this line's spacing isn't the fixed spacing")
+        .with_more_places(places.collect())
+        .with_fix(corrected.into_iter().collect::<String>())
+        .with_why(
+            "spacing is fixed, so every script reads alike: one space around operators and after `,` and `:`, and \
+             none inside brackets or at a line's end.",
+        ))
 }
 
 /// Whether the tokens end with `div.floor`, `div.trunc`, `rem.floor` or `rem.trunc` (Unio D70, D71).
@@ -780,11 +956,36 @@ mod tests {
         );
     }
 
+    // trace: D63
     #[test]
-    fn undecided_spacing_is_not_designed_yet() {
-        let error = lex("a = 1+2").err().map(|message| message.kind);
-        assert_eq!(error, Some(MessageKind::NotDesignedYet));
-        let error = lex("// hi").err().map(|message| message.kind);
-        assert_eq!(error, Some(MessageKind::NotDesignedYet));
+    fn d63_spacing_mistakes_are_refused_with_the_line_put_right() {
+        let message = lex("a=1+2 ").err();
+        assert_eq!(message.as_ref().map(|message| message.kind), Some(MessageKind::Refused));
+        assert_eq!(message.and_then(|message| message.fix.clone()).as_deref(), Some("a = 1 + 2"));
+        let message = lex("show_msg( \"three\" )").err();
+        assert_eq!(message.and_then(|message| message.fix.clone()).as_deref(), Some("show_msg(\"three\")"));
+    }
+
+    // trace: D63
+    #[test]
+    fn d63_comments_blank_lines_and_line_endings() {
+        assert_eq!(kinds("// hi\na = 1 // one\r\n"), kinds("a = 1"));
+        assert_eq!(kinds("comment old\n    broken ((( stuff\n\n\n\tend\nend\na = 1"), kinds("a = 1"));
+        assert_eq!(kinds("/// Doubles.\nproc double[n]"), kinds("proc double[n]"));
+        let kind = |source: &str| lex(source).err().map(|message| message.kind);
+        assert_eq!(kind("a = 1\n\n\nb = 2"), Some(MessageKind::Refused));
+        assert_eq!(kind("a = 1\n\nb = 2"), None);
+        assert_eq!(kind("/// Nothing after."), Some(MessageKind::Refused));
+        assert_eq!(kind("comment never\na = 1"), Some(MessageKind::Refused));
+        assert_eq!(kind("\ta = 1"), Some(MessageKind::Refused));
+        assert_eq!(kind("a = 1 \r b"), Some(MessageKind::NotDesignedYet));
+    }
+
+    // trace: D63
+    #[test]
+    fn d63_a_backslash_makes_the_next_character_literal() {
+        assert_eq!(cook_text(r#"She said \"hi\" and \\ left \{"#), "She said \"hi\" and \\ left {");
+        let kind = lex(r#"a = "new\nline""#).err().map(|message| message.kind);
+        assert_eq!(kind, Some(MessageKind::NotDesignedYet));
     }
 }
