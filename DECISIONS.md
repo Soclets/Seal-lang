@@ -967,3 +967,43 @@ where "the same key" can't surprise anyone.
 
 **Tankun's words.** "Don't you have a tool for that?", then, asked "Should a `Dict` have `.remove(key:)`, `.has(key:)`
 and `.len`, with keys of `Whole`, `Text` or `Bool` only?", the owner chose: "yea".
+
+## D35. One construct for options, plain ones and ones carrying values, with its cases as narrowings
+
+2026-11-23.
+
+**Chosen.**
+- **One construct declares a type whose value is exactly one of several cases,** listed one per line and closed with
+  `end` (D20). Its keyword isn't decided yet; `enum` stands in for it below.
+- **A case may carry values,** named in `[ ]`, as `hurt[amount: Whole]`, built as a record is (D27). A case with none
+  is a plain option.
+- **A case is written as a narrowing of its type:** `Event.hurt[amount: 5]`, "a hurt kind of Event", and `State.idle`
+  (Unio D41). A case the type doesn't have is refused at load time.
+- **It's a value** (D15), and a Rust enum at the doors.
+
+```
+enum Event
+    idle
+    hurt[amount: Whole]
+    healed[amount: Whole, by: Text]
+end
+
+mut last = Event.hurt[amount: 5]
+```
+
+Reading which case a value is, and its values, needs a construct of its own, such as a `match`, not decided yet.
+
+**Weighed.**
+- A plain list of options now, and a second construct for cases carrying values later. Two constructs for one idea;
+  Cyborg covers both with one, its tagged union (Cyborg D33).
+- `Event::hurt`, as Rust has it: `::` names a package in Unio (Unio D64). `.hurt`, as Swift has it: which type it
+  belongs to is invisible. A bare `hurt`: could be any name.
+- Text for options, as `state = "chasing"`: a typo like `"chasnig"` never matches, silently.
+
+**Why this won.** One construct for one idea, with nothing new to learn: its cases are narrowings and its values are
+built as records are, and a typo in a case is caught at load time.
+
+**Tankun's words.** "That's an `enum`, right?", "The fuck?", "`one_of`?", "Cyborg uses tagged unions for more complex ones", "Its cases as
+narrowings?", "What does Enumeration mean in maths", "Does Seal have `match`?", then, asked "Should Seal have one
+construct for options, plain ones and ones carrying values in `[ ]`, with its cases as narrowings, as Cyborg's tagged
+union does?", the owner chose: "yea".

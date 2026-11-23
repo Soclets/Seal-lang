@@ -87,6 +87,26 @@ end
 
 **Not decided:** lists and records as keys; other methods.
 
+## Options
+
+```
+enum Event
+    idle
+    hurt[amount: Whole]
+    healed[amount: Whole, by: Text]
+end
+
+mut last = Event.hurt[amount: 5]
+```
+
+- **One construct declares a type whose value is exactly one of its cases,** listed one per line, closed with `end`
+  (D35).
+- **A case may carry values, named in `[ ]`,** built as a record is (D27, D35).
+- **A case is written as a narrowing of its type,** as `Event.hurt[amount: 5]` and `State.idle`; one the type doesn't
+  have is refused at load time (D35, Unio D41).
+
+**Not decided:** the keyword, which `enum` stands in for above; reading which case a value is, and its values.
+
 ## `fmt`
 
 `fmt("…")` fills in the names in its braces and gives back a `Text` (D12):
