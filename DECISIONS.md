@@ -1354,3 +1354,28 @@ than a dynamic one can be: there's no type check left to make while running.
 **Tankun's words.** "We should decide arch first?  Memory and impl lang is done", then, asked "Should Seal compile
 scripts at load time to bytecode run by a register VM, with no JIT?", the owner chose: "yea. Btw, the impl-tor could
 decide bytecode names".
+
+## D47. One workspace of five parts, with the library alone what hosts depend on
+
+2026-11-23.
+
+**Chosen.** Seal is one Rust workspace, a set of packages built together, of five parts:
+1. **`seal`, the library a host embeds:** reading, checking, compiling, the VM, and the host's side.
+2. **The `seal` command:** checks a script, and runs it with a test host whose stand-in doors print to and read from the
+   terminal.
+3. **The language server** (D7).
+4. **The fuzzer** (IMPLEMENTATION.md, Building rule 6).
+5. **The Unio translator,** for checking against Ralph (D19).
+
+Hosts depend on the library alone, so nothing else ships inside their programs. The other four are built on the
+library, never copying its insides, so they all agree on what Seal means. How the library is split inside is the
+building session's to propose.
+
+**Weighed.**
+- One package holding everything. A host would carry the language server and the fuzzer inside its game.
+- Each tool with its own copy of the reading and checking it needs. They'd come to disagree.
+
+**Why this won.** Each kind of user gets only what it needs, and one library is the single meaning of Seal.
+
+**Tankun's words.** Asked "Should Seal be one workspace with these five parts, the library alone being what hosts
+depend on?", the owner chose: "yea".

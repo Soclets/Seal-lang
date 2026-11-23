@@ -16,6 +16,18 @@ run:   a register VM runs the bytecode, counting steps
 
   No JIT. The instruction set, its names and the optimizations are the building session's to propose (D17, D46).
 - **Checks:** at load time and while running, always on, with no build modes (D17, D18).
+- **Parts** (D47), one Rust workspace:
 
-**Not decided:** how the code is split into parts; the host's side of embedding; isolation between scripts and threads;
+| Part | What it is |
+|---|---|
+| `seal` | the library a host embeds, and the only part hosts depend on |
+| `seal` command | checks a script, and runs it with a test host whose stand-in doors use the terminal |
+| language server | errors as you type, worked-out types, colours (D7) |
+| fuzzer | random scripts against the library (Building rule 6) |
+| Unio translator | for checking against Ralph (D19) |
+
+  The four tools are built on the library, never copying its insides. How the library is split inside is the building
+  session's to propose.
+
+**Not decided:** the host's side of embedding; isolation between scripts and threads;
 determinism across machines.
