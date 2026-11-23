@@ -2080,3 +2080,34 @@ for. `elif` keeps long chains flat.
 
 **Tankun's words.** "Hm, why no `if` rule?", then, asked "Should Seal take Unio's `return` rules (D57, D149) and its D9,
 so that nothing follows an `if` that can leave?", the owner chose: "incl".
+
+## D69. A `for each` refuses calls that can change what it goes through, and pausing over a top-level name
+
+2026-11-23.
+
+**Chosen.** Extending Unio's D173, which refuses changing what a `for each` goes through inside its body:
+- **A call that can change it is refused inside the loop.** Seal works out which procedures can change which
+  top-level names, from their bodies, as it does for failures and pauses (D44, D52).
+- **Pausing inside a loop going through a top-level name is refused,** since another task could change it meanwhile
+  (D51). The fix is to copy it into a name of its own first, which costs almost nothing with copy-on-write (D15).
+
+```
+enemies_now = enemies
+for each e in enemies_now
+    hurt(e)
+    wait(seconds: 1)
+end
+```
+
+**Weighed.**
+- Only D173's direct change refused. A change hidden inside a call, or made by another task during a pause, would
+  slip past it.
+- Every loop silently going through a snapshot. D173 refused that for Unio: a reader may expect the loop to see the
+  change, and nothing would say it won't.
+
+**Why this won.** A loop never goes through something that can change under it, and where a snapshot is wanted, the
+copy line says so. Seal's building session found the gaps.
+
+**Tankun's words.** "Bro, the comments are stacking onto another line", then, asked "Should a `for each` refuse calls
+that can change what it goes through, and refuse pausing while going through a top-level name, with copying first as
+the fix?", the owner chose: "??".

@@ -51,7 +51,8 @@ As in Unio (D22, Unio D171 to D174):
   each key (D33).
 - **The item's name is new for each pass,** made by the `for each` line, and ends with the loop.
 - **`at pos i` or `at offset i`** gives the position too, counting from 1 or from 0.
-- **What it goes through can't change inside it.**
+- **What it goes through can't change inside it,** nor through a call that can change it, and a loop going through a
+  top-level name can't pause; copying it into a name of its own first is the fix (D69).
 - **`break` leaves it.**
 
 `range` is in chapter 8. Unio's standard, chapter 5, has the rules in full.
