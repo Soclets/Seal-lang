@@ -204,3 +204,31 @@ language server tells the kinds of name apart, so `$` costs more to write than i
 is not standalone. Which usually makes it IDE'd, right?", then, asked "Should Seal names have no `$`, with Seal's
 language server speaking LSP and colouring variables, procedures, narrowings and methods apart from the start?", the
 owner chose: "yea".
+
+## D8. A statement ends at the end of its line, carrying on only inside an open `(` or `[`
+
+2026-11-23.
+
+**Chosen.**
+- **There's no `;`.** The end of a line ends its statement.
+- **Inside an open `(` or `[`, a line break carries on** until the bracket closes, so a long call or list can be split.
+- **A line that ends where a value is still wanted is refused,** as `total = a + b +` with `c` on the next line; the
+  fix is to wrap it in `( )`.
+- **There's no `\` to carry a line on,** and two statements can't share a line, as in Unio (Unio D146).
+
+```
+spawn_enemy(kind: "goblin", x: 10, y: 20,
+            health: 30, speed: 2)
+total = (first_round + second_round +
+         third_round)
+```
+
+**Weighed.**
+- Unio's `;` (Unio D7). Seal is meant to be lighter to write, and a line already ends where a statement does.
+- A `\` at the end of a line to carry it on. Easy to miss, and broken by a space after it.
+
+**Why this won.** It's Python's rule, proven over 30 years: the one thing to learn is that an open bracket keeps a line
+going.
+
+**Tankun's words.** "What does that make?", then, asked "Should a statement end at the end of its line, with no `;`,
+carrying on only inside an open `(` or `[`?", the owner chose: "yea".
