@@ -80,3 +80,27 @@ covers both naming a throwaway and discarding a value. Throwaways are rare, so t
 
 **Tankun's words.** "What about `unused`?", then, asked "Should Seal mark a throwaway with `unused`, in the same place
 as `mut`, with reading it later refused?", the owner chose: "yea".
+
+## D4. A script's top level runs once when it's loaded, and the host calls its procedures after
+
+2026-11-23.
+
+**Chosen.**
+- **A Seal script has no `proc.main`.** Its top level runs once, from top to bottom, when the host loads it, setting
+  things up.
+- **The host then calls the script's procedures** by name, whenever its own events happen, as a game engine calls an
+  enemy's `on_hit`.
+- **The script calls the host only through its doors,** the procedures the host gives it, such as `show_msg`.
+- **A script with no procedures is just a program,** run from top to bottom, like the guessing game.
+
+**Weighed.**
+- Unio's `proc.main`. Right for a program the operating system starts once; an embedded script is loaded by
+  a host that keeps calling into it.
+
+**Why this won.** It's how embedded scripting works in practice, as Lua does in World of Warcraft and Roblox: the
+engine calls the script's handlers, and the script calls back through the engine's functions. Tankun's sketch already
+has no `proc.main`.
+
+**Tankun's words.** "Wait, the host calls or Seal calls?", then, asked "Should a Seal script run its top level once
+when loaded, with no `proc.main`, and the host then calling its procedures?", the owner chose: "yea. Now, a very
+important question, should we allow `proc` to be gradual?"
