@@ -40,7 +40,7 @@ impl Checker<'_> {
         // trace: Unio D128: three or more calls in a chain are written as a slide.
         if self.slide_depth == 0 && !self.judged_chains.contains(&expression.id) {
             let length = chain_length(expression);
-            if length >= 3 && !path.first().is_some_and(|word| self.visible(word).is_some()) {
+            if length >= 3 && path.first().is_none_or(|word| self.visible(word).is_none()) {
                 let mut inner = expression;
                 while let syntax::ExpressionKind::Call { arguments, .. } = &inner.kind {
                     self.judged_chains.insert(inner.id);
@@ -191,43 +191,40 @@ impl Checker<'_> {
         let mut last: Option<usize> = None;
         let mut failed = false;
         for (index, entry) in arguments.iter().enumerate() {
-            let parameter = match &entry.label {
-                Some(label) => {
-                    let found = labels.iter().position(|known| known.as_deref() == Some(label.text.as_str()));
-                    if found.is_none() {
-                        self.refuse_why(
-                            label.place,
-                            format!("`{name}` has no label `{}:`", label.text),
-                            "a call writes the labels its procedure declares, and no others.",
-                        );
-                        failed = true;
-                    }
-                    found
+            let parameter = if let Some(label) = &entry.label {
+                let found = labels.iter().position(|known| known.as_deref() == Some(label.text.as_str()));
+                if found.is_none() {
+                    self.refuse_why(
+                        label.place,
+                        format!("`{name}` has no label `{}:`", label.text),
+                        "a call writes the labels its procedure declares, and no others.",
+                    );
+                    failed = true;
                 }
-                None => {
-                    let start = last.map_or(0, |last| last + 1);
-                    let found = (start..labels.len()).find(|&candidate| {
-                        labels.get(candidate).is_some_and(Option::is_none)
-                            && bound.get(candidate).is_some_and(Option::is_none)
-                    });
-                    if found.is_none() {
-                        let next_label = (0..labels.len())
-                            .find(|&candidate| bound.get(candidate).is_some_and(Option::is_none))
-                            .and_then(|candidate| labels.get(candidate).cloned().flatten());
-                        match next_label {
-                            Some(label) => self.refuse_why(
-                                entry.value.place,
-                                format!("this argument needs its label, `{label}:`"),
-                                "a call writes every label its procedure declares.",
-                            ),
-                            None => {
-                                self.refuse(entry.value.place, format!("`{name}` doesn't take this many arguments"))
-                            }
+                found
+            } else {
+                let start = last.map_or(0, |last| last + 1);
+                let found = (start..labels.len()).find(|&candidate| {
+                    labels.get(candidate).is_some_and(Option::is_none)
+                        && bound.get(candidate).is_some_and(Option::is_none)
+                });
+                if found.is_none() {
+                    let next_label = (0..labels.len())
+                        .find(|&candidate| bound.get(candidate).is_some_and(Option::is_none))
+                        .and_then(|candidate| labels.get(candidate).cloned().flatten());
+                    match next_label {
+                        Some(label) => self.refuse_why(
+                            entry.value.place,
+                            format!("this argument needs its label, `{label}:`"),
+                            "a call writes every label its procedure declares.",
+                        ),
+                        None => {
+                            self.refuse(entry.value.place, format!("`{name}` doesn't take this many arguments"));
                         }
-                        failed = true;
                     }
-                    found
+                    failed = true;
                 }
+                found
             };
             let Some(parameter) = parameter else { continue };
             if bound.get(parameter).is_some_and(Option::is_some) {
@@ -327,18 +324,17 @@ impl Checker<'_> {
         let name = signature.name.clone();
         let labels: Vec<Option<String>> =
             signature.parameters.iter().map(|parameter| parameter.label.clone()).collect();
-        let (parameter_types, result) = match self.door_types.get(&door) {
-            Some(types) => types.clone(),
-            None => {
-                let before = self.messages.len();
-                let parameters: Vec<TypeId> =
-                    signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type, place)).collect();
-                let result = self.host_type(&signature.result, place);
-                if self.messages.len() == before {
-                    self.door_types.insert(door, (parameters.clone(), result));
-                }
-                (parameters, result)
+        let (parameter_types, result) = if let Some(types) = self.door_types.get(&door) {
+            types.clone()
+        } else {
+            let before = self.messages.len();
+            let parameters: Vec<TypeId> =
+                signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type, place)).collect();
+            let result = self.host_type(&signature.result, place);
+            if self.messages.len() == before {
+                self.door_types.insert(door, (parameters.clone(), result));
             }
+            (parameters, result)
         };
         let has_default = vec![false; labels.len()];
         let Some(bound) = self.bind_arguments(&name, &labels, &has_default, arguments, place) else {
@@ -499,11 +495,12 @@ impl Checker<'_> {
     }
 
     /// `be.Text`, `be.Whole` and its narrowings, and `be.Float` (D22, Unio D22, D153, D178).
+    #[allow(clippy::too_many_lines)] // one case per conversion, each with its own refusals
     fn conversion(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
         let narrowing: Vec<&str> = path.iter().skip(1).map(String::as_str).collect();
         let full = path.join(".");
         let rounding = match narrowing.as_slice() {
-            ["Text"] | ["Whole"] | ["Float"] => None,
+            ["Text" | "Whole" | "Float"] => None,
             ["Whole", "floor"] => Some(Rounding::Floor),
             ["Whole", "trunc"] => Some(Rounding::Trunc),
             ["Whole", "ceil"] => Some(Rounding::Ceil),

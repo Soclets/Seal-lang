@@ -32,6 +32,7 @@ pub enum VariableKind {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // each is a separate fact about a name, set at a different time
 pub struct Variable {
     pub name: String,
     pub type_id: TypeId,

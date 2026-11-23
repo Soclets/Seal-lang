@@ -398,18 +398,16 @@ impl<'a> Checker<'a> {
 
     /// A whole number written plainly, as a type's setting needs.
     fn plain_whole(&mut self, expression: &syntax::Expression) -> Option<i64> {
-        match &expression.kind {
-            syntax::ExpressionKind::Whole(digits) => match digits.parse::<i64>() {
-                Ok(value) => Some(value),
-                Err(_) => {
-                    self.refuse(expression.place, format!("`{digits}` is too big for a `Whole`"));
-                    None
-                }
-            },
-            _ => {
-                self.not_designed(expression.place, "a type's setting that isn't a plain whole number");
+        if let syntax::ExpressionKind::Whole(digits) = &expression.kind {
+            if let Ok(value) = digits.parse::<i64>() {
+                Some(value)
+            } else {
+                self.refuse(expression.place, format!("`{digits}` is too big for a `Whole`"));
                 None
             }
+        } else {
+            self.not_designed(expression.place, "a type's setting that isn't a plain whole number");
+            None
         }
     }
 
@@ -470,9 +468,10 @@ impl<'a> Checker<'a> {
                 match name {
                     "List" => self.program.types.intern(Type::List { item, max: settings.get("len.max").copied() }),
                     "Maybe" => self.program.types.maybe(item),
-                    _ => match settings.get("len") {
-                        Some(&length) => self.program.types.intern(Type::Array { item, length }),
-                        None => {
+                    _ => {
+                        if let Some(&length) = settings.get("len") {
+                            self.program.types.intern(Type::Array { item, length })
+                        } else {
                             // trace: Unio D167
                             self.refuse_why(
                                 written.place,
@@ -481,7 +480,7 @@ impl<'a> Checker<'a> {
                             );
                             ERROR
                         }
-                    },
+                    }
                 }
             }
             "Dict" => {
@@ -903,7 +902,7 @@ impl<'a> Checker<'a> {
             match kind {
                 VariableKind::Named => self.refuse(place, format!("`{name}` is never used")),
                 VariableKind::Parameter => {
-                    self.not_designed(place, format!("a parameter that's never read, as `{name}`,"))
+                    self.not_designed(place, format!("a parameter that's never read, as `{name}`,"));
                 }
                 VariableKind::LoopItem | VariableKind::LoopPosition => {
                     self.not_designed(place, format!("a `for each` name that's never read, as `{name}`,"));
@@ -1067,7 +1066,7 @@ impl<'a> Checker<'a> {
             syntax::StatementKind::ForEach { item, position, source, body } => {
                 self.for_each(item, position.as_ref(), source, body)?
             }
-            syntax::StatementKind::Match { subject, cases } => self.match_statement(subject, cases)?,
+            syntax::StatementKind::Match { subject, cases } => self.match_statement(subject, cases),
             syntax::StatementKind::Break => {
                 if self.context.loop_depth == 0 {
                     // trace: Unio D32
@@ -1415,45 +1414,38 @@ impl<'a> Checker<'a> {
         };
         let result = self.program.procedure(procedure).map_or(ERROR, |procedure| procedure.result);
         let disagree = "every `return` in a procedure must agree.";
-        match value {
-            Some(value) => {
-                if self.context.returned_value == Some(false) {
-                    self.refuse_why(
-                        value.place,
-                        "this `return` gives a value, but an earlier one gives none",
-                        disagree,
-                    );
-                    return None;
-                }
-                self.context.returned_value = Some(true);
-                let checked = self.expression(value, Some(result));
-                if self.program.types.resolve(checked.type_id) == NOTHING {
-                    self.refuse_why(
-                        value.place,
-                        "this gives nothing, so there's nothing to return",
-                        "a procedure that gives nothing back can't be used as a value.",
-                    );
-                    return None;
-                }
-                if !self.program.types.unify(checked.type_id, result) {
-                    let found = self.describe(checked.type_id);
-                    let wanted = self.describe(result);
-                    self.refuse_why(
-                        value.place,
-                        format!("this `return` gives {found}, but the procedure gives {wanted}"),
-                        disagree,
-                    );
-                }
-                Some(StatementKind::Return(Some(checked)))
+        if let Some(value) = value {
+            if self.context.returned_value == Some(false) {
+                self.refuse_why(value.place, "this `return` gives a value, but an earlier one gives none", disagree);
+                return None;
             }
-            None => {
-                if self.context.returned_value == Some(true) || !self.program.types.unify(result, NOTHING) {
-                    self.refuse_why(place, "this `return` gives no value, but the procedure gives one", disagree);
-                    return None;
-                }
-                self.context.returned_value = Some(false);
-                Some(StatementKind::Return(None))
+            self.context.returned_value = Some(true);
+            let checked = self.expression(value, Some(result));
+            if self.program.types.resolve(checked.type_id) == NOTHING {
+                self.refuse_why(
+                    value.place,
+                    "this gives nothing, so there's nothing to return",
+                    "a procedure that gives nothing back can't be used as a value.",
+                );
+                return None;
             }
+            if !self.program.types.unify(checked.type_id, result) {
+                let found = self.describe(checked.type_id);
+                let wanted = self.describe(result);
+                self.refuse_why(
+                    value.place,
+                    format!("this `return` gives {found}, but the procedure gives {wanted}"),
+                    disagree,
+                );
+            }
+            Some(StatementKind::Return(Some(checked)))
+        } else {
+            if self.context.returned_value == Some(true) || !self.program.types.unify(result, NOTHING) {
+                self.refuse_why(place, "this `return` gives no value, but the procedure gives one", disagree);
+                return None;
+            }
+            self.context.returned_value = Some(false);
+            Some(StatementKind::Return(None))
         }
     }
 
@@ -1625,7 +1617,7 @@ impl<'a> Checker<'a> {
     }
 
     /// trace: D37, D38
-    fn match_statement(&mut self, subject: &syntax::Expression, cases: &[syntax::MatchCase]) -> Option<StatementKind> {
+    fn match_statement(&mut self, subject: &syntax::Expression, cases: &[syntax::MatchCase]) -> StatementKind {
         let checked = self.expression(subject, None);
         let subject_type = self.program.types.resolve(checked.type_id);
         let case_types: Vec<CaseType> = match self.program.types.get(subject_type).clone() {
@@ -1727,7 +1719,7 @@ impl<'a> Checker<'a> {
                 );
             }
         }
-        Some(StatementKind::Match { subject: checked, arms })
+        StatementKind::Match { subject: checked, arms }
     }
 
     /// Turns a host's type into the script's. A record or a `one_of` must be declared by the script, the same way.

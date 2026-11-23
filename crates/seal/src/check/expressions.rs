@@ -14,9 +14,10 @@ impl Checker<'_> {
         use syntax::ExpressionKind as Kind;
         let place = expression.place;
         match &expression.kind {
-            Kind::Whole(digits) => match digits.parse::<i64>() {
-                Ok(value) => Expression { kind: ExpressionKind::Whole(value), type_id: WHOLE, place },
-                Err(_) => {
+            Kind::Whole(digits) => {
+                if let Ok(value) = digits.parse::<i64>() {
+                    Expression { kind: ExpressionKind::Whole(value), type_id: WHOLE, place }
+                } else {
                     self.refuse_why(
                         place,
                         format!("`{digits}` is too big for a `Whole`"),
@@ -24,7 +25,7 @@ impl Checker<'_> {
                     );
                     Self::error(place)
                 }
-            },
+            }
             Kind::Float { text, approximate } => self.float_literal(text, *approximate, false, place),
             Kind::Bool(value) => Expression { kind: ExpressionKind::Bool(*value), type_id: BOOL, place },
             Kind::Text(text) => Expression { kind: ExpressionKind::Text(text.clone()), type_id: TEXT, place },
@@ -80,25 +81,25 @@ impl Checker<'_> {
             Kind::Bracketed { receiver, entries } => self.bracketed(receiver, entries, wanted, place),
             Kind::List(items) => self.list_literal(items, wanted, place),
             Kind::Pairs(pairs) => self.pairs(pairs, wanted, place),
-            Kind::EmptyDict => match wanted.map(|wanted| self.program.types.get(wanted).clone()) {
-                Some(Type::Dict { .. }) => {
+            Kind::EmptyDict => {
+                if let Some(Type::Dict { .. }) = wanted.map(|wanted| self.program.types.get(wanted).clone()) {
                     Expression { kind: ExpressionKind::Dict(Vec::new()), type_id: wanted.unwrap_or(ERROR), place }
-                }
-                _ => {
+                } else {
                     // trace: D30
                     self.refuse_why(
-                        place,
-                        "`[:]` can't say what the dictionary holds, so the name's type has to be written",
-                        "a type is written where the value can't say it, as in `name: Dict<key: Text, value: Whole> = [:]`.",
-                    );
+                    place,
+                    "`[:]` can't say what the dictionary holds, so the name's type has to be written",
+                    "a type is written where the value can't say it, as in `name: Dict<key: Text, value: Whole> = [:]`.",
+                );
                     Self::error(place)
                 }
-            },
+            }
             Kind::Unary { operator: UnaryOperator::Negate, operand } => match &operand.kind {
                 // A `-` right before a number makes the number negative, so the smallest `Whole` can be written.
-                Kind::Whole(digits) => match format!("-{digits}").parse::<i64>() {
-                    Ok(value) => Expression { kind: ExpressionKind::Whole(value), type_id: WHOLE, place },
-                    Err(_) => {
+                Kind::Whole(digits) => {
+                    if let Ok(value) = format!("-{digits}").parse::<i64>() {
+                        Expression { kind: ExpressionKind::Whole(value), type_id: WHOLE, place }
+                    } else {
                         self.refuse_why(
                             place,
                             format!("`-{digits}` is too small for a `Whole`"),
@@ -106,7 +107,7 @@ impl Checker<'_> {
                         );
                         Self::error(place)
                     }
-                },
+                }
                 Kind::Float { text, approximate } => self.float_literal(text, *approximate, true, place),
                 _ => {
                     let operand = self.expression(operand, wanted);
@@ -656,13 +657,12 @@ impl Checker<'_> {
                 place,
             };
         }
-        let (key_type, value_type, type_id) = match wanted_kind {
-            Some(Type::Dict { key, value }) => (key, value, wanted.unwrap_or(ERROR)),
-            _ => {
-                let key = self.program.types.fresh();
-                let value = self.program.types.fresh();
-                (key, value, self.program.types.dict(key, value))
-            }
+        let (key_type, value_type, type_id) = if let Some(Type::Dict { key, value }) = wanted_kind {
+            (key, value, wanted.unwrap_or(ERROR))
+        } else {
+            let key = self.program.types.fresh();
+            let value = self.program.types.fresh();
+            (key, value, self.program.types.dict(key, value))
         };
         let mut checked = Vec::new();
         let mut plain_keys: Vec<String> = Vec::new();
@@ -755,8 +755,8 @@ impl Checker<'_> {
             return Expression { kind: ExpressionKind::Handle { call: Box::new(checked), fallback }, type_id, place };
         }
         match self.program.types.get(checked.type_id).clone() {
-            Type::Maybe(inner) => match fallback {
-                syntax::Fallback::Value(value) => {
+            Type::Maybe(inner) => {
+                if let syntax::Fallback::Value(value) = fallback {
                     let value = self.expression(value, Some(inner));
                     self.expect(&value, inner, "the value inside the `Maybe`");
                     Expression {
@@ -764,12 +764,11 @@ impl Checker<'_> {
                         type_id: inner,
                         place,
                     }
-                }
-                _ => {
+                } else {
                     self.not_designed(place, "`?? ignore` or `?? crash` on a `Maybe`");
                     Self::error(place)
                 }
-            },
+            }
             Type::Variable(_) => {
                 self.not_built(place, "working out a type from a later line (D5), which this `??` needs, isn't");
                 Self::error(place)

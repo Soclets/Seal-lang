@@ -7,9 +7,17 @@
 #![warn(clippy::pedantic)]
 
 pub mod check;
+pub mod compile;
+pub mod host;
 pub mod message;
 pub mod number;
 pub mod signature;
 pub mod syntax;
+pub mod vm;
 
+pub use host::{
+    Argument, Arguments, Called, DoorOptions, DoorResult, Doors, Error, Failures, FromSeal, IntoArgument, IntoDoor,
+    IntoSeal, Labelled, Limits, Pause, Script, SealType, TaskId, Value, labelled,
+};
 pub use message::{Message, MessageKind, Messages, Place};
+pub use signature::{DoorParameter, DoorSignature, HostType};

@@ -23,10 +23,10 @@ Each ends with something running. `[x]` done, `[ ]` not yet.
 - [x] **C0. Workspace.** Toolchain pinned (1.96.1), eight packages, Building rule 3's lints in each, the one command,
   `test-status.json`. All 14 tests fail (nothing runs yet).
 - [x] **C1a. Reading.** Lexer and parser: every test script parses.
-- [ ] **C1b. Checking.** Names, `mut`/`unused`, types worked out (D5, D6), failures worked out (D44), pauses worked out
+- [x] **C1b. Checking.** Names, `mut`/`unused`, types worked out (D5, D6), failures worked out (D44), pauses worked out
   (D52), every refusal.
-- [ ] **C1c. Running.** Bytecode compiler and register VM, with its optimizations from the start (see below). All 14
-  tests pass.
+- [x] **C1c. Running.** Bytecode compiler and register VM, with its optimizations from the start (see below). All 14
+  tests pass (2026-11-23).
 - [ ] **C2. The host's side** (D48, D49, D51 to D54): `Doors`, `Script::load`, `call`, `resume`, `cancel`, `Limits`,
   `#[derive(Seal)]`, an example host in `crates/seal/tests/`.
 - [ ] **C3. The fuzzer** (`fuzz/`): random valid and invalid scripts against loading and running, under the limits.

@@ -1,20 +1,20 @@
 {
-  "passed": 0,
-  "failed": 14,
+  "passed": 14,
+  "failed": 0,
   "tests": {
-    "d002_mut_and_unused": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d004_guessing_game": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d004_host_calls": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d022_loops": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d027_records": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d028_fmt_facts": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d029_and_joins": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d032_dict": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d035_one_of_match": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d038_maybe": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d042_labels_defaults": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d043_families": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d044_fail": { "status": "fail", "why": "exit status 3, expected 0" },
-    "d049_wait": { "status": "fail", "why": "exit status 3, expected 0" }
+    "d002_mut_and_unused": { "status": "pass" },
+    "d004_guessing_game": { "status": "pass" },
+    "d004_host_calls": { "status": "pass" },
+    "d022_loops": { "status": "pass" },
+    "d027_records": { "status": "pass" },
+    "d028_fmt_facts": { "status": "pass" },
+    "d029_and_joins": { "status": "pass" },
+    "d032_dict": { "status": "pass" },
+    "d035_one_of_match": { "status": "pass" },
+    "d038_maybe": { "status": "pass" },
+    "d042_labels_defaults": { "status": "pass" },
+    "d043_families": { "status": "pass" },
+    "d044_fail": { "status": "pass" },
+    "d049_wait": { "status": "pass" }
   }
 }

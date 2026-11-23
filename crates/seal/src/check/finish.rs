@@ -27,7 +27,8 @@ fn walk_block(block: &Block, visitor: &mut dyn Visitor) {
             | StatementKind::Set { value, .. }
             | StatementKind::SetField { value, .. }
             | StatementKind::Evaluate(value)
-            | StatementKind::Instead(value) => walk_expression(value, false, visitor),
+            | StatementKind::Instead(value)
+            | StatementKind::Return(Some(value)) => walk_expression(value, false, visitor),
             StatementKind::SetItem { index, value, .. } => {
                 walk_expression(index, false, visitor);
                 walk_expression(value, false, visitor);
@@ -67,7 +68,6 @@ fn walk_block(block: &Block, visitor: &mut dyn Visitor) {
                     walk_block(&arm.body, visitor);
                 }
             }
-            StatementKind::Return(Some(value)) => walk_expression(value, false, visitor),
             StatementKind::Return(None) | StatementKind::Break | StatementKind::Fail(_) => {}
         }
     }
@@ -102,9 +102,15 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         ExpressionKind::Call { arguments: items, .. }
         | ExpressionKind::DoorCall { arguments: items, .. }
         | ExpressionKind::Join(items)
-        | ExpressionKind::List(items) => items.iter().for_each(plain),
+        | ExpressionKind::List(items) => {
+            for item in items {
+                plain(item);
+            }
+        }
         ExpressionKind::BuildRecord { fields, .. } | ExpressionKind::BuildCase { fields, .. } => {
-            fields.iter().for_each(|(_, value)| plain(value));
+            for (_, value) in fields {
+                plain(value);
+            }
         }
         ExpressionKind::Dict(pairs) => {
             for (key, value) in pairs {
@@ -275,7 +281,7 @@ impl Visitor for HandlingChecker<'_> {
                             self.facts.names(&extra)
                         ),
                     )
-                    .with_why(&format!("the call can fail with {}.", self.facts.names(&possible))),
+                    .with_why(format!("the call can fail with {}.", self.facts.names(&possible))),
                 );
             }
         }
@@ -454,21 +460,18 @@ impl Checker<'_> {
                     Type::List { .. } | Type::Array { .. } | Type::Dict { .. } if name == "len" => Some(WHOLE),
                     _ => None,
                 };
-                match member {
-                    Some(member) => {
-                        self.program.types.unify(*result, member);
-                    }
-                    None => {
-                        let what = match kind {
-                            Type::Record(_) => format!("{found} has no field `{name}`"),
-                            Type::List { .. } | Type::Array { .. } | Type::Dict { .. } => {
-                                format!("{found} has no fact `.{name}`")
-                            }
-                            _ => format!("{found} has no fields or facts, so there's no `.{name}`"),
-                        };
-                        self.refuse(place, what);
-                        self.program.types.settle_as_error(*result);
-                    }
+                if let Some(member) = member {
+                    self.program.types.unify(*result, member);
+                } else {
+                    let what = match kind {
+                        Type::Record(_) => format!("{found} has no field `{name}`"),
+                        Type::List { .. } | Type::Array { .. } | Type::Dict { .. } => {
+                            format!("{found} has no fact `.{name}`")
+                        }
+                        _ => format!("{found} has no fields or facts, so there's no `.{name}`"),
+                    };
+                    self.refuse(place, what);
+                    self.program.types.settle_as_error(*result);
                 }
             }
             Requirement::Indexable { item } => match kind {
@@ -575,6 +578,7 @@ impl Checker<'_> {
 
     /// Works types out as far as they go. When `last` is set and no procedure is still being checked, what the
     /// bodies leave open is decided where only one type fits, and refused otherwise (D5).
+    #[allow(clippy::too_many_lines)] // deciding what's left open, then refusing the rest, in one pass
     pub(super) fn solve(&mut self, last: bool) {
         self.solve_ready();
         if !last || self.demand_depth > 0 {
@@ -687,6 +691,7 @@ impl Checker<'_> {
 
     /// The whole-script passes, once everything else is clean: failures (D44), their handling (Unio D23, D40),
     /// pauses (D52), and what isn't decided about loops over shared names.
+    #[allow(clippy::too_many_lines)] // the whole-script passes, run one after another over the same facts
     pub(super) fn finish(&mut self) {
         for name in ["missing", "not_a_whole", "full"] {
             self.failure(name);

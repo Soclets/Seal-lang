@@ -91,6 +91,12 @@ impl Keyword {
         })
     }
 
+    /// Whether a word is one of Seal's keywords.
+    #[must_use]
+    pub fn is_keyword(word: &str) -> bool {
+        Keyword::from_word(word).is_some()
+    }
+
     /// The keyword as it's written.
     #[must_use]
     pub fn word(self) -> &'static str {

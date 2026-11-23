@@ -169,6 +169,8 @@ pub fn text_to_whole(text: &str) -> Option<i64> {
 /// `be.Whole.floor` and the rest on a `Float` (Unio D178). Gives nothing when the result is too big for a `Whole`.
 #[must_use]
 pub fn float_to_whole(value: f64, rounding: Rounding) -> Option<i64> {
+    // 2⁶³ is exactly a `Float`; anything from it up, or below -2⁶³, doesn't fit a `Whole`.
+    const LIMIT: f64 = 9_223_372_036_854_775_808.0;
     let rounded = match rounding {
         Rounding::Floor => value.floor(),
         Rounding::Trunc => value.trunc(),
@@ -177,9 +179,7 @@ pub fn float_to_whole(value: f64, rounding: Rounding) -> Option<i64> {
         Rounding::Nearest => value.round(),
         Rounding::NearestEven => value.round_ties_even(),
     };
-    // 2⁶³ is exactly a `Float`; anything from it up, or below -2⁶³, doesn't fit a `Whole`.
-    const LIMIT: f64 = 9_223_372_036_854_775_808.0;
-    if rounded >= -LIMIT && rounded < LIMIT {
+    if (-LIMIT..LIMIT).contains(&rounded) {
         // The check above makes this cast exact: `rounded` is a whole number inside a `Whole`'s range.
         #[allow(clippy::cast_possible_truncation)]
         Some(rounded as i64)
