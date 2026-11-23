@@ -214,6 +214,33 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// Reads a plain field of the record at a place in a list, as `bodies[pos: i].vx`, in one step.
+    ItemFieldAtPosition {
+        to: Register,
+        list: Register,
+        index: Register,
+        field: u8,
+    },
+    ItemFieldAtOffset {
+        to: Register,
+        list: Register,
+        index: Register,
+        field: u8,
+    },
+    /// Changes a plain field of the record at a place in a list, as `bodies[pos: i].vx = v`, in one step: the list
+    /// and the record are each made singly held first, where they sit (D15, D62).
+    SetItemFieldAtPosition {
+        list: Register,
+        index: Register,
+        field: u8,
+        value: Register,
+    },
+    SetItemFieldAtOffset {
+        list: Register,
+        index: Register,
+        field: u8,
+        value: Register,
+    },
     /// Moves a list into a name whose `len.max` it might not fit: with at most `limit` items, `to` gets it with a
     /// holder's count of its own; with more, this fails with `full` (D73).
     FitList {

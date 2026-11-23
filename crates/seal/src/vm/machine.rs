@@ -1219,6 +1219,56 @@ pub fn run(
                 }
                 count_work!();
             }
+            Instruction::ItemFieldAtPosition { to, list, index, field }
+            | Instruction::ItemFieldAtOffset { to, list, index, field } => {
+                let zero_based = matches!(instruction, Instruction::ItemFieldAtOffset { .. });
+                let index = whole!(index);
+                let items = items!(get!(list));
+                let Some(&item) = item_place(index, zero_based, items.len()).and_then(|place| items.get(place)) else {
+                    return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, items.len(), pc));
+                };
+                let value = match heap.get(item) {
+                    Ok(Object::Record { fields, .. }) => fields.get(usize::from(field)).copied(),
+                    Ok(_) => None,
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                match value {
+                    Some(value) => set!(to, value),
+                    None => return Err(broken("a field that isn't there", pc)),
+                }
+            }
+            Instruction::SetItemFieldAtPosition { list, index, field, value }
+            | Instruction::SetItemFieldAtOffset { list, index, field, value } => {
+                let zero_based = matches!(instruction, Instruction::SetItemFieldAtOffset { .. });
+                let index = whole!(index);
+                let value = get!(value);
+                let parent = own!(list);
+                let items = items!(parent);
+                let length = items.len();
+                let place = item_place(index, zero_based, length);
+                let Some((place, child)) = place.and_then(|place| items.get(place).map(|child| (place, *child))) else {
+                    return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+                };
+                let own = if heap.has_one_holder(child) {
+                    child
+                } else {
+                    let own = heap_try!(heap.make_own(child, layouts));
+                    if let Ok(Object::List { items, .. }) = heap.get_mut(parent)
+                        && let Some(slot) = items.get_mut(place)
+                    {
+                        *slot = own;
+                    }
+                    own
+                };
+                let written = match heap.get_mut(own) {
+                    Ok(Object::Record { fields, .. }) => fields.get_mut(usize::from(field)).map(|slot| *slot = value),
+                    _ => None,
+                };
+                if written.is_none() {
+                    return Err(broken("a field that isn't there", pc));
+                }
+                count_work!();
+            }
             // trace: D62. A way into a part of a name: each step is made singly held where it sits, top down.
             Instruction::Own { register } => {
                 own!(register);

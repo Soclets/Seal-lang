@@ -683,6 +683,37 @@ impl<'p> Compiler<'p> {
         let held_mark = self.function.held.len();
         let register_mark = self.function.next;
         match &statement.kind {
+            // A plain field of a record at a place in a list, as `bodies[pos: i].vx = v`, is changed in one step.
+            StatementKind::Inside { path, change }
+                if matches!(path.steps.as_slice(), [PathStep::Item { .. }])
+                    && matches!(&change.kind, StatementKind::SetField { value, .. } if !self.is_reference(value.type_id)) =>
+            {
+                let ([PathStep::Item { index, zero_based }], StatementKind::SetField { variable, field, value }) =
+                    (path.steps.as_slice(), &change.kind)
+                else {
+                    return;
+                };
+                let record_type = self.variable_type(*variable);
+                let Ok(field) = u8::try_from(self.field_index(record_type, field)) else {
+                    self.inside(path, |compiler| compiler.statement(change));
+                    return;
+                };
+                for (hidden, hoisted) in &path.lets {
+                    let register = self.held_value(hoisted);
+                    self.function.locations.insert(*hidden, Location::Register(register));
+                }
+                let index = self.value(index);
+                let value = self.value(value);
+                let zero_based = *zero_based;
+                self.place = statement.place;
+                self.change_in_place(path.root, |compiler, list| {
+                    compiler.emit(if zero_based {
+                        Instruction::SetItemFieldAtOffset { list, index, field, value }
+                    } else {
+                        Instruction::SetItemFieldAtPosition { list, index, field, value }
+                    });
+                });
+            }
             // trace: D62
             StatementKind::Inside { path, change } => self.inside(path, |compiler| compiler.statement(change)),
             StatementKind::Make { variable, value } => {
@@ -1370,6 +1401,23 @@ impl<'p> Compiler<'p> {
                     if from != to {
                         self.emit(Instruction::Move { to, from });
                     }
+                    return false;
+                }
+                // A plain field of a record at a place in a list, as `bodies[pos: i].vx`, is read in one step.
+                if let ExpressionKind::Item { receiver: list, index, zero_based } = &receiver.kind
+                    && matches!(self.kind(receiver.type_id), Type::Record(_))
+                    && !matches!(self.kind(list.type_id), Type::Text)
+                    && !self.is_reference(expression.type_id)
+                    && let Ok(field) = u8::try_from(self.field_index(receiver.type_id, name))
+                {
+                    let index = self.value(index);
+                    let list = self.reading(list);
+                    self.place = expression.place;
+                    self.emit(if *zero_based {
+                        Instruction::ItemFieldAtOffset { to, list, index, field }
+                    } else {
+                        Instruction::ItemFieldAtPosition { to, list, index, field }
+                    });
                     return false;
                 }
                 let receiver_type = receiver.type_id;
