@@ -375,3 +375,34 @@ whichever made the word. Tankun raised it.
 **Tankun's words.** "Hm... If Seal itself can make narrowings, the host should be able", then, asked "Should a host
 be able to give its doors narrowings, declared with the door and working exactly like Seal's own?", the owner chose:
 "yea".
+
+## D14. The host sets a step budget and a memory cap for each script
+
+2026-11-23.
+
+**Chosen.**
+- **A step budget:** the interpreter counts the work a script does, and a call into the script that runs past the
+  budget the host set stops there. Counting steps, not seconds, makes the stop land at the same place on every machine.
+- **A memory cap:** a script that would hold more than the host allows stops the same way.
+- **The host gets control back, told why,** as a failure such as "out of steps" or "out of memory", and decides what
+  happens next, such as reloading the script or switching that enemy off.
+- **A stopped script never crashes the host.**
+
+```
+while true          // stops when the step budget runs out, and the host carries on
+end while
+```
+
+What a step is, the limits' defaults, and how the host is told are the building session's to propose and Tankun's to
+decide.
+
+**Weighed.**
+- No limits, relying on the doors alone. A script could still freeze the host with a loop, or eat its memory.
+- A time limit in seconds. A script would stop at different places on fast and slow machines, so a game couldn't
+  replay exactly.
+
+**Why this won.** The doors keep a script from reaching out; the limits keep it from hurting its host from inside.
+Luau and Wasmtime, a sandbox for WebAssembly, do the same.
+
+**Tankun's words.** Asked "Should the host set a step budget and a memory cap for each script, with a script that
+passes either stopped and the host told, never crashed?", the owner chose: "yea".
