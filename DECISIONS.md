@@ -141,9 +141,43 @@ end proc
 **Why this won.** Types are left off where the procedure's own lines make them obvious, and written where they don't,
 while everything stays static and every mistake is reported in the procedure that has it.
 
-How a procedure's result type is worked out or written, and the refusal's wording, aren't decided yet.
+How a procedure's result type is worked out or written, and the refusal's wording, aren't decided yet. (The result
+type: D6.)
 
 **Tankun's words.** "Not dynamic param, static infer param. So, that's called gradual, right?", "What does that
 mean?", then, asked "Should a procedure's parameter types be optional, worked out from its own body, with the type
 required when the body can't decide?", the owner chose: "Ah, yes. But "and asks you to write it: proc add[a: Whole, b:
 Whole]", you said it doesn't know".
+
+## D6. A procedure's result type may be left out too, worked out from its `return`s
+
+2026-11-23.
+
+**Chosen.**
+- **A procedure's result type is optional,** worked out from its own `return` lines when the script loads, as D5 does
+  for parameters.
+- **`returns Type` may always be written,** as Unio writes it, for anyone who wants it said.
+- **Every `return` must agree:** one giving a `Whole` and another a `Text` is refused.
+- **A procedure with no `return` of a value gives no result.**
+- **The host's calls are checked against the result type too,** so a Rust call expecting a `Whole` back is checked at
+  load time.
+
+```
+proc double[n: Whole]                               // result: Whole
+    return n * 2
+end proc
+
+proc average[a: Float, b: Float] returns Float      // written, as allowed
+    return (a + b) / 2.0
+end proc
+```
+
+How a procedure's first line is written, with or without `:`, isn't decided yet; these examples only show the shape.
+
+**Weighed.**
+- `returns` always written, as Unio has it. The same reasoning as D5: the body already says it.
+
+**Why this won.** It completes D5, so a procedure's types are written only where its own lines leave them open.
+
+**Tankun's words.** Asked "Should a procedure's result type be optional too, worked out from its `return`s, with
+`returns` allowed for writing it?", the owner chose: "yea".
