@@ -15,6 +15,8 @@ examples in Seal's syntax (README).
 - **A number with a point is a `Float`, and one without is a `Whole`** (Unio D180), so a worked-out type is never in
   doubt for a literal: `speed = 2.0` makes a `Float`.
 - **`Whole` and `Float` don't mix quietly:** `be.Float(lives) * speed` (Unio D162).
+- **Text is written in double quotes, and `&` joins two pieces of text;** a number joined with `&` is refused, with
+  `be.Text(…)` as the fix (D16, Unio D21, D28): `show_msg("Score: " & be.Text(score))`.
 - **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (D22, Unio D27, D70, D71, D185). Floats
   are checked after every operation (D18).
 - **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and
@@ -48,7 +50,7 @@ goblin.hp = goblin.hp - 5
   own copy (D15, D27).
 - **At the doors a record is a Rust struct** (D27).
 
-**Not decided:** defaults for fields; methods on records; records inside records; `fmt` braces holding `name.field`.
+**Not decided:** defaults for fields; methods on records; records inside records.
 
 ## `fmt`
 
@@ -59,8 +61,8 @@ mut msg = fmt("Hello, {player}")
 show_msg(fmt("Correct! You got it in {tries} tries"))
 ```
 
-- **Braces hold only names,** never a calculation or a call, and a name that doesn't exist is refused at load time
-  (D12, Unio D29).
+- **Braces hold a name, which may be followed by its fields and facts,** as `{goblin.name}` and `{names.len}`, never
+  a calculation or a call; a name, field or fact that doesn't exist is refused at load time (D12, D28, Unio D29).
 - **Text is plain unless it goes through `fmt`:** `show_msg("{tries}")` shows `{tries}` (D12).
 
 **Not decided:** a literal brace inside `fmt` text; `places:` in braces (Unio D175).

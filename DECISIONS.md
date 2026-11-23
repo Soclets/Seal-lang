@@ -330,6 +330,7 @@ show_msg("{tries}")                    // plain text, shown as written
 
 - **Braces hold only names,** never a calculation or a call, and a name that doesn't exist is refused when the script
   loads (Unio D29).
+  (Changed by D28: a name may be followed by its fields and facts.)
 - **Text is plain unless it goes through `fmt`.**
 - **It's a built-in under D11,** since it touches nothing outside the script, so no host has to do anything for it.
 
@@ -769,3 +770,29 @@ Unio's.
 **Tankun's words.** "Why `record`?", "Unio doesn't have records yet", "Is it accurate?", "What does record mean in
 Englusg", "Why `field: value`?", then, asked "Should Seal have records, declared with `record Name`, built with
 `Name[field: value]`, and read with `.field`?", the owner chose: "yea".
+
+## D28. `fmt` braces may hold a name followed by its fields and facts
+
+2026-11-23.
+
+**Chosen.** Inside `fmt`'s braces, a name may be followed by its fields (D27) and facts, such as `.len` (Unio D79):
+`{goblin.name}`, `{names.len}`. A calculation or a call is still refused, and a field or fact the value doesn't have is
+refused at load time.
+
+```
+show_msg(fmt("{goblin.name} has {goblin.hp} HP"))
+show_msg(fmt("{names.len} names"))
+show_msg(fmt("{goblin.hp - 5}"))        // refused: a calculation
+```
+
+This changes D12's "braces hold only names".
+
+**Weighed.**
+- Names only, as D12 had it, so a field needs a name of its own first. A field or a fact is read directly, running
+  nothing and unable to fail, so D12's reason doesn't apply to it.
+
+**Why this won.** Text still never hides work or something that can fail, which is what D12 and Unio's D29 guard
+against, while records show cleanly.
+
+**Tankun's words.** Asked "Should `fmt` braces allow a name followed by its fields and facts, like `{goblin.name}` and
+`{names.len}`?", the owner chose: "yea. Should Seal be able to join text with `&`?"
