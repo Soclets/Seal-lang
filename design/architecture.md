@@ -29,5 +29,14 @@ run:   a register VM runs the bytecode, counting steps
   The four tools are built on the library, never copying its insides. How the library is split inside is the building
   session's to propose.
 
-**Not decided:** the host's side of embedding; isolation between scripts and threads;
+- **The host's side** (D48): doors are typed Rust closures; a host chooses each script's doors and limits when loading
+  it; loading checks and runs the top level, returning a handle; calls in are checked by name and types; refusals,
+  failed checks and limits come back as errors, never crashes; records and `one_of` cross by `#[derive(Seal)]`.
+
+```rust
+let mut goblin_script = Script::load("goblin.seal", &source, &doors, limits)?;
+goblin_script.call("on_hit", (10,))?;
+```
+
+**Not decided:** isolation between scripts and threads;
 determinism across machines.
