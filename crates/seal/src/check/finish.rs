@@ -812,7 +812,11 @@ impl Checker<'_> {
         walk_block(&self.program.top_level, &mut finder);
         let top_level_pause = finder.found;
         if let Some(place) = top_level_pause {
-            messages.push(Message::not_designed_yet(place, "a pause while the top level is running"));
+            // trace: D67
+            messages.push(
+                Message::refused(place, "this pauses, and the top level can't pause")
+                    .with_why("the host waits for loading to finish; a pause belongs in a procedure the host calls."),
+            );
         }
         self.program.top_level_can_pause = top_level_pause.is_some();
         self.messages.append(&mut messages);

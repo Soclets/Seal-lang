@@ -160,7 +160,12 @@ impl Checker<'_> {
             Kind::Try(inner) => {
                 let checked = self.expression(inner, wanted);
                 if self.context.procedure.is_none() {
-                    self.not_designed(place, "passing a failure up with `?` from the top level");
+                    // trace: D67
+                    self.refuse_why(
+                        place,
+                        "`?` hands a failure to a caller, and the top level has none",
+                        "a failure at the top level is handled on the spot, with `??` or `otherwise`.",
+                    );
                     return Self::error(place);
                 }
                 if self.program.types.is_error(checked.type_id) && matches!(checked.kind, ExpressionKind::Error) {

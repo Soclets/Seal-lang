@@ -32,6 +32,9 @@ enum ProcedureState {
 }
 
 /// Something a type must allow, checked once the type is worked out (D5).
+/// Why the top level can't hand anything to a caller (D67).
+pub(super) const TOP_LEVEL: &str = "the top level runs once, when the script loads, with nobody calling it.";
+
 #[derive(Clone, Debug)]
 enum Requirement {
     /// `Whole` or `Float`: maths and ordering.
@@ -112,6 +115,8 @@ pub(crate) struct Checker<'a> {
     written_failures: Vec<Option<Vec<syntax::Word>>>,
     /// The first place of each top-level name that isn't decided for use before it's made.
     reported_early_use: HashSet<VariableId>,
+    /// The top-level line being checked, for saying which line reached a procedure (D67).
+    top_level_line: Option<Place>,
     /// Set once the top level and every procedure have been checked.
     every_procedure_checked: bool,
     /// How many slides are being checked as nested calls, which Unio D128's refusal of nested calls leaves alone.
@@ -148,6 +153,7 @@ pub fn check(script: &syntax::Script, doors: &[DoorSignature]) -> Result<Program
         top_level_position: 0,
         written_failures: Vec::new(),
         reported_early_use: HashSet::new(),
+        top_level_line: None,
         every_procedure_checked: false,
         slide_depth: 0,
         judged_chains: HashSet::new(),
@@ -209,10 +215,12 @@ impl<'a> Checker<'a> {
                     self.not_designed(statement.place, "a line after a `return`, `break` or `fail` in the same block");
                     left = false;
                 }
+                self.top_level_line = Some(statement.place);
                 if let Some(checked) = self.statement(statement) {
                     left = Self::leaves(&checked);
                     top_level.push(checked);
                 }
+                self.top_level_line = None;
                 self.top_level_position += 1;
             }
         }
@@ -821,10 +829,15 @@ impl<'a> Checker<'a> {
             variable.captured = true;
         }
         if !self.made.contains(&id) && self.reported_early_use.insert(id) {
-            self.not_designed(
-                place,
-                format!("running a procedure that uses the top-level name `{name}` before the line that makes it"),
-            );
+            // trace: D67. The top level reaches this procedure before the line that makes the name has run.
+            let made_at = self.variable(id).map_or(place, |variable| variable.place);
+            let mut message = Message::refused(place, format!("`{name}` is reached here before the top level has made it"))
+                .with_because(format!("line {} makes it", made_at.line), made_at)
+                .with_why("the top level runs from top to bottom when the script loads, and a procedure it calls runs right then.");
+            if let Some(line) = self.top_level_line {
+                message = message.with_when(format!("the top level's line {} runs this", line.line));
+            }
+            self.messages.push(message);
         }
         Some(id)
     }
@@ -1131,7 +1144,8 @@ impl<'a> Checker<'a> {
             syntax::StatementKind::Return(value) => self.return_statement(value.as_ref(), place)?,
             syntax::StatementKind::Fail(name) => {
                 if self.context.procedure.is_none() {
-                    self.not_designed(place, "failing on purpose at the top level");
+                    // trace: D67
+                    self.refuse_why(place, "`fail` hands a failure to a caller, and the top level has none", TOP_LEVEL);
                     return None;
                 }
                 StatementKind::Fail(self.failure(&name.text))
@@ -1471,7 +1485,8 @@ impl<'a> Checker<'a> {
     /// trace: D6, Unio D57
     fn return_statement(&mut self, value: Option<&syntax::Expression>, place: Place) -> Option<StatementKind> {
         let Some(procedure) = self.context.procedure else {
-            self.not_designed(place, "a `return` at the top level");
+            // trace: D67
+            self.refuse_why(place, "`return` hands a value to a caller, and the top level has none", TOP_LEVEL);
             return None;
         };
         let result = self.program.procedure(procedure).map_or(ERROR, |procedure| procedure.result);
