@@ -1902,3 +1902,32 @@ the end, leaving `Dict` keys partway along for later?", the owner chose: "??".
 building session read Unio's conventions meanwhile and stopped on everything else.
 
 **Tankun's words.** Asked "Should Seal take Unio's line rules as listed, in Seal's syntax?", the owner chose: "??".
+
+## D64. `==` and `!=` compare two texts exactly, character by character
+
+2026-11-23.
+
+**Chosen.**
+- **`==` and `!=` work on two `Text`s:** equal when they hold the same characters in the same order. It's exact and
+  case-sensitive, so `"Yes" != "yes"`.
+- **Nothing is normalised behind the script's back:** "é" stored as one character and "e" followed by an accent mark
+  are different texts, the same on every machine (D50).
+- **`<` and `>` on text,** alphabetical order, aren't decided yet: what counts as alphabetical depends on the language
+  being written.
+
+```
+if answer == "yes"
+if name != ""
+```
+
+**Weighed.**
+- Normalising Unicode before comparing. It needs tables that change between Unicode versions, which would break D50
+  across Seal versions, and it hides work. A way to normalise on purpose can come later.
+- Ignoring case. "Yes" and "yes" being equal surprises as often as it helps, and lower- and upper-casing depend on
+  the language too.
+
+**Why this won.** The simplest rule that's the same everywhere, as Rust, Lua and JavaScript compare text. Unio leaves
+comparing text open (its chapter 5); Seal's building session needed it for the word-count benchmark.
+
+**Tankun's words.** Asked "Should `==` and `!=` compare two texts exactly, character by character, with no
+normalising, and `<` and `>` on text left for later?", the owner chose: "??".
