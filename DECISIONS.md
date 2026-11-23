@@ -659,3 +659,24 @@ hosts come to want ready-made names, they can be added later without breaking an
 **Tankun's words.** "That's the same as doing `local ws = game:GetService("Workspace")`, right?", then, asked "Should
 Seal leave out host-given values, with doors covering them?", the owner chose: "yea. What about Seal naming
 conventions? `GetService` or `get_service`".
+
+## D24. Names are lowercase words joined by `_`, the host's doors included
+
+2026-11-23.
+
+**Chosen.** Seal names follow Unio's D99: lowercase English letters, digits and `_` between words, starting with a
+letter, as in `get_service`, `player2` and `hp_max`. Types are capitalised, as `Whole` and `List`, so a capital always
+means a type. This holds for the host's doors and their narrowings too (D11, D13): a door named `GetService` is refused
+when the host opens it, in the host's own code, so a script reads the same in every host.
+
+**Weighed.**
+- Each host naming its doors in its own style. Roblox's API mixes `GetService`, `FindFirstChild`, `workspace` and
+  `game.Players`, and Luau can't stop it, since the names are Roblox's.
+- `GetService`, capitalised as Roblox has it. A capital would then mean a type in one place and a door in another.
+
+**Why this won.** One style everywhere, the one Unio already has, and since Seal's hosts name their own doors (D11),
+checking them is the only way to keep scripts uniform.
+
+**Tankun's words.** "yea. What about Seal naming conventions? `GetService` or `get_service`" (quoted in D23), then,
+asked "Should Seal names, the host's door names included, follow Unio's D99: lowercase words joined by `_`, with types
+capitalised?", the owner chose: "yea".
