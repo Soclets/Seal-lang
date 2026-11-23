@@ -1324,3 +1324,33 @@ failures from Zig. Since both are usually worked out, they're written only where
 **Tankun's words.** "What about `proc load_level[name] -> Level ! [not_found, broken]`", "No", then,
 asked "Should Seal write a procedure's result as `-> Type` and its failures as `! [ … ]`, both optional, in place of
 `returns` and `fails`?", the owner chose: "yea".
+
+## D46. Scripts are compiled at load time to bytecode, run by a register VM, with no JIT
+
+2026-11-23.
+
+**Chosen.**
+- **At load time,** a script goes from text, to a syntax tree, to a checked tree with its types worked out, to
+  bytecode: instructions for a virtual machine (D17).
+- **While running,** a register VM, the kind Lua and Luau use, runs the bytecode, counting steps (D14). Since every type
+  is known before running, its instructions need no type checks, as `add_whole` just adds.
+- **No JIT,** turning code into machine code while running: iPhones and game consoles forbid it, and it makes the
+  sandbox harder to trust.
+- **The instruction set, its names and the optimizations are the building session's** to propose, under D17.
+
+```
+load:  text → syntax tree → checked, types worked out → bytecode
+run:   a register VM runs the bytecode, counting steps
+```
+
+**Weighed.**
+- Walking the syntax tree directly. Simpler, but often several times slower, and would need replacing.
+- A JIT. Far more work, harder to trust, and forbidden where embedded scripts often run.
+- A stack VM, as the JVM and CPython have. A register VM does the same work in fewer instructions, as Lua found.
+
+**Why this won.** It's the proven shape for a fast embedded interpreter, and Seal's static types make its VM faster
+than a dynamic one can be: there's no type check left to make while running.
+
+**Tankun's words.** "We should decide arch first?  Memory and impl lang is done", then, asked "Should Seal compile
+scripts at load time to bytecode run by a register VM, with no JIT?", the owner chose: "yea. Btw, the impl-tor could
+decide bytecode names".
