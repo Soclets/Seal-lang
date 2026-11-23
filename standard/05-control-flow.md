@@ -47,7 +47,8 @@ end
 ```
 
 As in Unio (D22, Unio D171 to D174):
-- **It goes through a `List`, an `Array` or a `range[…]`,** in order.
+- **It goes through a `List`, an `Array` or a `range[…]`,** in order, or a `Dict`'s values, with `at key name` giving
+  each key (D33).
 - **The item's name is new for each pass,** made by the `for each` line, and ends with the loop.
 - **`at pos i` or `at offset i`** gives the position too, counting from 1 or from 0.
 - **What it goes through can't change inside it.**

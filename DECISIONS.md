@@ -907,3 +907,31 @@ that isn't there isn't there. The name comes from Smalltalk's `Dictionary`, shor
 
 **Tankun's words.** "Why `Map`?", "Why `Dict`?", "No, I meant why `Dict`", then, asked "Should Seal's key-to-value
 type be `Dict<key: …, value: …>`, taught as short for dictionary, with the rest as proposed?", the owner chose: "yea".
+
+## D33. `for each` goes through a `Dict`'s values, with `at key name` giving each key
+
+2026-11-23.
+
+**Chosen.** `for each` goes through a `Dict`'s values in the order their keys were added (D32), and `at key name` gives
+each value's key, as `at pos` and `at offset` give a list item's position (Unio D174). Like a list, the `Dict` can't
+change inside the loop (Unio D173).
+
+```
+for each count at key item in stock
+    show_msg(fmt("{item}: {count}"))
+end
+
+for each count in stock
+    total = total + count
+end
+```
+
+**Weighed.**
+- `for item, count in stock`, as Python has it. Shorter, but which name is the key and which the value is by position,
+  the problem D27 and D31 removed.
+
+**Why this won.** One shape for going through anything, and it reads aloud as a sentence: "for each count, at key item,
+in stock".
+
+**Tankun's words.** Tankun's reaction to the loop line (has code), then, asked "Should `for each` go through a `Dict`'s
+values, with `at key name` giving each key, in the order they were added?", the owner chose: "yea".

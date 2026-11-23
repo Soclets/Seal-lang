@@ -73,7 +73,15 @@ potions = stock[key: "potion"] ?? 0
 - **A missing key is the failure `missing`,** handled with `??` or `otherwise` (D32, Unio D23).
 - **It keeps the order keys were added in,** and is copied as a whole, a Rust `HashMap` at the doors (D15, D32).
 
-**Not decided:** going through a `Dict`; its methods; which types can be keys.
+`for each` goes through a `Dict`'s values in the order their keys were added, and `at key name` gives each key (D33):
+
+```
+for each count at key item in stock
+    show_msg(fmt("{item}: {count}"))
+end
+```
+
+**Not decided:** a `Dict`'s methods; which types can be keys.
 
 ## `fmt`
 
