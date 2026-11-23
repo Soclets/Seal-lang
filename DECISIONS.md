@@ -1677,3 +1677,48 @@ pass. Found while writing Seal's first tests.
 
 **Tankun's words.** Asked "Should a name made inside a block end where the block ends, with a loop's body a fresh block
 each pass, as in Unio's D93?", the owner chose: "yea".
+
+## D57. Performance goals, with Luau's and V8's interpreters as bars, on seven fixed benchmarks
+
+2026-11-23.
+
+**Chosen.** The building session gets goals, not a list of optimizations, and finds the optimizations that reach them
+(D17, D46):
+1. **Faster than Luau's interpreter,** with its native code generation off, on every benchmark below.
+2. **Faster than V8 with `--jitless`,** which runs only Ignition, V8's bytecode register VM, on `fib` and n-body, where
+   static types matter most; within twice its time on word count and text building, where V8's strings and hash
+   tables are among the most tuned code anywhere.
+3. **Full V8, with its JITs, measured for reference only,** with no target.
+4. **Loading:** a 10,000-line script checked and compiled in under 100 ms.
+5. **Footprint:** thousands of loaded scripts at once, each costing kilobytes beyond its code.
+6. **Pausing:** pausing and resuming a task (D49) costs about as much as a call.
+7. **Every number measured with every check on,** none dropped to reach it (D17).
+
+The benchmarks are fixed; the building session may add more, never swap or drop any:
+
+| Benchmark | Tests |
+|---|---|
+| `fib(32)`, recursive | calls |
+| n-body, from the Computer Language Benchmarks Game | float maths, records |
+| spectral-norm, from the Benchmarks Game | loops, arrays, floats |
+| fannkuch-redux, from the Benchmarks Game | array shuffling, `Whole` maths |
+| word count | `Dict` and `Text` |
+| text building | joining text many times |
+| 1,000 patrolling scripts | loading, pausing, footprint |
+
+Luau and V8 run the Benchmarks Game's existing Lua and JavaScript versions where they exist. Binary-trees joins once
+Seal has records inside records.
+
+**Weighed.**
+- A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
+- Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
+  tests it already passes.
+- Beating full V8. It compiles hot code to machine code, which Seal doesn't do on purpose (D46).
+
+**Why this won.** Measurable goals against the strongest interpreters in game scripting and the web, on programs
+written by others, keep the building honest, and leave how to reach them to the session that can measure.
+
+**Tankun's words.** "What should the optimizations be? Or say the goal of perf", "What about some V8 goals too? Not beat
+all, just yk", "What benchmarks? Or let the impl-tor decide what benchmarks?", then, asked "Should the prompt fix these
+seven benchmarks, with the Luau and V8 goals, letting the builder add more but never swap or drop any?", the owner
+chose: "yea. What about benchmark types. Ask Cyborg".

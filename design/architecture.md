@@ -45,3 +45,6 @@ goblin_script.call("on_hit", (10,))?;
 - **Determinism** (D50): a script, given the same calls and door answers, gives the same results on every machine, bit
   for bit. Maths functions added later are correctly rounded, ported to Rust with no `unsafe` after CORE-MATH's
   algorithms, and checked against Ralph.
+- **Performance goals** (D57): faster than Luau's interpreter on every benchmark, faster than V8 `--jitless` on `fib` and
+  n-body and within twice it on word count and text building, loading 10,000 lines in under 100 ms, kilobytes per
+  loaded script, cheap pausing, all with every check on, on seven fixed benchmarks.
