@@ -2111,3 +2111,24 @@ copy line says so. Seal's building session found the gaps.
 **Tankun's words.** "Bro, the comments are stacking onto another line", then, asked "Should a `for each` refuse calls
 that can change what it goes through, and refuse pausing while going through a top-level name, with copying first as
 the fix?", the owner chose: "??".
+
+## D70. A value-giving call can't stand alone, nor can a line that only works out a value
+
+2026-11-23.
+
+**Chosen.** As in Unio (Unio D120, D161):
+- **A call that gives a value can't stand alone,** its value dropped. To drop one on purpose, give it a name marked
+  `unused` (D3): `unused roll = roll_dice()`.
+- **A line that only works out a value is refused,** as `score + 1` alone, almost always a typo for
+  `score = score + 1`.
+- **A call that gives nothing stands alone,** as `show_msg("hi")`.
+
+**Weighed.**
+- Dropping values silently, as most languages do. A dropped value is usually a bug, and Seal already has a way to drop
+  one on purpose.
+
+**Why this won.** It's Unio's rule, and it fits D2's: nothing made is quietly ignored, and `unused` says when it's on
+purpose. Seal's building session stopped on it as "not designed yet".
+
+**Tankun's words.** Asked "Should a value-giving call standing alone, and a line that only works out a value, be
+refused, with `unused` as the way to drop a value on purpose?", the owner chose: "??".

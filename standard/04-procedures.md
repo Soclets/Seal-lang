@@ -113,4 +113,5 @@ heal(goblin, by: 10)              // means heal(goblin, by: 10, times: 1)
 - **A default is a plain value,** never a calculation or a call (D42).
 - **The host's calls can leave defaulted arguments out too** (D42).
 
-**Not decided:** a value-giving call standing alone (Unio D120, D161).
+- **A call that gives a value can't stand alone,** and nor can a line that only works out a value, as `score + 1`; a
+  value is dropped on purpose by naming it `unused` (D70, D3, Unio D120, D161).
