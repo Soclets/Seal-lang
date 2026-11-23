@@ -54,6 +54,8 @@ goblin.hp = goblin.hp - 5
 - **It's built with `[ ]`, naming every field;** a field left out is refused (D27).
 - **A field is read with `.field`,** and changed only through a `mut` name. A record is a value: `b = a` gives `b` its
   own copy (D15, D27).
+- **A change can reach through any depth of fields and positions** of a `mut` name, as `bodies[pos: 1].vx = 2.0`, with
+  a method allowed at the end, as `goblin.items.add("Gem")`; a `Dict` key partway along isn't decided (D62).
 - **At the doors a record is a Rust struct** (D27).
 
 **Not decided:** defaults for fields; methods on records; records inside records.

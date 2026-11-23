@@ -1847,3 +1847,32 @@ Seal's building session stopped on it as "not designed yet".
 **Tankun's words.** "`?` means "What?", `??` means "yes", `???` means "no". Only works if the msg only has that",
 "?", then, asked "Should unread parameters and `for each` names be refused unless marked `unused`, with a `case`
 taking out only the values it reads?", the owner chose: "??".
+
+## D62. A `mut` name can be changed through any depth of fields and positions
+
+2026-11-23.
+
+**Chosen.**
+- **A change can reach through any number of fields and positions** of a `mut` name, as `bodies[pos: i].vx = 1.0`,
+  and a method can end the chain, as `goblin.items.add("Gem")`.
+- **It changes only that name's own value** (D15), and copy-on-write lets it happen in place, so it costs no more than
+  one step does.
+- **Every step is checked:** a bad position anywhere stops the script at its line (Unio D46).
+- **`Dict` keys partway along a chain,** as `stock[key: "sword"].count = 1`, aren't decided yet, since the key might be
+  missing partway through a line.
+
+```
+mut bodies = [Body[x: 0.0, vx: 1.0], Body[x: 5.0, vx: -1.0]]
+bodies[pos: 1].vx = 2.0
+goblin.items.add("Gem")
+```
+
+**Weighed.**
+- One step only, as decided before (D27, D32, Unio D80): a part of a part is copied out, changed, and put back, three
+  lines for one change, as n-body showed Seal's building session.
+
+**Why this won.** It's the same change as one step, a name changing its own value, written once; Hylo, which Seal's
+memory model comes from, works the same way.
+
+**Tankun's words.** Asked "Should a `mut` name allow changes through any depth of fields and positions, with a method at
+the end, leaving `Dict` keys partway along for later?", the owner chose: "??".
