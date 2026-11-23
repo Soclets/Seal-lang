@@ -31,7 +31,10 @@ board: Array<Whole>[len: 64] = [all: 0]
 A name's type can be written after it, as `name: Type = value`. It's optional, and required only when the value can't
 say the type, as with an empty list: `mut bag = []` is refused (D30).
 
-**Not decided:** maps and other types.
+A type with more than one blank to fill in labels each one, as `Dict<key: Text, value: Whole>`; one with a single
+blank, as `List<Text>`, doesn't (D31).
+
+**Not decided:** other types.
 
 ## Records
 
@@ -54,6 +57,23 @@ goblin.hp = goblin.hp - 5
 - **At the doors a record is a Rust struct** (D27).
 
 **Not decided:** defaults for fields; methods on records; records inside records.
+
+## Dictionaries
+
+```
+mut stock: Dict<key: Text, value: Whole> = ["sword": 1, "potion": 3]
+stock[key: "potion"] = 4
+potions = stock[key: "potion"] ?? 0
+```
+
+- **`Dict<key: Key, value: Value>` holds values looked up by key,** each key once. `Dict` is short for dictionary
+  (D32).
+- **Its literal writes the keys as values,** and `[:]` is an empty one (D32).
+- **It's reached with `key:`;** setting a key through a `mut` name replaces its value or adds it (D32).
+- **A missing key is the failure `missing`,** handled with `??` or `otherwise` (D32, Unio D23).
+- **It keeps the order keys were added in,** and is copied as a whole, a Rust `HashMap` at the doors (D15, D32).
+
+**Not decided:** going through a `Dict`; its methods; which types can be keys.
 
 ## `fmt`
 

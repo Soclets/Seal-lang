@@ -868,3 +868,42 @@ field names do in records (D27). It adds labels to `< >`, which Unio's D165 has 
 **Tankun's words.** "Where's the labels?", "No, I meant the label on the type", then, asked "Should a type with more
 than one blank to fill in label each one, as in `Map<key: Text, value: Whole>`, while `List<Text>` stays unlabelled?",
 the owner chose: "yea".
+
+## D32. `Dict<key: …, value: …>` pairs keys with values, reached with `key:`, with a missing key as a failure
+
+2026-11-23.
+
+**Chosen.**
+- **`Dict<key: Key, value: Value>` holds values looked up by key,** each key once (D31's labels). `Dict` is taught as
+  short for dictionary, as Unio teaches `proc` and `fmt` (Unio D2).
+- **It's written with its keys as values:** `["sword": 1, "potion": 3]`, and `[:]` is an empty one.
+- **It's reached with `key:`,** as a list is with `pos:` and `offset:` (Unio D75): `stock[key: "potion"]`. Setting
+  `stock[key: "potion"] = 4` replaces the value, or adds the key, through a `mut` name.
+- **A missing key is a failure, `missing`,** handled with `??` or `otherwise` (Unio D23), never a quiet "nothing".
+- **It keeps the order keys were added in,** so going through one is the same on every machine.
+- **It's a value,** copied as a whole (D15), and a Rust `HashMap` at the doors.
+
+```
+mut stock: Dict<key: Text, value: Whole> = ["sword": 1, "potion": 3]
+stock[key: "potion"] = 4
+potions = stock[key: "potion"] ?? 0
+```
+
+Going through a `Dict` with `for each`, its methods, such as removing a key or asking whether one is there, and which
+types can be keys, aren't decided yet.
+
+**Weighed.**
+- `Map`, as Java, Go, C++, Kotlin and JavaScript have it, from maths' mapping. In games, a map is the level or world
+  map, one of the likeliest record names a script would want.
+- `Dictionary`, as Swift and C# have it. The same word in full, longer where it's typed, as `Bool` is short for
+  Boolean.
+- `HashMap`, as Rust has it: names how it's stored inside. `Table`, as Lua has it: Lua's tables are its lists and
+  objects too.
+- Arbitrary order, as a plain hash map gives. A game going through one would differ from machine to machine.
+- Luau's `nil` for a missing key. The failure comes later, far from the lookup.
+
+**Why this won.** It works as a paper dictionary does: look up by the word, not by position, each word once, and a word
+that isn't there isn't there. The name comes from Smalltalk's `Dictionary`, shortened as Python's `dict`.
+
+**Tankun's words.** "Why `Map`?", "Why `Dict`?", "No, I meant why `Dict`", then, asked "Should Seal's key-to-value
+type be `Dict<key: …, value: …>`, taught as short for dictionary, with the rest as proposed?", the owner chose: "yea".
