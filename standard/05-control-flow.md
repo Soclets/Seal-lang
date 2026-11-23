@@ -13,7 +13,7 @@ end
 ```
 
 - **No `:`** after `if`, `elif` or `else` (D9), **one `end`** for the whole `if` (D20).
-- **`elif`** is short for "else if" (D10).
+- **`elif`** is short for "else if" (D10, D40). Unio writes `else if`, and Seal's `elif` is a deliberate difference.
 - **A condition must be a `Bool`:** `if lives` is refused, with `if lives != 0` as the fix (D16, Unio D187).
 
 ## Comparisons and logic

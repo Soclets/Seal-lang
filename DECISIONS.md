@@ -285,6 +285,8 @@ end if
 **Why this won.** One keyword for one job, in the short spelling Unio's D2 prefers, and already known from Python and
 Bash. Tankun's sketch used it.
 
+(Corrected by D40: Unio's D16 turned `elif` down as breaking D2, so this entry's reason is wrong.)
+
 **Tankun's words.** Asked "Should Seal use `elif`, taught as short for "else if"?", the owner chose: "yea".
 
 ## D11. Built-ins touch nothing outside the script, and every door is made and named by the host
@@ -1129,3 +1131,22 @@ of what simple contracts would.
 **Tankun's words.** "Should there be contracts?", "Huh? Are they required?", "Ralph able to prove them? What does that
 mean", "Are labels, families, and defaults decided in Seal?", then, asked "Should Seal leave contracts out for now?",
 the owner chose: "yea".
+
+## D40. `elif` stays, for Seal's own reasons, and D10's reason is corrected
+
+2026-11-23.
+
+**Chosen.** Seal keeps `elif` (D10), for its own reasons: Tankun's sketch chose it, Python and Bash scripters already
+know it, and it's lighter to write. D10 said it follows Unio's D2; it doesn't. Unio's D16 turned `elif` down because
+it's a made-up contraction, not short for one word, breaking D2's "learn the concept, then type it short". So this is
+a deliberate difference from Unio, as Seal is inspired by Unio, not bound to it (D1).
+
+**Weighed.**
+- Unio's `else if`: two plain words, consistent with Unio, for three more characters.
+
+**Why this won.** Seal parts from Unio on purpose wherever writing gets lighter, as with no `$` (D7), no `;` (D8) and a
+plain `end` (D20), and `elif` belongs with those. The design claude found D10's wrong reason while reading Cyborg's
+and Unio's decisions on contracts.
+
+**Tankun's words.** Asked "Should Seal keep `elif`, with a new decision giving the real reason and noting that Unio
+refused it?", the owner chose: "yea".
