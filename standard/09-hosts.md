@@ -35,6 +35,9 @@ calls Seal is the building session's to propose.
   at a time, they switch only at pauses, and they share the script's top-level names (D51).
 - **A host declares which doors can pause;** Seal works out which procedures can, from their bodies, and the language
   server marks every line where a pause can happen. Nothing is written at a call (D52).
+- **The host can cancel a paused task,** ending it at its pause, while the script's other tasks carry on (D54).
+- **A failed check or a limit in any task stops the whole script,** all its tasks, since a task stopped halfway may
+  have left shared names half-changed (D54).
 - **A script runs one thing at a time;** there's no parallelism inside it (D49).
 
 ## Limits

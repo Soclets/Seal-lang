@@ -1603,3 +1603,28 @@ control back each time, so only a stretch with no pause can freeze anything.
 
 **Tankun's words.** Asked "Should the step budget count each run between pauses, with a fresh budget at every resume,
 while the memory cap covers the whole script?", the owner chose: "yea".
+
+## D54. The host can cancel a paused task; a failed check or limit in any task stops the whole script
+
+2026-11-23.
+
+**Chosen.**
+- **The host can cancel a paused task.** It ends right at its pause: nothing after the pause runs, and the script's
+  other tasks carry on. A guard that dies mid-patrol has its `patrol` task cancelled.
+- **A failed check or a limit in any task stops the whole script,** all its tasks, and the host is told (D14). Tasks
+  share the script's top-level names (D51), and a task stopped halfway may have left them half-changed.
+- **The host decides what comes next,** such as reloading the script.
+
+```rust
+goblin_script.cancel(patrol_task);     // a sketch; the names are the building session's
+```
+
+**Weighed.**
+- Paused tasks that can never be cancelled. A dead guard's patrol would wait forever, holding its place.
+- A failed check stopping only its own task. The other tasks would carry on with names it left half-changed.
+
+**Why this won.** The host, which owns time and the game's world (D11), can end what no longer makes sense, while a
+script that went wrong never keeps running on broken state.
+
+**Tankun's words.** Asked "Should the host be able to cancel a paused task, ending it at its pause, while a failed
+check or limit in any task stops the whole script?", the owner chose: "yea".
