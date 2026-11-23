@@ -66,4 +66,13 @@ show_msg(be.Text(n))
 
 Unio's standard, chapter 4, has the rules for slides in full.
 
-**Not decided:** how a Seal procedure declares its labels; a value-giving call standing alone (Unio D120, D161).
+A procedure declares its labels on a `labels` line, the first line of its body (D41, Unio D25):
+
+```
+proc heal[target, amount, times]
+    labels amount as by, times as times
+    hp = hp + amount * times
+end
+```
+
+**Not decided:** a value-giving call standing alone (Unio D120, D161).

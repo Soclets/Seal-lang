@@ -1150,3 +1150,28 @@ and Unio's decisions on contracts.
 
 **Tankun's words.** Asked "Should Seal keep `elif`, with a new decision giving the real reason and noting that Unio
 refused it?", the owner chose: "yea".
+
+## D41. Labels are declared with Unio's `labels` line at the top of the body
+
+2026-11-23.
+
+**Chosen.** A procedure declares its labels as Unio does (Unio D25), on a `labels` line, the first line of its body, in
+Seal's syntax: no `$` and no `;`.
+
+```
+proc heal[target, amount, times]
+    labels amount as by, times as times
+    hp = hp + amount * times
+end
+
+heal(goblin, by: 10, times: 2)
+```
+
+**Weighed.**
+- Labels in the parameter list, as `proc heal[target, amount as by]`, as the design claude proposed, so the first line
+  holds the whole promise. Tankun: "Fuck no".
+
+**Why this won.** The parameter list stays just the names, with types where wanted, and labels keep Unio's form.
+
+**Tankun's words.** "Fuck no", then, asked "Should Seal declare labels with Unio's `labels` line at the top of the
+body?", the owner chose: "yea".
