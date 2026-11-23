@@ -2,9 +2,10 @@
 
 /// A Seal value on the host's side. Hosts mostly use plain Rust types through [`crate::IntoSeal`] and
 /// [`crate::FromSeal`]; this is what those turn into and come from.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Value {
     /// What a procedure or door that gives nothing gives.
+    #[default]
     Nothing,
     Whole(i64),
     Float(f64),

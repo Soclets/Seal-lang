@@ -17,12 +17,27 @@ pub trait SealType {
 /// A Rust value that can go into a script, as a copy (D15).
 pub trait IntoSeal: SealType {
     fn into_seal(self) -> Value;
+
+    /// The value as the bare bits a script holds it in, for the types that are nothing more: `i64`, `f64`,
+    /// `bool` and `()`. It lets a door hand such a value over with no copy made on the way.
+    #[doc(hidden)]
+    fn plain_bits(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// A Rust value that can come out of a script, as a copy (D15).
 pub trait FromSeal: SealType + Sized {
     /// Gives nothing when the value isn't of this type.
     fn from_seal(value: Value) -> Option<Self>;
+
+    /// The value from the bare bits a script holds it in, for the types that are nothing more: `i64`, `f64`,
+    /// `bool` and `()`.
+    #[doc(hidden)]
+    #[must_use]
+    fn from_bits(_bits: u64) -> Option<Self> {
+        None
+    }
 }
 
 impl SealType for () {
@@ -35,6 +50,10 @@ impl IntoSeal for () {
     fn into_seal(self) -> Value {
         Value::Nothing
     }
+
+    fn plain_bits(&self) -> Option<u64> {
+        Some(0)
+    }
 }
 
 impl FromSeal for () {
@@ -44,7 +63,23 @@ impl FromSeal for () {
 }
 
 macro_rules! plain {
+    ($rust:ty, $host:ident, $value:ident, $to_bits:expr, $from_bits:expr) => {
+        plain!(@full $rust, $host, $value, {
+            fn plain_bits(&self) -> Option<u64> {
+                let to_bits: fn(&$rust) -> u64 = $to_bits;
+                Some(to_bits(self))
+            }
+        }, {
+            fn from_bits(bits: u64) -> Option<Self> {
+                let from_bits: fn(u64) -> $rust = $from_bits;
+                Some(from_bits(bits))
+            }
+        });
+    };
     ($rust:ty, $host:ident, $value:ident) => {
+        plain!(@full $rust, $host, $value, {}, {});
+    };
+    (@full $rust:ty, $host:ident, $value:ident, { $($into_extra:tt)* }, { $($from_extra:tt)* }) => {
         impl SealType for $rust {
             fn host_type() -> HostType {
                 HostType::$host
@@ -55,6 +90,8 @@ macro_rules! plain {
             fn into_seal(self) -> Value {
                 Value::$value(self)
             }
+
+            $($into_extra)*
         }
 
         impl FromSeal for $rust {
@@ -64,13 +101,15 @@ macro_rules! plain {
                     _ => None,
                 }
             }
+
+            $($from_extra)*
         }
     };
 }
 
-plain!(i64, Whole, Whole);
-plain!(f64, Float, Float);
-plain!(bool, Bool, Bool);
+plain!(i64, Whole, Whole, |whole| whole.cast_unsigned(), |bits| bits.cast_signed());
+plain!(f64, Float, Float, |float| float.to_bits(), f64::from_bits);
+plain!(bool, Bool, Bool, |flag| u64::from(*flag), |bits| bits != 0);
 plain!(String, Text, Text);
 
 impl<T: SealType> SealType for Vec<T> {
@@ -199,22 +238,33 @@ impl<T: IntoSeal> IntoArgument for Labelled<T> {
 
 /// The arguments of a call into a script: a tuple of values, each plain or [`labelled`].
 pub trait Arguments {
-    fn into_arguments(self) -> Vec<Argument>;
+    /// Hands the arguments, in order, to `call`.
+    fn with_arguments<R>(self, call: impl FnOnce(&[Argument]) -> R) -> R;
 }
 
 impl Arguments for Vec<Argument> {
-    fn into_arguments(self) -> Vec<Argument> {
-        self
+    fn with_arguments<R>(self, call: impl FnOnce(&[Argument]) -> R) -> R {
+        call(&self)
+    }
+}
+
+impl Arguments for &[Argument] {
+    fn with_arguments<R>(self, call: impl FnOnce(&[Argument]) -> R) -> R {
+        call(self)
     }
 }
 
 macro_rules! tuple_arguments {
+    (@count) => { 0 };
+    (@count $first:ident $($rest:ident)*) => { 1 + tuple_arguments!(@count $($rest)*) };
     ($($name:ident),*) => {
         impl<$($name: IntoArgument),*> Arguments for ($($name,)*) {
             #[allow(non_snake_case)] // each value takes its type's name, as the macro writes it
-            fn into_arguments(self) -> Vec<Argument> {
+            fn with_arguments<Output>(self, call: impl FnOnce(&[Argument]) -> Output) -> Output {
                 let ($($name,)*) = self;
-                vec![$($name.into_argument()),*]
+                // Kept on the stack: a call into a script makes no list on the heap for its arguments.
+                let arguments: [Argument; tuple_arguments!(@count $($name)*)] = [$($name.into_argument()),*];
+                call(&arguments)
             }
         }
     };

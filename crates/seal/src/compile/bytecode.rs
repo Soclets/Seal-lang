@@ -688,6 +688,8 @@ impl Crossing {
 #[derive(Clone, Debug)]
 pub struct DoorSite {
     pub door: u32,
+    /// Whether every argument is a plain number or `Bool`, needing no copy to cross.
+    pub plain: bool,
     pub arguments: Vec<Crossing>,
     pub result: Crossing,
 }

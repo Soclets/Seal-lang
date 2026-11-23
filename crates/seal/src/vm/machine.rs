@@ -3,11 +3,13 @@
 //! Nothing here can crash the host (D14): every register, instruction and heap value is reached through a check,
 //! and anything that doesn't add up stops the script and says so, as a bug in Seal to report.
 
-use super::crossing::{CrossingError, to_slot, to_value};
+use super::crossing::{CrossingError, plain_slot, plain_value, to_slot, to_value};
 use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use crate::check::tree::Rounding;
-use crate::compile::bytecode::{BULK_UNIT, Compiled, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry};
+use crate::compile::bytecode::{
+    BULK_UNIT, Compiled, Crossing, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry,
+};
 use crate::host::Value;
 use crate::number::{float_to_text, float_to_whole, text_to_whole};
 
@@ -20,6 +22,8 @@ pub enum DoorAnswer {
     Value(Value),
     /// The door failed with one of the failures its host declared (D44).
     Failure(String),
+    /// A plain number, a `Bool` or nothing, as the bare bits a script holds it in.
+    Plain(u64),
     /// The door pauses the script; the host resumes it later with the door's value (D49).
     Pause,
     /// The door couldn't be called as declared: a mistake in the host's code, or in Seal.
@@ -28,7 +32,9 @@ pub enum DoorAnswer {
 
 /// The host's doors, as the VM calls them.
 pub trait DoorCaller {
-    fn call_door(&self, door: u32, arguments: Vec<Value>) -> DoorAnswer;
+    /// Calls a door. `bits` has every argument's bare bits; `values` has, in the same places, the values of the
+    /// arguments that are more than their bits, which the door takes.
+    fn call_door(&self, door: u32, bits: &[u64], values: &mut Vec<Value>) -> DoorAnswer;
 }
 
 /// Why a script stopped (D14, D17).
@@ -90,6 +96,8 @@ pub struct Machine {
     pub globals: Vec<u64>,
     /// The handles of the script's own texts, which live as long as it does.
     pub texts: Vec<u64>,
+    /// Where a door's arguments are put for the call, kept from one call to the next.
+    pub door_arguments: Vec<Value>,
 }
 
 /// How a run of a task ended.
@@ -237,8 +245,9 @@ impl Task {
     /// Gives back what the task's stack was counted as, when the task is over.
     pub fn finish(&mut self, heap: &mut Heap) {
         heap.refund(self.stack.len().saturating_mul(STACK_SLOT_COST));
-        self.stack = Vec::new();
-        self.frames = Vec::new();
+        // The room itself is kept, emptied, for the next call to run in.
+        self.stack.clear();
+        self.frames.clear();
         self.waiting = None;
     }
 }
@@ -258,7 +267,7 @@ pub fn run(
     step_budget: u64,
     failures: [u32; 3],
 ) -> Result<Outcome, Stopped> {
-    let Machine { heap, globals, texts } = machine;
+    let Machine { heap, globals, texts, door_arguments } = machine;
     let code: &[Instruction] = &compiled.code;
     let layouts: &[Layout] = &compiled.layouts;
     let constants: &[u64] = &compiled.constants;
@@ -777,12 +786,41 @@ pub fn run(
                 let Some(door_site) = compiled.door_sites.get(site as usize) else {
                     return Err(broken("a call to a door that isn't there", pc));
                 };
-                let mut arguments = Vec::with_capacity(door_site.arguments.len());
-                for (register, crossing) in (call_base + 1..).zip(&door_site.arguments) {
-                    arguments.push(heap_try!(to_value(get!(register), crossing, heap, layouts)));
+                let first = usize::from(call_base) + 1;
+                if !door_site.plain {
+                    // Only arguments that are more than their bits are copied out as values (D15).
+                    door_arguments.clear();
+                    for (register, crossing) in (call_base + 1..).zip(&door_site.arguments) {
+                        let slot = get!(register);
+                        door_arguments.push(match plain_value(slot, crossing) {
+                            Some(_) => Value::Nothing,
+                            None => heap_try!(to_value(slot, crossing, heap, layouts)),
+                        });
+                    }
                 }
-                match doors.call_door(door_site.door, arguments) {
-                    DoorAnswer::Value(value) => match to_slot(&value, &door_site.result, heap, layouts) {
+                let Some(bits) = registers.get(first..first + door_site.arguments.len()) else {
+                    return Err(broken("a door's arguments outside their frame", pc));
+                };
+                match doors.call_door(door_site.door, bits, door_arguments) {
+                    DoorAnswer::Plain(bits) => {
+                        let fits = match door_site.result {
+                            Crossing::Nothing | Crossing::Whole | Crossing::Bool => true,
+                            Crossing::Float => f64::from_bits(bits).is_finite(),
+                            _ => false,
+                        };
+                        if !fits {
+                            return Err((
+                                Stop::HostMistake(
+                                    "a door gave a value that isn't what it's declared to give".to_owned(),
+                                ),
+                                pc,
+                            ));
+                        }
+                        set!(call_base, bits);
+                    }
+                    DoorAnswer::Value(value) => match plain_slot(&value, &door_site.result)
+                        .map_or_else(|| to_slot(&value, &door_site.result, heap, layouts), Ok)
+                    {
                         Ok(slot) => set!(call_base, slot),
                         Err(CrossingError::Heap(error)) => return Err((Stop::from(error), pc)),
                         Err(CrossingError::WrongType { wanted, found }) => {

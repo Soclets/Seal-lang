@@ -60,6 +60,7 @@ pub struct Heap {
     entries: Vec<Entry>,
     free: Vec<u32>,
     in_use: usize,
+    most: usize,
     cap: usize,
     /// Bulk work done since it was last asked about, in items and bytes, to be counted as steps (D14).
     pub work: u64,
@@ -79,6 +80,12 @@ impl Heap {
         self.in_use
     }
 
+    /// The most the script has held at once.
+    #[must_use]
+    pub fn most(&self) -> usize {
+        self.most
+    }
+
     /// Counts `bytes` more against the cap.
     ///
     /// # Errors
@@ -90,6 +97,9 @@ impl Heap {
             return Err(HeapError::OutOfMemory { needed: bytes, in_use: self.in_use, cap: self.cap });
         }
         self.in_use = total;
+        if total > self.most {
+            self.most = total;
+        }
         Ok(())
     }
 

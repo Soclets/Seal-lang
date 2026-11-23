@@ -42,6 +42,32 @@ fn wrong(crossing: &Crossing, value: &Value) -> CrossingError {
     CrossingError::WrongType { wanted: describe(crossing), found: value.describe() }
 }
 
+/// A plain number, `Bool` or nothing going into a script: no heap is needed, so it's done on the spot.
+#[must_use]
+#[inline]
+pub fn plain_slot(value: &Value, crossing: &Crossing) -> Option<u64> {
+    match (crossing, value) {
+        (Crossing::Nothing, Value::Nothing) => Some(0),
+        (Crossing::Whole, Value::Whole(whole)) => Some(whole.cast_unsigned()),
+        (Crossing::Float, Value::Float(float)) if float.is_finite() => Some(float.to_bits()),
+        (Crossing::Bool, Value::Bool(flag)) => Some(u64::from(*flag)),
+        _ => None,
+    }
+}
+
+/// A plain number or `Bool` coming out of a script, done on the spot.
+#[must_use]
+#[inline]
+pub fn plain_value(slot: u64, crossing: &Crossing) -> Option<Value> {
+    match crossing {
+        Crossing::Nothing => Some(Value::Nothing),
+        Crossing::Whole => Some(Value::Whole(slot.cast_signed())),
+        Crossing::Float => Some(Value::Float(f64::from_bits(slot))),
+        Crossing::Bool => Some(Value::Bool(slot != 0)),
+        _ => None,
+    }
+}
+
 /// Copies a host's value onto a script's heap, giving the slot that holds it, with one holder.
 ///
 /// # Errors

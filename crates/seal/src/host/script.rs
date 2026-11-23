@@ -4,7 +4,9 @@ use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use super::convert::{Argument, Arguments, FromSeal, IntoSeal};
-use super::doors::Doors;
+use std::sync::Arc;
+
+use super::doors::{Doors, Loaded};
 use super::value::Value;
 use crate::check::check;
 use crate::compile::bytecode::{Compiled, CompiledProcedure, Crossing};
@@ -12,7 +14,7 @@ use crate::compile::compiler::compile;
 use crate::message::{Message, MessageKind, Messages, Place};
 use crate::signature::HostType;
 use crate::syntax::parser::parse;
-use crate::vm::crossing::{CrossingError, describe, to_slot, to_value};
+use crate::vm::crossing::{CrossingError, describe, plain_slot, plain_value, to_slot, to_value};
 use crate::vm::heap::Heap;
 use crate::vm::machine::{Machine, Outcome, Stop, Task, run};
 
@@ -81,14 +83,18 @@ struct TaskSlot {
 /// move between threads.
 pub struct Script {
     name: String,
-    source: Box<str>,
-    compiled: Compiled,
+    /// The script's text, for the lines its messages show, and what it compiled to. Both are shared with any
+    /// other script loaded from the same text with the same doors.
+    source: Arc<str>,
+    compiled: Arc<Compiled>,
     doors: Doors,
     machine: Machine,
     tasks: Vec<TaskSlot>,
     limits: Limits,
     /// Why the script stopped, once it has.
     stopped: Option<Message>,
+    /// A finished task's room, kept for the next call to run in.
+    spare_task: Option<Task>,
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`.
     failures: [u32; 3],
 }
@@ -155,9 +161,19 @@ impl Script {
     /// Returns [`Error::Refused`] with every message when the script doesn't pass checking, and
     /// [`Error::Stopped`] when its top level stops.
     pub fn load(name: &str, source: &str, doors: &Doors, limits: Limits) -> Result<Script, Error> {
-        let prepared = catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors)));
-        let compiled = match prepared {
-            Ok(Ok(compiled)) => compiled,
+        // The same text loaded again with the same doors has already been checked and compiled.
+        let prepared = match doors.kept(source) {
+            Some(loaded) => Ok(Ok(loaded)),
+            None => catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors))).map(|prepared| {
+                prepared.map(|compiled| {
+                    let loaded = Loaded { source: source.into(), compiled: Arc::new(compiled) };
+                    doors.keep(loaded.clone());
+                    loaded
+                })
+            }),
+        };
+        let Loaded { source: shared_source, compiled } = match prepared {
+            Ok(Ok(loaded)) => loaded,
             Ok(Err(mut messages)) => {
                 for message in &mut messages {
                     message.locate(name, source);
@@ -176,13 +192,14 @@ impl Script {
         let failures = [missing_failure("missing"), missing_failure("not_a_whole"), missing_failure("full")];
         let mut script = Script {
             name: name.to_owned(),
-            source: source.into(),
+            source: shared_source,
             compiled,
             doors: doors.clone(),
-            machine: Machine { heap: Heap::new(limits.memory), globals: Vec::new(), texts: Vec::new() },
+            machine: Machine { heap: Heap::new(limits.memory), ..Machine::default() },
             tasks: Vec::new(),
             limits,
             stopped: None,
+            spare_task: None,
             failures,
         };
         script.start()?;
@@ -324,7 +341,7 @@ impl Script {
     }
 
     /// Matches a call's arguments to the procedure's parameters, by position and label (D41, D42).
-    fn bind(&self, procedure: &CompiledProcedure, arguments: Vec<Argument>) -> Result<Vec<Value>, Error> {
+    fn bind(&self, procedure: &CompiledProcedure, arguments: &[Argument]) -> Result<Vec<Value>, Error> {
         let name = &procedure.name;
         let count = procedure.parameters.len();
         let mut bound: Vec<Option<Value>> = vec![None; count];
@@ -348,7 +365,7 @@ impl Script {
                 next = position + 1;
             }
             match bound.get_mut(position) {
-                Some(slot) if slot.is_none() => *slot = Some(argument.value),
+                Some(slot) if slot.is_none() => *slot = Some(argument.value.clone()),
                 _ => return Err(refusal(&self.name, format!("an argument of `{name}` is given twice"))),
             }
         }
@@ -373,28 +390,48 @@ impl Script {
     ///
     /// [`Error::Refused`] when the call doesn't fit the procedure, [`Error::Failed`] when the procedure fails on
     /// purpose, and [`Error::Stopped`] when the script stops.
-    pub fn call_values(&mut self, procedure: &str, arguments: Vec<Argument>) -> Result<Called<Value>, Error> {
+    pub fn call_values(&mut self, procedure: &str, arguments: &[Argument]) -> Result<Called<Value>, Error> {
         self.check_running()?;
-        let (index, found) = self.procedure(procedure)?;
-        let values = self.bind(found, arguments)?;
+        // The compiled script is shared, so holding it here leaves the script itself free to change.
+        let compiled = Arc::clone(&self.compiled);
+        let Some((index, found)) = compiled.procedures.iter().enumerate().find(|(_, found)| found.name == procedure)
+        else {
+            return Err(refusal(&self.name, format!("`{}` has no procedure named `{procedure}`", self.name)));
+        };
+        // The usual call gives every argument in order with no labels; anything else is matched up by label.
+        let plain = arguments.len() == found.parameters.len()
+            && arguments
+                .iter()
+                .zip(&found.parameters)
+                .all(|(argument, parameter)| argument.label.is_none() && parameter.label.is_none());
+        let bound = if plain { None } else { Some(self.bind(found, arguments)?) };
         let (entry, frame_size) = (found.entry, found.frame_size);
-        let crossings: Vec<Crossing> = found.parameters.iter().map(|parameter| parameter.crossing.clone()).collect();
-        let written: Vec<String> = found.parameters.iter().map(|parameter| parameter.written.clone()).collect();
-        let mut task = Task::default();
+        // A call runs in the room the last finished one left, when there is one.
+        let mut task = self.spare_task.take().unwrap_or_default();
         if let Err(error) = task.start(&mut self.machine.heap, entry, frame_size) {
             return Err(self.stop(Stop::from(error), entry as usize));
         }
         // The arguments go in as copies (D15), in the registers after the one the result comes back in.
-        for (position, (value, crossing)) in values.iter().zip(&crossings).enumerate() {
-            match to_slot(value, crossing, &mut self.machine.heap, &self.compiled.layouts) {
+        for (position, parameter) in found.parameters.iter().enumerate() {
+            let value = match &bound {
+                Some(values) => values.get(position),
+                None => arguments.get(position).map(|argument| &argument.value),
+            };
+            let Some(value) = value else { continue };
+            let crossing = &parameter.crossing;
+            let slot = match plain_slot(value, crossing) {
+                Some(slot) => Ok(slot),
+                None => to_slot(value, crossing, &mut self.machine.heap, &self.compiled.layouts),
+            };
+            match slot {
                 Ok(slot) => {
                     if let Some(register) = task.stack.get_mut(position + 1) {
                         *register = slot;
                     }
                 }
                 Err(error) => {
-                    for (earlier, crossing) in crossings.iter().enumerate().take(position) {
-                        if crossing.is_reference() {
+                    for (earlier, parameter) in found.parameters.iter().enumerate().take(position) {
+                        if parameter.crossing.is_reference() {
                             let slot = task.stack.get(earlier + 1).copied().unwrap_or(0);
                             self.machine.heap.release(slot, &self.compiled.layouts);
                         }
@@ -407,7 +444,7 @@ impl Script {
                             format!(
                                 "argument {} of `{procedure}` is a `{}`, but the call gives {found}",
                                 position + 1,
-                                written.get(position).map_or("?", String::as_str)
+                                parameter.written
                             ),
                         ),
                     });
@@ -420,6 +457,16 @@ impl Script {
     /// Runs a task on, and deals with how it ends. `reuse` is the task's place when it was paused before.
     fn drive(&mut self, mut running: Running, reuse: Option<TaskId>) -> Result<Called<Value>, Error> {
         let outcome = self.run(&mut running.task);
+        self.settle(outcome, running, reuse)
+    }
+
+    /// Deals with how a run of a task ended.
+    fn settle(
+        &mut self,
+        outcome: Result<Outcome, (Stop, usize)>,
+        mut running: Running,
+        reuse: Option<TaskId>,
+    ) -> Result<Called<Value>, Error> {
         let Some(procedure) = self.compiled.procedures.get(running.procedure) else {
             return Err(self.stop(Stop::Internal("a task lost its procedure".to_owned()), 0));
         };
@@ -443,10 +490,16 @@ impl Script {
             }
             Ok(Outcome::Finished) => {
                 let slot = running.task.stack.first().copied().unwrap_or(0);
-                let value = to_value(slot, &procedure.result, &self.machine.heap, &self.compiled.layouts);
-                if procedure.result.is_reference() {
-                    self.machine.heap.release(slot, &self.compiled.layouts);
-                }
+                // A plain number, a `Bool` or nothing is read straight from its bits; anything else is copied out.
+                let value = if let Some(value) = plain_value(slot, &procedure.result) {
+                    Ok(value)
+                } else {
+                    let value = to_value(slot, &procedure.result, &self.machine.heap, &self.compiled.layouts);
+                    if procedure.result.is_reference() {
+                        self.machine.heap.release(slot, &self.compiled.layouts);
+                    }
+                    value
+                };
                 self.end_task(&mut running, reuse);
                 match value {
                     Ok(value) => Ok(Called::Finished(value)),
@@ -465,6 +518,10 @@ impl Script {
     /// so only the stack is left to give back.
     fn end_task(&mut self, running: &mut Running, reuse: Option<TaskId>) {
         running.task.finish(&mut self.machine.heap);
+        // Its room is kept for the next call, unless one is kept already.
+        if self.spare_task.is_none() {
+            self.spare_task = Some(std::mem::take(&mut running.task));
+        }
         if let Some(id) = reuse {
             self.retire(id);
         }
@@ -480,17 +537,18 @@ impl Script {
 
     fn take_task(&mut self, id: TaskId) -> Result<Running, Error> {
         self.check_running()?;
-        let name = self.name.clone();
-        self.tasks
+        let taken = self
+            .tasks
             .get_mut(id.index as usize)
             .filter(|slot| slot.generation == id.generation)
-            .and_then(|slot| slot.running.take())
-            .ok_or_else(|| {
-                refusal(
-                    &name,
-                    "this task isn't paused: it has finished, or was cancelled, or belongs to another script",
-                )
-            })
+            .and_then(|slot| slot.running.take());
+        match taken {
+            Some(running) => Ok(running),
+            None => Err(refusal(
+                &self.name,
+                "this task isn't paused: it has finished, or was cancelled, or belongs to another script",
+            )),
+        }
     }
 
     /// Resumes a paused task with the value its door gives (D49). The run gets a fresh step budget (D53).
@@ -500,6 +558,36 @@ impl Script {
     /// [`Error::Refused`] when the task isn't paused or the value isn't the door's type; otherwise as
     /// [`Script::call_values`].
     pub fn resume_with_value(&mut self, task: TaskId, value: &Value) -> Result<Called<Value>, Error> {
+        self.check_running()?;
+        // The usual resume gives a plain value and the task pauses again: it's run where it sits, nothing moved.
+        let in_place = {
+            let Script { tasks, machine, compiled, doors, limits, failures, .. } = self;
+            let slot = tasks.get_mut(task.index as usize).filter(|slot| slot.generation == task.generation);
+            let running = slot.and_then(|slot| slot.running.as_mut());
+            let plain = running.and_then(|running| {
+                let waiting = running.task.waiting?;
+                let site = compiled.door_sites.get(waiting.site as usize)?;
+                let slot = plain_slot(value, &site.result)?;
+                *running.task.stack.get_mut(waiting.slot)? = slot;
+                running.task.waiting = None;
+                Some(running)
+            });
+            plain.map(|running| {
+                let (steps, failures) = (limits.steps, *failures);
+                let doors: &Doors = doors;
+                let pc = running.task.pc;
+                catch_unwind(AssertUnwindSafe(|| run(machine, &mut running.task, compiled, doors, steps, failures)))
+                    .unwrap_or_else(|_| Err((Stop::Internal("the VM went wrong while running".to_owned()), pc)))
+            })
+        };
+        match in_place {
+            Some(Ok(Outcome::Paused)) => return Ok(Called::Paused(task)),
+            Some(outcome) => {
+                let running = self.take_task(task)?;
+                return self.settle(outcome, running, Some(task));
+            }
+            None => {}
+        }
         let mut running = self.take_task(task)?;
         let Some(waiting) = running.task.waiting else {
             return Err(
@@ -584,7 +672,7 @@ impl Script {
         self.check_running()?;
         let (index, _) = self.procedure(procedure)?;
         self.check_result::<R>(index)?;
-        let called = self.call_values(procedure, arguments.into_arguments())?;
+        let called = arguments.with_arguments(|arguments| self.call_values(procedure, arguments))?;
         self.typed(called)
     }
 
@@ -647,6 +735,12 @@ impl Script {
             roots.extend(task.task.held_slots(&self.compiled));
         }
         self.machine.heap.audit(&roots, &self.compiled.layouts)
+    }
+
+    /// The most bytes of its memory cap the script has held at once, in Seal's own sizes (D14, D50).
+    #[must_use]
+    pub fn most_memory_used(&self) -> usize {
+        self.machine.heap.most()
     }
 
     /// Why the script stopped, when it has (D14).

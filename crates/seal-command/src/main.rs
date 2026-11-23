@@ -199,7 +199,7 @@ fn main() -> ExitCode {
             eprintln!("seal: `{line}` in calls.txt isn't a call with plain values");
             return ExitCode::from(6);
         };
-        let mut called = script.call_values(&name, arguments);
+        let mut called = script.call_values(&name, &arguments);
         // The test host resumes a paused script at once.
         while let Ok(Called::Paused(task)) = called {
             called = script.resume_with_value(task, &Value::Nothing);

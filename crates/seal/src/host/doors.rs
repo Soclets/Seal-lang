@@ -12,10 +12,11 @@
 //! ```
 
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::convert::{Failures, FromSeal, IntoSeal, SealType};
 use super::value::Value;
+use crate::compile::bytecode::Compiled;
 use crate::message::{Message, MessageKind, Place};
 use crate::signature::{DoorParameter, DoorSignature, HostType};
 use crate::syntax::lexer::{Keyword, check_name_spelling};
@@ -66,7 +67,10 @@ impl<T: IntoSeal> DoorResult for T {
     }
 
     fn into_answer(self) -> DoorAnswer {
-        DoorAnswer::Value(self.into_seal())
+        match self.plain_bits() {
+            Some(bits) => DoorAnswer::Plain(bits),
+            None => DoorAnswer::Value(self.into_seal()),
+        }
     }
 }
 
@@ -85,7 +89,10 @@ impl<T: IntoSeal, E: Failures> DoorResult for Result<T, E> {
 
     fn into_answer(self) -> DoorAnswer {
         match self {
-            Ok(value) => DoorAnswer::Value(value.into_seal()),
+            Ok(value) => match value.plain_bits() {
+                Some(bits) => DoorAnswer::Plain(bits),
+                None => DoorAnswer::Value(value.into_seal()),
+            },
             Err(failure) => DoorAnswer::Failure(failure.name()),
         }
     }
@@ -109,7 +116,9 @@ impl<R: SealType> DoorResult for Pause<R> {
     }
 }
 
-type DoorFunction = Arc<dyn Fn(Vec<Value>) -> DoorAnswer + Send + Sync>;
+/// A door as the VM calls it: every argument's bare bits, and, for the arguments that are more than their bits,
+/// their values in the same places.
+type DoorFunction = Arc<dyn Fn(&[u64], &mut Vec<Value>) -> DoorAnswer + Send + Sync>;
 
 /// A Rust closure that can be a door. `Marker` only tells closures of different shapes apart.
 pub trait IntoDoor<Marker> {
@@ -146,14 +155,25 @@ macro_rules! door_closures {
             }
 
             fn into_function(self) -> DoorFunction {
-                Arc::new(move |arguments: Vec<Value>| {
+                #[allow(unused_variables)] // a door with no parameters reads nothing
+                Arc::new(move |bits: &[u64], values: &mut Vec<Value>| {
                     #[allow(unused_mut, unused_variables)] // a door with no parameters reads nothing
-                    let mut arguments = arguments.into_iter();
+                    let mut place = 0usize;
                     $(
+                        // A plain number or `Bool` is read straight from its bits; anything else from its value.
                         #[allow(non_snake_case)] // each argument takes its type's name, as the macro writes it
-                        let Some($argument) = arguments.next().and_then($argument::from_seal) else {
+                        let Some($argument) = bits
+                            .get(place)
+                            .copied()
+                            .and_then($argument::from_bits)
+                            .or_else(|| values.get_mut(place).map(std::mem::take).and_then($argument::from_seal))
+                        else {
                             return DoorAnswer::Mistake("a door was handed a value that isn't its parameter's type".to_owned());
                         };
+                        #[allow(unused_assignments)] // the last place is never read
+                        {
+                            place += 1;
+                        }
                     )*
                     self($($argument),*).into_answer()
                 })
@@ -178,15 +198,35 @@ struct Door {
     function: DoorFunction,
 }
 
+/// A script's source and what it compiled to, kept so that loading the same source again skips the work.
+#[derive(Clone)]
+pub(crate) struct Loaded {
+    pub(crate) source: Arc<str>,
+    pub(crate) compiled: Arc<Compiled>,
+}
+
+/// How many compiled scripts a set of doors keeps for loading again.
+const KEPT_SCRIPTS: usize = 64;
+
+#[derive(Default)]
+struct Inner {
+    doors: Vec<Door>,
+    /// The scripts compiled against these doors, most recently used last.
+    kept: Mutex<Vec<Loaded>>,
+}
+
 /// The doors a host opens for a script (D11). A host chooses each script's doors when it loads it (D48).
+///
+/// Copying a `Doors` is cheap, and the copies share their doors. Loading the same source again with the same doors
+/// reuses what it compiled to; each loaded script still has its own names and memory (D49).
 #[derive(Clone, Default)]
 pub struct Doors {
-    doors: Vec<Door>,
+    inner: Arc<Inner>,
 }
 
 impl std::fmt::Debug for Doors {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_list().entries(self.doors.iter().map(|door| &door.signature.name)).finish()
+        formatter.debug_list().entries(self.inner.doors.iter().map(|door| &door.signature.name)).finish()
     }
 }
 
@@ -237,7 +277,18 @@ impl Doors {
                 "each word has one meaning.",
             ));
         }
-        if self.doors.iter().any(|door| door.signature.name == name) {
+        // Doors shared with loaded scripts are left as they are; this set gets a list of its own to add to.
+        if Arc::get_mut(&mut self.inner).is_none() {
+            self.inner = Arc::new(Inner { doors: self.inner.doors.clone(), kept: Mutex::default() });
+        }
+        let Some(inner) = Arc::get_mut(&mut self.inner) else {
+            return Err(Message::internal("a set of doors couldn't be changed"));
+        };
+        // What was compiled against the doors as they were may not fit them any more.
+        if let Ok(kept) = inner.kept.get_mut() {
+            kept.clear();
+        }
+        if inner.doors.iter().any(|door| door.signature.name == name) {
             return Err(door_refusal(name, format!("the door `{name}` is opened twice"), "each door is opened once."));
         }
         let (parameters, result, failures, can_pause) = parts(&door);
@@ -251,8 +302,8 @@ impl Doors {
             failures,
             can_pause,
         };
-        self.doors.push(Door { signature, function: door.into_function() });
-        match self.doors.last_mut() {
+        inner.doors.push(Door { signature, function: door.into_function() });
+        match inner.doors.last_mut() {
             Some(door) => Ok(DoorOptions { signature: &mut door.signature }),
             None => Err(Message::internal("a door went missing as it was opened")),
         }
@@ -261,14 +312,34 @@ impl Doors {
     /// What a script sees of each door.
     #[must_use]
     pub fn signatures(&self) -> Vec<DoorSignature> {
-        self.doors.iter().map(|door| door.signature.clone()).collect()
+        self.inner.doors.iter().map(|door| door.signature.clone()).collect()
+    }
+
+    /// What a source compiled to the last time it was loaded with these doors, when that's still kept.
+    pub(crate) fn kept(&self, source: &str) -> Option<Loaded> {
+        let mut kept = self.inner.kept.lock().ok()?;
+        let position = kept.iter().position(|loaded| *loaded.source == *source)?;
+        // Moved to the end, as the most recently used.
+        let loaded = kept.remove(position);
+        kept.push(loaded.clone());
+        Some(loaded)
+    }
+
+    /// Keeps what a source compiled to, for the next time it's loaded with these doors.
+    pub(crate) fn keep(&self, loaded: Loaded) {
+        if let Ok(mut kept) = self.inner.kept.lock() {
+            if kept.len() >= KEPT_SCRIPTS {
+                kept.remove(0);
+            }
+            kept.push(loaded);
+        }
     }
 }
 
 impl DoorCaller for Doors {
-    fn call_door(&self, door: u32, arguments: Vec<Value>) -> DoorAnswer {
-        match self.doors.get(door as usize) {
-            Some(door) => (door.function)(arguments),
+    fn call_door(&self, door: u32, bits: &[u64], values: &mut Vec<Value>) -> DoorAnswer {
+        match self.inner.doors.get(door as usize) {
+            Some(door) => (door.function)(bits, values),
             None => DoorAnswer::Mistake("a door that was never opened was called".to_owned()),
         }
     }

@@ -1386,7 +1386,8 @@ impl<'p> Compiler<'p> {
                 let result = self.crossing(expression.type_id);
                 let base = self.arguments(arguments, true, None);
                 let site = u32::try_from(self.out.door_sites.len()).unwrap_or(u32::MAX);
-                self.out.door_sites.push(DoorSite { door: *door, arguments: crossings, result });
+                let plain = crossings.iter().all(|crossing| !crossing.is_reference());
+                self.out.door_sites.push(DoorSite { door: *door, plain, arguments: crossings, result });
                 self.place = expression.place;
                 self.emit(Instruction::CallDoor { base, site });
                 if can_pause {

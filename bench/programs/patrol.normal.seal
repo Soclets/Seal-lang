@@ -1,0 +1,12 @@
+proc patrol[guard]
+    while true
+        walk_to(guard, x: 10)
+        wait(seconds: 2)
+        walk_to(guard, x: 0)
+        wait(seconds: 2)
+    end
+end
+
+proc step[guard]
+    walk_to(guard, x: 1)
+end
