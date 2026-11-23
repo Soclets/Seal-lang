@@ -796,3 +796,31 @@ against, while records show cleanly.
 
 **Tankun's words.** Asked "Should `fmt` braces allow a name followed by its fields and facts, like `{goblin.name}` and
 `{names.len}`?", the owner chose: "yea. Should Seal be able to join text with `&`?"
+
+## D29. `&` turns a `Whole` or a `Bool` into text by itself; a `Float`, a list or a record is still refused
+
+2026-11-23.
+
+**Chosen.** When `&` joins text with a `Whole` or a `Bool`, it turns that value into text by itself: `42` becomes
+`"42"`, and a `Bool` becomes `"true"` or `"false"` (Unio D153). A `Float` joined with `&` is still refused, with
+`be.Text(…)` as the fix, and so are lists and records, which have no text form yet.
+
+```
+show_msg("Score: " & score)          // "Score: 42"
+show_msg("Alive: " & alive)          // "Alive: true"
+show_msg("Speed: " & speed)          // refused, fix: be.Text(speed)
+```
+
+This changes, for Seal, the rule D16 brought in from Unio's D28, which refuses every number joined with `&`.
+
+**Weighed.**
+- Unio's rule, refusing every number with `be.Text(…)` as the fix, so the step into text is always visible. For a
+  `Whole` or a `Bool` there's only one text it can become, so there's nothing to see.
+- Turning a `Float` into text by itself too. Its text follows Unio's D155, with the `~` and every digit, as in
+  `~0.30000000000000004`, which a player shouldn't see by accident.
+
+**Why this won.** Seal is meant to be easier to write, and only the conversions that can't surprise anyone happen by
+themselves.
+
+**Tankun's words.** "I think `&` should auto-convert where good", then, asked "Should `&` in Seal turn a `Whole` or a
+`Bool` into text by itself, while a `Float`, a list or a record is still refused?", the owner chose: "yea".

@@ -15,8 +15,9 @@ examples in Seal's syntax (README).
 - **A number with a point is a `Float`, and one without is a `Whole`** (Unio D180), so a worked-out type is never in
   doubt for a literal: `speed = 2.0` makes a `Float`.
 - **`Whole` and `Float` don't mix quietly:** `be.Float(lives) * speed` (Unio D162).
-- **Text is written in double quotes, and `&` joins two pieces of text;** a number joined with `&` is refused, with
-  `be.Text(…)` as the fix (D16, Unio D21, D28): `show_msg("Score: " & be.Text(score))`.
+- **Text is written in double quotes, and `&` joins text** (D16, Unio D21, D28). A `Whole` or a `Bool` joined with `&`
+  becomes text by itself, as in `show_msg("Score: " & score)`; a `Float`, a list or a record is refused, with
+  `be.Text(…)` as the fix for a `Float` (D29).
 - **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (D22, Unio D27, D70, D71, D185). Floats
   are checked after every operation (D18).
 - **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and
