@@ -98,7 +98,7 @@ fn ending_of(error: &Error) -> (String, String, Option<String>) {
 }
 
 /// Loads a script and calls each of its procedures that takes only whole numbers, as a host would.
-fn run_here(source: &str, call_procedures: bool) -> Run {
+fn run_here(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
     let output = Arc::new(Mutex::new(String::new()));
     let finish = |ending: String, messages: String, broken: Option<String>| Run {
         output: output.lock().map(|output| output.clone()).unwrap_or_default(),
@@ -122,6 +122,13 @@ fn run_here(source: &str, call_procedures: bool) -> Run {
     if script.memory_in_use() > LIMITS.memory {
         return finish("ok".to_owned(), String::new(), Some("the script holds more than its memory cap".to_owned()));
     }
+    if let Err(why) = script.audit() {
+        return finish(
+            "ok".to_owned(),
+            String::new(),
+            Some(format!("after loading, the holder counts are off: {why}")),
+        );
+    }
     let names: Vec<String> =
         if call_procedures { script.procedures().iter().map(|name| (*name).to_owned()).collect() } else { Vec::new() };
     for name in names {
@@ -130,6 +137,13 @@ fn run_here(source: &str, call_procedures: bool) -> Run {
         let mut called = script.call_values(&name, vec![seal::Argument { label: None, value: Value::Whole(5) }]);
         let mut resumes = 0;
         while let Ok(Called::Paused(task)) = called {
+            if let Err(why) = script.audit() {
+                return finish(
+                    "ok".to_owned(),
+                    String::new(),
+                    Some(format!("while `{name}` is paused, the holder counts are off: {why}")),
+                );
+            }
             resumes += 1;
             called = if resumes > 3 {
                 script.cancel(task).map(|()| Called::Finished(Value::Nothing))
@@ -146,7 +160,25 @@ fn run_here(source: &str, call_procedures: bool) -> Run {
                         Some("the script holds more than its memory cap".to_owned()),
                     );
                 }
-                let _ = before;
+                if let Err(why) = script.audit() {
+                    return finish(
+                        "ok".to_owned(),
+                        String::new(),
+                        Some(format!("after a call to `{name}`, the holder counts are off: {why}")),
+                    );
+                }
+                // A generated script's procedures keep nothing once they're done, so a call that ran to its end,
+                // failed or was cancelled must leave the script holding exactly what it held before (D15).
+                let after = script.memory_in_use();
+                if strict_memory && after != before {
+                    return finish(
+                        "ok".to_owned(),
+                        String::new(),
+                        Some(format!(
+                            "a call to `{name}` left the script holding {after} bytes, where it held {before} before"
+                        )),
+                    );
+                }
             }
             Err(error) => {
                 let (ending, messages, broken) = ending_of(&error);
@@ -160,21 +192,26 @@ fn run_here(source: &str, call_procedures: bool) -> Run {
 /// Runs a script on a thread of its own, so that one that freezes is noticed instead of freezing the fuzzer.
 #[must_use]
 pub fn run(source: &str) -> Run {
-    run_as(source, true)
+    run_as(source, true, false)
+}
+
+/// Runs a generated script, whose procedures must leave no memory behind.
+fn run_strictly(source: &str) -> Run {
+    run_as(source, true, true)
 }
 
 /// Runs a script's top level only, as Unio's `proc.main` runs, for comparing with Ralph.
 #[must_use]
 pub fn run_top_level(source: &str) -> Run {
-    run_as(source, false)
+    run_as(source, false, false)
 }
 
-fn run_as(source: &str, call_procedures: bool) -> Run {
+fn run_as(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
     let (sender, receiver) = mpsc::channel();
     let owned = source.to_owned();
     let started = Instant::now();
     let spawned = std::thread::Builder::new().stack_size(1024 * 1024).spawn(move || {
-        let _ = sender.send(run_here(&owned, call_procedures));
+        let _ = sender.send(run_here(&owned, call_procedures, strict_memory));
     });
     if spawned.is_err() {
         return Run {
@@ -210,8 +247,8 @@ fn run_as(source: &str, call_procedures: bool) -> Run {
 }
 
 /// Everything wrong with how a script ran, if anything is.
-fn judge(source: &str) -> Option<String> {
-    let first = run(source);
+fn judge(source: &str, generated: bool) -> Option<String> {
+    let first = if generated { run_strictly(source) } else { run(source) };
     if let Some(broken) = first.broken {
         return Some(broken);
     }
@@ -325,11 +362,15 @@ fn main() -> ExitCode {
                 *reasons.entry(format!("{ending}: {what}")).or_insert(0u64) += 1;
             }
             count(tally, &ending);
-            if let Some(why) = judge(source) {
+            let generated = kind == "valid";
+            if let Some(why) = judge(source, generated) {
                 found += 1;
                 tally.found += 1;
                 let reason = why.clone();
-                let small = shrink(source, &|candidate| judge(candidate).is_some_and(|again| again == reason));
+                let kind_of = |why: &str| why.split(" left ").next().unwrap_or("").to_owned();
+                let small = shrink(source, &|candidate| {
+                    judge(candidate, generated).is_some_and(|again| kind_of(&again) == kind_of(&reason))
+                });
                 let name = format!("seed{seed}_{round}_{kind}");
                 save(&name, &small, &why);
                 println!("FOUND {name}: {why}\n{small}");

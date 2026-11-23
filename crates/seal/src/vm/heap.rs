@@ -331,6 +331,67 @@ impl Heap {
         }
     }
 
+    /// Checks every value's count of holders against who really holds it: `roots` are the slots outside the heap
+    /// that hold a value, and each value inside another is held by it. For tests and the fuzzer; a difference is a
+    /// bug in Seal.
+    ///
+    /// # Errors
+    ///
+    /// Says which value's count is off, and by how much.
+    pub fn audit(&self, roots: &[u64], layouts: &[Layout]) -> Result<(), String> {
+        let mut expected = vec![0u32; self.entries.len()];
+        let hold = |slot: u64, expected: &mut Vec<u32>| -> Result<(), String> {
+            if slot & PLAIN_CASE != 0 {
+                return Ok(());
+            }
+            match usize::try_from(slot).ok().and_then(|index| expected.get_mut(index)) {
+                Some(count) => {
+                    *count += 1;
+                    Ok(())
+                }
+                None => Err(format!("a slot holds {slot}, which is no value at all")),
+            }
+        };
+        for &root in roots {
+            hold(root, &mut expected)?;
+        }
+        for entry in &self.entries {
+            let mut inside = Vec::new();
+            match &entry.object {
+                Object::List { items, references: true } => inside.extend_from_slice(items),
+                Object::Record { fields, layout } | Object::Case { fields, layout } => {
+                    if let Some(layout) = layouts.get(usize::from(*layout)) {
+                        inside.extend(
+                            fields
+                                .iter()
+                                .zip(&layout.references)
+                                .filter(|(_, reference)| **reference)
+                                .map(|(field, _)| *field),
+                        );
+                    }
+                }
+                Object::Dict(dict) => dict.push_references(&mut inside),
+                _ => {}
+            }
+            for slot in inside {
+                hold(slot, &mut expected)?;
+            }
+        }
+        for (index, (entry, expected)) in self.entries.iter().zip(&expected).enumerate() {
+            let live = !matches!(entry.object, Object::Free);
+            if live && entry.holders != *expected {
+                return Err(format!(
+                    "value {index} counts {} holders, but {expected} hold it: {:?}",
+                    entry.holders, entry.object
+                ));
+            }
+            if !live && *expected != 0 {
+                return Err(format!("value {index} was freed, but {expected} still hold it"));
+            }
+        }
+        Ok(())
+    }
+
     /// Makes room for one more item in a list of `length` items with room for `capacity`, counting the growth.
     /// Gives how many more to reserve, when the list must grow.
     ///

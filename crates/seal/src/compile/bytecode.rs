@@ -516,6 +516,23 @@ pub enum Instruction {
         base: Register,
         layout: u16,
     },
+    /// Copies every field of a record into the registers from `base` on, for a record kept in registers.
+    UnpackRecord {
+        base: Register,
+        record: Register,
+    },
+    /// `list[pos: n] = record` for a record kept in the registers from `base` on: the item is written in place
+    /// when the list is its only holder, and replaced by a new record otherwise (D15).
+    PackIntoItemAtPosition {
+        list: Register,
+        index: Register,
+        base: Register,
+    },
+    PackIntoItemAtOffset {
+        list: Register,
+        index: Register,
+        base: Register,
+    },
     /// Which case a value is, as its number within its type.
     CaseNumber {
         to: Register,
@@ -609,6 +626,15 @@ pub struct CompiledParameter {
     pub default: Option<crate::host::Value>,
 }
 
+/// What a call needs of the procedure it calls, kept small and side by side so calls stay fast.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ProcedureEntry {
+    /// Where the procedure's instructions start.
+    pub entry: u32,
+    /// How many registers its frame needs.
+    pub frame_size: u32,
+}
+
 /// A whole script, compiled: what a loaded script runs.
 #[derive(Clone, Debug, Default)]
 pub struct Compiled {
@@ -618,9 +644,13 @@ pub struct Compiled {
     pub constants: Vec<u64>,
     pub texts: Vec<String>,
     pub procedures: Vec<CompiledProcedure>,
+    /// One entry for each of `procedures`, in the same order.
+    pub entries: Vec<ProcedureEntry>,
     pub top_level_entry: u32,
     pub top_level_frame_size: u32,
     pub global_count: u32,
+    /// For each top-level name shared with procedures, whether its value lives on the heap.
+    pub global_references: Vec<bool>,
     pub layouts: Vec<Layout>,
     pub door_sites: Vec<DoorSite>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.

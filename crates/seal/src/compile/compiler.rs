@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use super::bytecode::{
     Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction, Layout,
-    Register,
+    ProcedureEntry, Register,
 };
 use crate::check::tree::{
     Block, Conversion, Expression, ExpressionKind, HandleFallback, Procedure, Program, Rounding, Statement,
@@ -26,6 +26,10 @@ enum Location {
     Register(Register),
     /// A top-level name that procedures use, shared by the script's tasks (D51).
     Global(u16),
+    /// A `mut` record of plain numbers and `Bool`s, kept field by field in the registers from this one on. Its
+    /// fields are read and changed with no heap value at all; it becomes one only where the whole record is
+    /// wanted. The name still owns its own value (D15).
+    InRegisters(Register),
 }
 
 struct Loop {
@@ -45,6 +49,12 @@ struct Function {
     loops: Vec<Loop>,
     /// Where an `instead` puts its value, innermost `otherwise` last.
     instead_targets: Vec<Register>,
+    /// A name being handed over whole to the call being compiled, and the register it lives in: for now its
+    /// value is the callee's, so this frame neither frees it nor lists it as held.
+    moved_name: Option<VariableId>,
+    moved_register: Option<Register>,
+    /// Names that take over a parameter's value where the parameter is last used: each lives where its parameter did.
+    takeovers: HashMap<VariableId, VariableId>,
 }
 
 struct Compiler<'p> {
@@ -58,6 +68,10 @@ struct Compiler<'p> {
     function: Function,
     place: Place,
     problem: Option<Message>,
+    /// The procedures whose bodies are being written out in place of calls to them, outermost first.
+    inlining: Vec<u32>,
+    /// The procedure being compiled, when it's not the top level.
+    current: Option<u32>,
 }
 
 /// Compiles a checked script.
@@ -82,6 +96,8 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
         function: Function::default(),
         place: Place::default(),
         problem: None,
+        inlining: Vec::new(),
+        current: None,
     };
     for (index, variable) in (0u32..).zip(&program.variables) {
         if variable.top_level && variable.captured {
@@ -96,8 +112,16 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
         ));
     }
     compiler.out.global_count = u32::try_from(compiler.globals.len()).unwrap_or(u32::MAX);
+    compiler.out.global_references = vec![false; compiler.globals.len()];
+    for (&variable, &global) in &compiler.globals {
+        let reference = program.variable(variable).is_some_and(|found| program.types.is_reference(found.type_id));
+        if let Some(slot) = compiler.out.global_references.get_mut(usize::from(global)) {
+            *slot = reference;
+        }
+    }
     compiler.top_level();
-    for procedure in &program.procedures {
+    for (number, procedure) in (0u32..).zip(&program.procedures) {
+        compiler.current = Some(number);
         compiler.procedure(procedure);
     }
     match compiler.problem {
@@ -106,7 +130,7 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
     }
 }
 
-impl Compiler<'_> {
+impl<'p> Compiler<'p> {
     // ---- small helpers ----
 
     fn internal(&mut self, detail: &str) {
@@ -335,7 +359,7 @@ impl Compiler<'_> {
     fn release_on_exit(&mut self, mark: usize, except: Option<Register>) {
         let held: Vec<Register> = self.function.held.get(mark..).unwrap_or(&[]).to_vec();
         for register in held.into_iter().rev() {
-            if Some(register) != except {
+            if Some(register) != except && Some(register) != self.function.moved_register {
                 self.emit(Instruction::Release { register });
             }
         }
@@ -344,7 +368,9 @@ impl Compiler<'_> {
     /// Records, for a call that can pause, what the frame holds there (D54).
     fn pause_map(&mut self) {
         let pc = u32::try_from(self.here()).unwrap_or(u32::MAX);
-        self.out.pause_maps.insert(pc, self.function.held.clone());
+        let moved = self.function.moved_register;
+        let held = self.function.held.iter().copied().filter(|register| Some(*register) != moved).collect();
+        self.out.pause_maps.insert(pc, held);
     }
 
     // ---- procedures ----
@@ -374,6 +400,10 @@ impl Compiler<'_> {
         for (position, &parameter) in (0u32..).zip(&procedure.parameters) {
             let register = Register::try_from(position + 1).unwrap_or(0);
             self.function.locations.insert(parameter, Location::Register(register));
+            // A procedure takes its arguments over, so it frees them when it's done (D15).
+            if self.program.variable(parameter).is_some_and(|variable| self.is_reference(variable.type_id)) {
+                self.hold(register);
+            }
             let Some(variable) = self.program.variable(parameter) else { continue };
             let default =
                 procedure.defaults.get(position as usize).cloned().flatten().and_then(|default| match default.kind {
@@ -391,9 +421,30 @@ impl Compiler<'_> {
                 default,
             });
         }
+        // `mut copy = parameter` where the parameter is never used again takes the parameter's value over, with
+        // nothing copied and no count taken.
+        for (position, statement) in procedure.body.iter().enumerate() {
+            if let StatementKind::Make { variable, value } = &statement.kind
+                && let ExpressionKind::Variable(parameter) = &value.kind
+                && procedure.parameters.contains(parameter)
+                && self.is_reference(value.type_id)
+                && self.keeps_in_registers(*variable).is_none()
+                && !self.globals.contains_key(variable)
+                && !block_uses(procedure.body.get(position + 1..).unwrap_or(&[]), *parameter)
+            {
+                self.function.takeovers.insert(*variable, *parameter);
+            }
+        }
         self.block(&procedure.body);
         self.place = procedure.end_place;
         if matches!(self.kind(procedure.result), Type::Nothing) {
+            if !procedure
+                .body
+                .last()
+                .is_some_and(|last| matches!(last.kind, StatementKind::Return(_) | StatementKind::Fail(_)))
+            {
+                self.release_on_exit(0, None);
+            }
             self.emit(Instruction::ReturnNothing);
         } else {
             // Checking made sure every way through ends in a `return` or a `fail`.
@@ -402,6 +453,7 @@ impl Compiler<'_> {
         let failures =
             procedure.failures.iter().map(|&failure| self.program.failure_name(failure).to_owned()).collect();
         let result = self.crossing(procedure.result);
+        self.out.entries.push(ProcedureEntry { entry, frame_size: self.function.high_water + 1 });
         self.out.procedures.push(CompiledProcedure {
             name: procedure.name.clone(),
             entry,
@@ -457,6 +509,69 @@ impl Compiler<'_> {
                 change(self, taken);
                 self.emit(Instruction::SetGlobal { global, from: taken });
             }
+            Location::InRegisters(_) => self.internal("a change inside a record kept in registers"),
+        }
+    }
+
+    /// How many registers a name's record is kept in, when it's kept that way: a `mut` record local to its
+    /// procedure, whose fields are all plain numbers and `Bool`s.
+    fn keeps_in_registers(&self, variable: VariableId) -> Option<u32> {
+        let found = self.program.variable(variable)?;
+        if !found.mutable || found.kind != VariableKind::Named || self.globals.contains_key(&variable) {
+            return None;
+        }
+        let Type::Record(_) = self.kind(found.type_id) else { return None };
+        let fields = self.fields_of(found.type_id, 0);
+        let plain =
+            !fields.is_empty() && fields.len() <= 32 && fields.iter().all(|(_, field)| !self.is_reference(*field));
+        plain.then(|| u32::try_from(fields.len()).unwrap_or(0))
+    }
+
+    /// The register one field of a record kept in registers lives in, when `expression` reads such a field.
+    fn field_register(&mut self, expression: &Expression) -> Option<Register> {
+        let ExpressionKind::Member { receiver, name } = &expression.kind else { return None };
+        let ExpressionKind::Variable(variable) = &receiver.kind else { return None };
+        let Location::InRegisters(base) = self.location(*variable) else { return None };
+        let record_type = self.variable_type(*variable);
+        Some(base + self.field_index(record_type, name))
+    }
+
+    /// Puts a record's fields into the registers from `base` on. `fresh` says the registers hold nothing yet, so
+    /// the fields can be worked out straight into them.
+    fn unpack_into(&mut self, value: &Expression, base: Register, fresh: bool) {
+        match &value.kind {
+            ExpressionKind::BuildRecord { fields, .. } if fresh => {
+                for (field, field_value) in fields {
+                    self.value_into(field_value, base + Register::try_from(*field).unwrap_or(0));
+                }
+            }
+            ExpressionKind::BuildRecord { fields, .. } => {
+                // The new fields may read the old ones, so they're all worked out before any is put in place.
+                let mut copies = Vec::new();
+                for (field, field_value) in fields {
+                    let copy = self.allocate();
+                    self.value_into(field_value, copy);
+                    copies.push((*field, copy));
+                }
+                for (field, copy) in copies {
+                    self.emit(Instruction::Move { to: base + Register::try_from(field).unwrap_or(0), from: copy });
+                }
+            }
+            ExpressionKind::Variable(other) if matches!(self.location(*other), Location::InRegisters(_)) => {
+                if let Location::InRegisters(from) = self.location(*other)
+                    && from != base
+                {
+                    let count = self.fields_of(value.type_id, 0).len();
+                    for offset in (0..).take(count) {
+                        self.emit(Instruction::Move { to: base + offset, from: from + offset });
+                    }
+                }
+            }
+            _ => {
+                let record = self.reading(value);
+                self.place = value.place;
+                self.emit(Instruction::UnpackRecord { base, record });
+            }
         }
     }
 
@@ -478,6 +593,20 @@ impl Compiler<'_> {
         match &statement.kind {
             StatementKind::Make { variable, value } => {
                 let reference = self.is_reference(value.type_id);
+                if let Some(&parameter) = self.function.takeovers.get(variable) {
+                    let location = self.location(parameter);
+                    self.function.locations.insert(*variable, location);
+                    return;
+                }
+                if let Some(count) = self.keeps_in_registers(*variable) {
+                    let base = self.allocate_many(count);
+                    let temporaries = self.function.next;
+                    self.unpack_into(value, base, true);
+                    self.release_from(held_mark);
+                    self.function.next = temporaries;
+                    self.function.locations.insert(*variable, Location::InRegisters(base));
+                    return;
+                }
                 if let Some(&global) = self.globals.get(variable) {
                     let register = self.held_value(value);
                     self.hand_on(register);
@@ -501,6 +630,12 @@ impl Compiler<'_> {
             StatementKind::SetField { variable, field, value } => {
                 let record_type = self.variable_type(*variable);
                 let field = self.field_index(record_type, field);
+                if let Location::InRegisters(base) = self.location(*variable) {
+                    self.value_into(value, base + field);
+                    self.release_from(held_mark);
+                    self.function.next = register_mark;
+                    return;
+                }
                 let reference = self.is_reference(value.type_id);
                 let value = self.held_value(value);
                 self.hand_on(value);
@@ -515,6 +650,23 @@ impl Compiler<'_> {
             }
             StatementKind::SetItem { variable, index, zero_based, value } => {
                 let index = self.value(index);
+                if let ExpressionKind::Variable(record) = &value.kind
+                    && let Location::InRegisters(base) = self.location(*record)
+                {
+                    // The record's fields go straight into the item, in place when the list alone holds it.
+                    self.place = statement.place;
+                    let zero_based = *zero_based;
+                    self.change_in_place(*variable, |compiler, list| {
+                        compiler.emit(if zero_based {
+                            Instruction::PackIntoItemAtOffset { list, index, base }
+                        } else {
+                            Instruction::PackIntoItemAtPosition { list, index, base }
+                        });
+                    });
+                    self.release_from(held_mark);
+                    self.function.next = register_mark;
+                    return;
+                }
                 let value = self.held_value(value);
                 self.hand_on(value);
                 self.place = statement.place;
@@ -724,7 +876,34 @@ impl Compiler<'_> {
             });
             return;
         }
+        // `name = procedure(name)` hands the name's value over to the call and takes the call's value back, so
+        // nothing is copied on the way in or out.
+        if reference
+            && let Location::Register(register) = self.location(variable)
+            && self.function.held.contains(&register)
+            && let ExpressionKind::Call { procedure, arguments } = &value.kind
+            && self.inlined_body(procedure.0).is_none()
+            && arguments
+                .iter()
+                .filter(|argument| matches!(argument.kind, ExpressionKind::Variable(read) if read == variable))
+                .count()
+                == 1
+            && arguments
+                .iter()
+                .filter(|argument| !matches!(argument.kind, ExpressionKind::Variable(_)))
+                .all(|argument| !expression_uses(argument, variable))
+        {
+            self.function.moved_name = Some(variable);
+            self.function.moved_register = Some(register);
+            let result = self.allocate();
+            self.value_into(value, result);
+            self.function.moved_name = None;
+            self.function.moved_register = None;
+            self.emit(Instruction::Move { to: register, from: result });
+            return;
+        }
         match self.location(variable) {
+            Location::InRegisters(base) => self.unpack_into(value, base, false),
             Location::Register(register) => {
                 if reference {
                     let new = self.held_value(value);
@@ -951,6 +1130,9 @@ impl Compiler<'_> {
         {
             return register;
         }
+        if let Some(register) = self.field_register(expression) {
+            return register;
+        }
         let register = self.allocate();
         if self.value_into(expression, register) {
             self.hold(register);
@@ -1021,6 +1203,13 @@ impl Compiler<'_> {
                     }
                     false
                 }
+                Location::InRegisters(base) => {
+                    // The whole record is wanted, so it's made into a heap value here.
+                    let fields = self.fields_of(expression.type_id, 0);
+                    let layout = self.fields_layout(0, &fields);
+                    self.emit(Instruction::NewRecord { to, base, layout });
+                    true
+                }
                 Location::Global(global) => {
                     self.emit(Instruction::GetGlobal { to, global });
                     if reference {
@@ -1032,6 +1221,12 @@ impl Compiler<'_> {
                 }
             },
             ExpressionKind::Member { receiver, name } => {
+                if let Some(from) = self.field_register(expression) {
+                    if from != to {
+                        self.emit(Instruction::Move { to, from });
+                    }
+                    return false;
+                }
                 let receiver_type = receiver.type_id;
                 let from = self.reading(receiver);
                 self.place = expression.place;
@@ -1068,9 +1263,36 @@ impl Compiler<'_> {
                 self.emit(Instruction::HasKey { to, dict, key });
                 false
             }
+            ExpressionKind::Call { procedure, arguments } if self.inlined_body(procedure.0).is_some() => {
+                // A small procedure that only gives back one value is written out here, with no call at all.
+                let program = self.program;
+                let Some(callee) = program.procedure(*procedure) else { return false };
+                let Some(body) = self.inlined_body(procedure.0) else { return false };
+                let registers: Vec<Register> = arguments.iter().map(|argument| self.value(argument)).collect();
+                // The body's last step writes its result; if that would land on an argument still being read, the
+                // result goes through a register of its own.
+                let target = if registers.contains(&to) { self.allocate() } else { to };
+                let mut before = Vec::new();
+                for (&parameter, &register) in callee.parameters.iter().zip(&registers) {
+                    before.push((parameter, self.function.locations.insert(parameter, Location::Register(register))));
+                }
+                self.inlining.push(procedure.0);
+                let held = self.value_into(body, target);
+                self.inlining.pop();
+                for (parameter, earlier) in before {
+                    match earlier {
+                        Some(location) => self.function.locations.insert(parameter, location),
+                        None => self.function.locations.remove(&parameter),
+                    };
+                }
+                if target != to {
+                    self.emit(Instruction::Move { to, from: target });
+                }
+                held
+            }
             ExpressionKind::Call { procedure, arguments } => {
                 let can_pause = self.program.procedure(*procedure).is_some_and(|procedure| procedure.can_pause);
-                let base = self.arguments(arguments);
+                let base = self.arguments(arguments, false, self.function.moved_name);
                 self.place = expression.place;
                 self.emit(Instruction::Call { base, procedure: procedure.0 });
                 if can_pause {
@@ -1086,7 +1308,7 @@ impl Compiler<'_> {
                 let crossings: Vec<Crossing> =
                     arguments.iter().map(|argument| self.crossing(argument.type_id)).collect();
                 let result = self.crossing(expression.type_id);
-                let base = self.arguments(arguments);
+                let base = self.arguments(arguments, true, None);
                 let site = u32::try_from(self.out.door_sites.len()).unwrap_or(u32::MAX);
                 self.out.door_sites.push(DoorSite { door: *door, arguments: crossings, result });
                 self.place = expression.place;
@@ -1467,30 +1689,50 @@ impl Compiler<'_> {
         base
     }
 
+    /// The one value a procedure gives back, when the procedure is small enough to be written out in place of a
+    /// call to it: its whole body is `return value`, it can't fail or pause, and it isn't already being written
+    /// out, as a procedure that calls itself would be.
+    fn inlined_body(&self, procedure: u32) -> Option<&'p Expression> {
+        let program: &'p Program = self.program;
+        let found = program.procedures.get(procedure as usize)?;
+        if found.can_fail || found.can_pause || self.current == Some(procedure) || self.inlining.contains(&procedure) {
+            return None;
+        }
+        let [Statement { kind: StatementKind::Return(Some(body)), .. }] = found.body.as_slice() else { return None };
+        (size(body) <= 48).then_some(body)
+    }
+
     /// Lines a call's arguments up after the register its result comes back in, giving that register.
-    fn arguments(&mut self, arguments: &[Expression]) -> Register {
+    ///
+    /// A procedure takes its arguments over: each heap value it's given has a holder's count of its own, which the
+    /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
+    /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
+    fn arguments(&mut self, arguments: &[Expression], to_door: bool, moved: Option<VariableId>) -> Register {
         let count = u32::try_from(arguments.len()).unwrap_or(u32::MAX);
         let held_before = self.function.held.len();
         let base = self.allocate_many(count + 1);
+        let mut given = Vec::new();
         for (slot, argument) in (base + 1..).zip(arguments) {
-            if self.value_into(argument, slot) {
+            let is_moved = matches!(&argument.kind, ExpressionKind::Variable(variable) if Some(*variable) == moved);
+            if to_door || is_moved || !self.is_reference(argument.type_id) {
+                if self.value_into(argument, slot) {
+                    self.hold(slot);
+                }
+            } else {
+                self.held_into(argument, slot);
+                // Held here until the call is made, in case working out a later argument leaves the procedure.
                 self.hold(slot);
+                given.push(slot);
             }
         }
-        // The callee's frame starts at `base`, so nothing this frame still holds may sit above the arguments.
-        let last = u32::from(base) + count;
-        let above = self.function.held.get(held_before..).unwrap_or(&[]).iter().any(|&held| u32::from(held) > last);
-        if !above {
-            return base;
-        }
-        let moved = self.allocate_many(count + 1);
-        for offset in 1..=Register::try_from(count).unwrap_or(0) {
-            self.emit(Instruction::Move { to: moved + offset, from: base + offset });
-            if let Some(held) = self.function.held.iter_mut().rev().find(|held| **held == base + offset) {
-                *held = moved + offset;
+        if !to_door {
+            for slot in given {
+                self.hand_on(slot);
             }
+            // The callee's frame starts at `base`, so what working the arguments out held is freed before the call.
+            self.release_from(held_before);
         }
-        moved
+        base
     }
 
     fn binary(
@@ -1571,6 +1813,112 @@ impl Compiler<'_> {
         };
         self.emit(instruction);
     }
+}
+
+/// Whether an expression reads or changes a name, anywhere inside it.
+fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
+    let uses = |inner: &Expression| expression_uses(inner, variable);
+    match &expression.kind {
+        ExpressionKind::Variable(read) => *read == variable,
+        ExpressionKind::Error
+        | ExpressionKind::Whole(_)
+        | ExpressionKind::Float(_)
+        | ExpressionKind::Bool(_)
+        | ExpressionKind::Text(_) => false,
+        ExpressionKind::Member { receiver: inner, .. }
+        | ExpressionKind::Convert { value: inner, .. }
+        | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::Negate(inner)
+        | ExpressionKind::Not(inner)
+        | ExpressionKind::Repeat { value: inner, .. }
+        | ExpressionKind::Try(inner) => uses(inner),
+        ExpressionKind::Item { receiver: first, index: second, .. }
+        | ExpressionKind::Lookup { dict: first, key: second }
+        | ExpressionKind::Has { dict: first, key: second }
+        | ExpressionKind::Binary { left: first, right: second, .. }
+        | ExpressionKind::MaybeOr { maybe: first, fallback: second } => uses(first) || uses(second),
+        ExpressionKind::Call { arguments: items, .. }
+        | ExpressionKind::DoorCall { arguments: items, .. }
+        | ExpressionKind::Join(items)
+        | ExpressionKind::List(items) => items.iter().any(uses),
+        ExpressionKind::BuildRecord { fields, .. } | ExpressionKind::BuildCase { fields, .. } => {
+            fields.iter().any(|(_, value)| uses(value))
+        }
+        ExpressionKind::Dict(pairs) => pairs.iter().any(|(key, value)| uses(key) || uses(value)),
+        ExpressionKind::Handle { call, fallback } => {
+            uses(call) || matches!(fallback, HandleFallback::Value(value) if uses(value))
+        }
+        ExpressionKind::Otherwise { call, cases } => {
+            uses(call) || cases.iter().any(|(_, body)| block_uses(body, variable))
+        }
+        ExpressionKind::ListAdd { variable: changed, value, position } => {
+            *changed == variable || uses(value) || position.as_ref().is_some_and(|(position, _)| uses(position))
+        }
+        ExpressionKind::ListRemove { variable: changed, position: inner, .. }
+        | ExpressionKind::DictRemove { variable: changed, key: inner } => *changed == variable || uses(inner),
+    }
+}
+
+/// Whether any statement of a block reads or changes a name.
+fn block_uses(block: &[Statement], variable: VariableId) -> bool {
+    let uses = |expression: &Expression| expression_uses(expression, variable);
+    block.iter().any(|statement| match &statement.kind {
+        StatementKind::Make { value, .. } | StatementKind::Evaluate(value) | StatementKind::Instead(value) => {
+            uses(value)
+        }
+        StatementKind::Set { variable: changed, value } | StatementKind::SetField { variable: changed, value, .. } => {
+            *changed == variable || uses(value)
+        }
+        StatementKind::SetItem { variable: changed, index: inner, value, .. }
+        | StatementKind::SetKey { variable: changed, key: inner, value } => {
+            *changed == variable || uses(inner) || uses(value)
+        }
+        StatementKind::If { branches, otherwise } => {
+            branches.iter().any(|(condition, body)| uses(condition) || block_uses(body, variable))
+                || otherwise.as_ref().is_some_and(|body| block_uses(body, variable))
+        }
+        StatementKind::While { condition, body } => uses(condition) || block_uses(body, variable),
+        StatementKind::ForRange { from, end, step, body, .. } => {
+            uses(from) || uses(end) || step.as_ref().is_some_and(uses) || block_uses(body, variable)
+        }
+        StatementKind::ForEach { source, body, .. } => uses(source) || block_uses(body, variable),
+        StatementKind::Match { subject, arms } => {
+            uses(subject) || arms.iter().any(|arm| block_uses(&arm.body, variable))
+        }
+        StatementKind::Return(value) => value.as_ref().is_some_and(uses),
+        StatementKind::Break | StatementKind::Fail(_) => false,
+    })
+}
+
+/// How many values an expression is made of, roughly: how much code writing it out costs.
+fn size(expression: &Expression) -> usize {
+    let mut total = 1;
+    let mut add = |inner: &Expression| total += size(inner);
+    match &expression.kind {
+        ExpressionKind::Member { receiver: inner, .. }
+        | ExpressionKind::Convert { value: inner, .. }
+        | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::Negate(inner)
+        | ExpressionKind::Not(inner) => add(inner),
+        ExpressionKind::Item { receiver: first, index: second, .. }
+        | ExpressionKind::Binary { left: first, right: second, .. } => {
+            add(first);
+            add(second);
+        }
+        ExpressionKind::Call { arguments, .. } | ExpressionKind::Join(arguments) => {
+            for argument in arguments {
+                add(argument);
+            }
+        }
+        ExpressionKind::Whole(_)
+        | ExpressionKind::Float(_)
+        | ExpressionKind::Bool(_)
+        | ExpressionKind::Text(_)
+        | ExpressionKind::Variable(_) => {}
+        // Anything else is taken as too big to write out in place.
+        _ => return 1000,
+    }
+    total
 }
 
 /// A plain whole number small enough to sit inside an instruction.

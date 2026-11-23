@@ -7,7 +7,7 @@ use super::crossing::{CrossingError, to_slot, to_value};
 use super::dict::{Dict, hash_bits, hash_text};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use crate::check::tree::Rounding;
-use crate::compile::bytecode::{BULK_UNIT, Compiled, FAR, Instruction, Layout, PLAIN_CASE};
+use crate::compile::bytecode::{BULK_UNIT, Compiled, FAR, Instruction, Layout, PLAIN_CASE, ProcedureEntry};
 use crate::host::Value;
 use crate::number::{float_to_text, float_to_whole, text_to_whole};
 
@@ -284,6 +284,7 @@ pub fn run(
     let code: &[Instruction] = &compiled.code;
     let layouts: &[Layout] = &compiled.layouts;
     let constants: &[u64] = &compiled.constants;
+    let entries: &[ProcedureEntry] = &compiled.entries;
     let [missing, not_a_whole, full] = failures;
     let mut pc = task.pc;
     let mut base = task.base;
@@ -292,10 +293,24 @@ pub fn run(
     let mut failure: u32 = 0;
     let stack = &mut task.stack;
     let frames = &mut task.frames;
+    // The running procedure's registers: the stack from its frame's start on. Kept as a slice of its own, so that
+    // reaching a register is one check and one read.
+    let mut registers: &mut [u64] = match stack.get_mut(base..) {
+        Some(registers) => registers,
+        None => return Err(broken("a frame outside its stack", pc)),
+    };
+    macro_rules! reframe {
+        () => {
+            registers = match stack.get_mut(base..) {
+                Some(registers) => registers,
+                None => return Err(broken("a frame outside its stack", pc)),
+            }
+        };
+    }
 
     macro_rules! get {
         ($register:expr) => {
-            match stack.get(base + usize::from($register)) {
+            match registers.get(usize::from($register)) {
                 Some(value) => *value,
                 None => return Err(broken("a register outside its frame", pc)),
             }
@@ -304,7 +319,7 @@ pub fn run(
     macro_rules! set {
         ($register:expr, $value:expr) => {{
             let value = $value;
-            match stack.get_mut(base + usize::from($register)) {
+            match registers.get_mut(usize::from($register)) {
                 Some(slot) => *slot = value,
                 None => return Err(broken("a register outside its frame", pc)),
             }
@@ -643,7 +658,7 @@ pub fn run(
 
             Instruction::Call { base: call_base, procedure } => {
                 step!();
-                let Some(callee) = compiled.procedures.get(procedure as usize) else {
+                let Some(callee) = entries.get(procedure as usize) else {
                     return Err(broken("a call to a procedure that isn't there", pc));
                 };
                 let new_base = base + usize::from(call_base);
@@ -657,6 +672,7 @@ pub fn run(
                 frames.push(Frame { return_pc, base: old_base });
                 base = new_base;
                 pc = callee.entry as usize;
+                reframe!();
             }
             Instruction::Return { from } => {
                 let value = get!(from);
@@ -664,6 +680,7 @@ pub fn run(
                 if let Some(frame) = frames.pop() {
                     pc = frame.return_pc as usize;
                     base = frame.base as usize;
+                    reframe!();
                 } else {
                     task.pc = pc;
                     task.base = base;
@@ -674,6 +691,7 @@ pub fn run(
                 if let Some(frame) = frames.pop() {
                     pc = frame.return_pc as usize;
                     base = frame.base as usize;
+                    reframe!();
                 } else {
                     task.pc = pc;
                     task.base = base;
@@ -729,6 +747,7 @@ pub fn run(
                     Some(frame) => {
                         pc = frame.return_pc as usize;
                         base = frame.base as usize;
+                        reframe!();
                     }
                     None => return Ok(Outcome::Failed(failure)),
                 }
@@ -737,6 +756,7 @@ pub fn run(
                 Some(frame) => {
                     pc = frame.return_pc as usize;
                     base = frame.base as usize;
+                    reframe!();
                 }
                 None => return Ok(Outcome::Failed(failure)),
             },
@@ -847,8 +867,8 @@ pub fn run(
             Instruction::NewList { to, base: first, count }
             | Instruction::NewReferenceList { to, base: first, count } => {
                 let references = matches!(instruction, Instruction::NewReferenceList { .. });
-                let start = base + usize::from(first);
-                let Some(values) = stack.get(start..start + usize::from(count)) else {
+                let start = usize::from(first);
+                let Some(values) = registers.get(start..start + usize::from(count)) else {
                     return Err(broken("a list built from outside its frame", pc));
                 };
                 let size = values.len().saturating_mul(SLOT_COST);
@@ -1161,8 +1181,8 @@ pub fn run(
                 let Some(count) = layouts.get(usize::from(layout)).map(|layout| layout.references.len()) else {
                     return Err(broken("a layout that isn't there", pc));
                 };
-                let start = base + usize::from(first);
-                let Some(values) = stack.get(start..start + count) else {
+                let start = usize::from(first);
+                let Some(values) = registers.get(start..start + count) else {
                     return Err(broken("a record built from outside its frame", pc));
                 };
                 let fields = values.to_vec();
@@ -1204,6 +1224,62 @@ pub fn run(
                     None => return Err(broken("a field that isn't there", pc)),
                 }
                 count_work!();
+            }
+            Instruction::UnpackRecord { base: first, record } => {
+                let start = usize::from(first);
+                let fields = match heap.get(get!(record)) {
+                    Ok(Object::Record { fields, .. }) => fields,
+                    Ok(_) => return Err(broken("a handle that should lead to a record", pc)),
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                match registers.get_mut(start..start + fields.len()) {
+                    Some(registers) => registers.copy_from_slice(fields),
+                    None => return Err(broken("a record unpacked outside its frame", pc)),
+                }
+            }
+            Instruction::PackIntoItemAtPosition { list, index, base: first }
+            | Instruction::PackIntoItemAtOffset { list, index, base: first } => {
+                let zero_based = matches!(instruction, Instruction::PackIntoItemAtOffset { .. });
+                let index = whole!(index);
+                let handle = own!(list);
+                let (found, length) = {
+                    let items = items!(handle);
+                    let place = item_place(index, zero_based, items.len());
+                    (place.and_then(|place| items.get(place).copied().map(|item| (place, item))), items.len())
+                };
+                let Some((place, item)) = found else {
+                    return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+                };
+                let start = usize::from(first);
+                if heap.has_one_holder(item) {
+                    // The list alone holds the item, so the record's fields are written straight into it.
+                    match heap.get_mut(item) {
+                        Ok(Object::Record { fields, .. }) => match registers.get(start..start + fields.len()) {
+                            Some(registers) => fields.copy_from_slice(registers),
+                            None => return Err(broken("a record packed from outside its frame", pc)),
+                        },
+                        Ok(_) => return Err(broken("a handle that should lead to a record", pc)),
+                        Err(error) => return Err((Stop::from(error), pc)),
+                    }
+                } else {
+                    let (count, layout) = match heap.get(item) {
+                        Ok(Object::Record { fields, layout }) => (fields.len(), *layout),
+                        Ok(_) => return Err(broken("a handle that should lead to a record", pc)),
+                        Err(error) => return Err((Stop::from(error), pc)),
+                    };
+                    let Some(registers) = registers.get(start..start + count) else {
+                        return Err(broken("a record packed from outside its frame", pc));
+                    };
+                    let fields = registers.to_vec();
+                    let size = count.saturating_mul(SLOT_COST);
+                    let new = heap_try!(heap.allocate(Object::Record { fields, layout }, size));
+                    if let Ok(Object::List { items, .. }) = heap.get_mut(handle)
+                        && let Some(slot) = items.get_mut(place)
+                    {
+                        *slot = new;
+                    }
+                    heap.release(item, layouts);
+                }
             }
             Instruction::CaseNumber { to, from } => {
                 let slot = get!(from);

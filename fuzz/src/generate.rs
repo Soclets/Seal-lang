@@ -59,6 +59,8 @@ pub enum Kind {
     Event,
     /// `Maybe<Whole>`.
     Maybe,
+    /// The script's record of plain numbers, `Spot`.
+    Spot,
 }
 
 impl Kind {
@@ -74,6 +76,7 @@ impl Kind {
             Kind::Record => "Hero",
             Kind::Event => "Event",
             Kind::Maybe => "Maybe<Whole>",
+            Kind::Spot => "Spot",
         }
     }
 }
@@ -94,6 +97,8 @@ struct ProcedureInfo {
     parameters: Vec<Kind>,
     result: Option<Kind>,
     fails: bool,
+    /// Whether the procedure calls the pausing door `wait`. Only the host calls such a procedure.
+    pauses: bool,
 }
 
 /// What the generator may use: everything, or only what Seal shares with Unio (D19), for comparing with Ralph.
@@ -172,6 +177,8 @@ impl Generator {
                 Kind::Record,
                 Kind::Event,
                 Kind::Maybe,
+                Kind::Spot,
+                Kind::Spot,
             ]
         } else {
             vec![Kind::Whole, Kind::Whole, Kind::Bool, Kind::Text]
@@ -307,7 +314,10 @@ impl Generator {
                     },
                     9 if self.seal() => match self.read_name(Kind::Maybe) {
                         Some(maybe) => format!("({maybe} ?? {})", self.whole_literal()),
-                        None => self.whole_literal(),
+                        None => match self.read_name(Kind::Spot) {
+                            Some(spot) => format!("{spot}.x"),
+                            None => self.whole_literal(),
+                        },
                     },
                     _ => self.call_value(Kind::Whole, level).unwrap_or_else(|| self.whole_literal()),
                 }
@@ -433,6 +443,13 @@ impl Generator {
                     self.value(Kind::Text, 0)
                 ),
             },
+            Kind::Spot => {
+                format!(
+                    "Spot[x: {}, y: {}]",
+                    self.value(Kind::Whole, level.saturating_sub(1)),
+                    self.value(Kind::Float, level.saturating_sub(1))
+                )
+            }
             Kind::Maybe => {
                 if self.random.chance(1, 3) {
                     "Maybe.none".to_owned()
@@ -496,8 +513,12 @@ impl Generator {
 
     /// A call to one of the script's procedures that gives `kind`, with its failure dealt with.
     fn call_value(&mut self, kind: Kind, level: usize) -> Option<String> {
-        let candidates: Vec<ProcedureInfo> =
-            self.procedures.iter().filter(|procedure| procedure.result == Some(kind)).cloned().collect();
+        let candidates: Vec<ProcedureInfo> = self
+            .procedures
+            .iter()
+            .filter(|procedure| procedure.result == Some(kind) && !procedure.pauses)
+            .cloned()
+            .collect();
         let procedure = self.random.pick(&candidates)?.clone();
         // A procedure never calls itself here, so every generated script ends.
         if self.in_procedure.as_ref().is_some_and(|inside| inside.name == procedure.name) {
@@ -531,6 +552,7 @@ impl Generator {
             Kind::Whole | Kind::Bool | Kind::Text | Kind::Float => format!("show_msg(fmt(\"{name}: {{{name}}}\"))"),
             Kind::WholeList | Kind::TextList | Kind::Dict => format!("show_msg(fmt(\"{name} has {{{name}.len}}\"))"),
             Kind::Record => format!("show_msg(fmt(\"{name}: {{{name}.name}} {{{name}.hp}}\"))"),
+            Kind::Spot => format!("show_msg(fmt(\"{name}: {{{name}.x}} {{{name}.y}}\"))"),
             Kind::Event | Kind::Maybe => String::new(),
         }
     }
@@ -759,6 +781,17 @@ impl Generator {
                 if let Some(record) = self.changeable_name(Kind::Record) {
                     let value = self.value(Kind::Whole, 1);
                     self.line(&format!("{record}.hp = {value}"));
+                } else if let Some(spot) = self.changeable_name(Kind::Spot) {
+                    if self.random.chance(1, 2) {
+                        let value = self.value(Kind::Whole, 2);
+                        self.line(&format!("{spot}.x = {value}"));
+                    } else {
+                        let value = self.value(Kind::Float, 2);
+                        self.line(&format!("{spot}.y = {value}"));
+                    }
+                } else if self.in_procedure.as_ref().is_some_and(|inside| inside.pauses) {
+                    let seconds = self.value(Kind::Whole, 1);
+                    self.line(&format!("wait(seconds: {seconds})"));
                 }
             }
             18 if self.seal() && nested && !self.visible().any(|name| name.text == "amount") => {
@@ -769,8 +802,12 @@ impl Generator {
                 }
             }
             19 => {
-                let candidates: Vec<ProcedureInfo> =
-                    self.procedures.iter().filter(|procedure| procedure.result.is_none()).cloned().collect();
+                let candidates: Vec<ProcedureInfo> = self
+                    .procedures
+                    .iter()
+                    .filter(|procedure| procedure.result.is_none() && !procedure.pauses)
+                    .cloned()
+                    .collect();
                 if let Some(procedure) = self.random.pick(&candidates).cloned()
                     && self.in_procedure.as_ref().is_none_or(|inside| inside.name != procedure.name)
                 {
@@ -869,7 +906,10 @@ impl Generator {
             None
         };
         let fails = self.seal() && self.random.chance(1, 3);
-        let info = ProcedureInfo { name: name.clone(), parameters: parameters.clone(), result, fails };
+        // A procedure that pauses takes one `Whole`, which is what the fuzzer's host calls every procedure with.
+        let pauses = self.seal() && self.random.chance(1, 4);
+        let parameters = if pauses { vec![Kind::Whole] } else { parameters };
+        let info = ProcedureInfo { name: name.clone(), parameters: parameters.clone(), result, fails, pauses };
         self.scopes.push(Vec::new());
         let mut header = format!("proc {name}[");
         let mut names = Vec::new();
@@ -965,7 +1005,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
         }
         for _ in 0..self.random.below(4) {
             self.budget = 12;

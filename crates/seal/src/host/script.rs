@@ -461,23 +461,12 @@ impl Script {
         }
     }
 
-    /// Ends a task that ran to its end or failed: its arguments' copies and its stack are freed.
+    /// Ends a task that ran to its end or failed. The procedure took its arguments over and freed them itself (D15),
+    /// so only the stack is left to give back.
     fn end_task(&mut self, running: &mut Running, reuse: Option<TaskId>) {
-        self.release_arguments(running);
         running.task.finish(&mut self.machine.heap);
         if let Some(id) = reuse {
             self.retire(id);
-        }
-    }
-
-    /// Frees the copies of the host's arguments a task was called with.
-    fn release_arguments(&mut self, running: &Running) {
-        let Some(procedure) = self.compiled.procedures.get(running.procedure) else { return };
-        for (position, parameter) in procedure.parameters.iter().enumerate() {
-            if parameter.crossing.is_reference() {
-                let slot = running.task.stack.get(position + 1).copied().unwrap_or(0);
-                self.machine.heap.release(slot, &self.compiled.layouts);
-            }
         }
     }
 
@@ -549,11 +538,10 @@ impl Script {
     /// [`Error::Refused`] when the task isn't paused, and [`Error::Stopped`] when the script has stopped.
     pub fn cancel(&mut self, task: TaskId) -> Result<(), Error> {
         let mut running = self.take_task(task)?;
-        // What each of the task's frames holds at its pause is freed (D15).
+        // What each of the task's frames holds at its pause is freed, the arguments the host gave among it (D15).
         for slot in running.task.held_slots(&self.compiled) {
             self.machine.heap.release(slot, &self.compiled.layouts);
         }
-        self.release_arguments(&running);
         running.task.finish(&mut self.machine.heap);
         self.retire(task);
         Ok(())
@@ -637,6 +625,28 @@ impl Script {
     #[must_use]
     pub fn memory_in_use(&self) -> usize {
         self.machine.heap.in_use()
+    }
+
+    /// Checks the script's own bookkeeping: that every heap value's count of holders is exactly who holds it
+    /// (D15). It's for tests and the fuzzer; a difference is a bug in Seal, never in a script.
+    ///
+    /// # Errors
+    ///
+    /// Says which value's count is off.
+    pub fn audit(&self) -> Result<(), String> {
+        if self.stopped.is_some() {
+            return Ok(());
+        }
+        let mut roots: Vec<u64> = self.machine.texts.clone();
+        for (slot, reference) in self.machine.globals.iter().zip(&self.compiled.global_references) {
+            if *reference {
+                roots.push(*slot);
+            }
+        }
+        for task in self.tasks.iter().filter_map(|slot| slot.running.as_ref()) {
+            roots.extend(task.task.held_slots(&self.compiled));
+        }
+        self.machine.heap.audit(&roots, &self.compiled.layouts)
     }
 
     /// Why the script stopped, when it has (D14).
