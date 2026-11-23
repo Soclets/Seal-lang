@@ -26,6 +26,13 @@ calls Seal is the building session's to propose.
 
 **Not decided:** labels and defaults on doors.
 
+## Scripts apart, and pausing
+
+- **Each loaded script is fully separate,** with its own names, memory, limits and doors; two never share a value, and
+  talk only through the host's doors (D15, D49).
+- **A door can pause a script,** and the host resumes it later, as `wait(seconds: 2)` in a patrol might (D49).
+- **A script runs one thing at a time;** there's no parallelism inside it (D49).
+
 ## Limits
 
 Each script gets a step budget and a memory cap, set by the host (D14):

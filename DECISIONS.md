@@ -1416,3 +1416,45 @@ A script's own data lives inside it, as `mut hp = 30`; the host's own data is re
 **Tankun's words.** "Wait, isn't goblin made by Seal insdie?", then, asked "Should the host's side work this way: doors
 as typed Rust closures, doors and limits chosen per script, and loading and calling returning errors, never
 crashing?", the owner chose: "yea".
+
+## D49. Scripts are fully separate and movable between threads, and pause through doors
+
+2026-11-23.
+
+**Chosen.**
+- **Each loaded script is fully separate:** its own names, memory, limits and doors. Two scripts never share a value
+  (D15), so a bug or an attack in one can't reach another, and loading a script twice gives two separate copies.
+- **Scripts talk only through the host,** calling doors the host connects as it likes.
+- **A script runs on one thread at a time, and can move between threads,** so a host can run many scripts at once,
+  with nothing shared and no locks.
+- **A door can pause a script.** Seal keeps exactly where the script was, the host's call comes back as paused, and
+  the host resumes it whenever it likes, such as after two seconds of game time. Time stays the host's (D11), so `wait`
+  is a door, not a built-in.
+- **No parallelism inside one script for now,** unlike Unio's workers (Unio D68).
+
+```
+proc patrol[guard]
+    while true
+        walk_to(guard, x: 10)
+        wait(seconds: 2)
+        walk_to(guard, x: 0)
+        wait(seconds: 2)
+    end
+end
+```
+
+How a door asks to pause, and how the host resumes, are the building session's to propose under D48's shape.
+
+**Weighed.**
+- No pausing. Every timed behaviour would be chopped into "what do I do this frame?" pieces, the classic mess pausing
+  exists to avoid.
+- A built-in `wait`. Time belongs to the host, which may run game time, real time, or none.
+- Threads inside a script, as Unio's workers. Game scripts almost never need them, and a host already runs scripts in
+  parallel.
+
+**Why this won.** Game scripts get the waiting they need, as Lua's coroutines and Roblox's `task.wait` give them,
+without Seal owning time, and parallelism comes for free from scripts sharing nothing.
+
+**Tankun's words.** "Should Seal be able to be concurrent?", then, asked "Should Seal scripts be fully separate and
+movable between threads, able to pause through a door and be resumed by the host, with no parallelism inside one script
+for now?", the owner chose: "yea".

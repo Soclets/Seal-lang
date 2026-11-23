@@ -38,5 +38,8 @@ let mut goblin_script = Script::load("goblin.seal", &source, &doors, limits)?;
 goblin_script.call("on_hit", (10,))?;
 ```
 
-**Not decided:** isolation between scripts and threads;
-determinism across machines.
+- **Isolation and threads** (D49): each loaded script is fully separate, runs on one thread at a time and can move
+  between threads; scripts talk only through the host; a door can pause a script, and the host resumes it later; no
+  parallelism inside one script for now.
+
+**Not decided:** determinism across machines.
