@@ -347,3 +347,31 @@ Cyborg's.
 **Tankun's words.** "Hm... If Seal itself can make narrowings, the host should be able", Tankun's message proposing
 `fmt` like Cyborg's (has code), then, asked "Should Seal fill text with a built-in `fmt("…")` that gives a `Text`,
 with braces holding only names, checked at load time?", the owner chose: "yea".
+
+## D13. A host can give its doors narrowings, working exactly like Seal's own
+
+2026-11-23.
+
+**Chosen.**
+- **A host can declare narrowings for its doors,** along with the door, in the code that opens it.
+- **To a script they work exactly like Seal's own narrowings,** such as `be.Whole.floor`, under the same rules: an
+  unknown one is refused when the script loads, with the door's real narrowings listed (Unio D102).
+- **The language server shows and colours them** from what the host declared (D7).
+
+```
+show_msg.same_line("Lives: 3, ")
+play_sound.loud("boom.wav")
+```
+
+Whether a script can give its own procedures narrowings isn't decided yet, nor is it in Unio.
+
+**Weighed.**
+- Doors with no narrowings, so a host writes `show_msg_same_line`. Doors would be second-class next to Seal's own
+  words.
+
+**Why this won.** If Seal's own words can have narrowings, a host's doors should too, so a script reads the same
+whichever made the word. Tankun raised it.
+
+**Tankun's words.** "Hm... If Seal itself can make narrowings, the host should be able", then, asked "Should a host
+be able to give its doors narrowings, declared with the door and working exactly like Seal's own?", the owner chose:
+"yea".
