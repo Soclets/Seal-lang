@@ -457,3 +457,35 @@ through its doors.
 
 **Tankun's words.** Asked "Should Seal's types be Unio's (`Whole`, `Float`, `Bool`, `Text`, `List` and `Array`), with
 Unio's rules for them?", the owner chose: "yea".
+
+## D17. No build modes: every script loads and runs one way, with every check kept
+
+2026-11-23.
+
+**Chosen.**
+- **Seal has no build modes,** no `--working` or `--final`: a script loads and runs one way in every host.
+- **Every check is always on,** at load time (types, names, refusals) and while running (overflow, positions, division
+  by zero, floats, and D14's limits). A failed load-time check means the script doesn't load, and the host gets the
+  messages; a failed running check stops the script at its exact line, and the host is told.
+- **Load-time optimization is always on,** and a check is removed only where it's proved unable to fail, never
+  dropped for speed (as in Unio D46 and D124): a `for each` position, maths on plain numbers, a counter over a
+  `range`. Which optimizations, and when, is the building session's to propose, arriving with the part they apply to.
+- **What a host chooses is the script's limits,** its doors, steps and memory (D11, D13, D14), never whether checking
+  happens.
+- **To be revisited only if the building session shows a real need with numbers,** such as slow loading for big
+  scripts.
+
+**Weighed.**
+- Unio's `working` and `final` (Unio D46). They exist for a compiler's trade-off between fast compiling and fast
+  running; Seal compiles at load time, with no slow optimizing pass to switch off.
+- A mode that drops checks for speed. Checks are the sandbox's walls.
+
+**Why this won.** A script behaves exactly the same in the host developer's tests and in a player's game, and with no
+modes there's nowhere for a check to be dropped. Lua and Luau have none either. Adding a mode later is easy; taking one
+away after hosts rely on it isn't.
+
+**Tankun's words.** "This is up to the impl-tor. But we have to decide build modes first", "Idk, man.", "So,
+`--Working ` and `--Final`?", "So, what would it have?", "Where's the checks?", "So, would the checks be optimized?",
+then, asked "Should Seal start with no build modes, with checks removed only where proved unable to fail, to be
+revisited only if the building session shows a real need with numbers?", the owner chose: "yea, but how do you check?
+The optimized way or the other way?"
