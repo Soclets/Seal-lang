@@ -33,6 +33,8 @@ calls Seal is the building session's to propose.
 - **A door can pause a script,** and the host resumes it later, as `wait(seconds: 2)` in a patrol might (D49).
 - **Each call into a script is a task.** While one is paused, the host can call the script again; only one task runs
   at a time, they switch only at pauses, and they share the script's top-level names (D51).
+- **A host declares which doors can pause;** Seal works out which procedures can, from their bodies, and the language
+  server marks every line where a pause can happen. Nothing is written at a call (D52).
 - **A script runs one thing at a time;** there's no parallelism inside it (D49).
 
 ## Limits

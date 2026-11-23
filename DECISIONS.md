@@ -1541,3 +1541,35 @@ only at pauses keeps every stretch between them as simple as a script with no ta
 **Tankun's words.** "When the fuck are we gonna design `wait` shit?", "What the fuck is `seconds: 2`, isn't it
 non-rich `wait(2 secs)`?", then, asked "Should each call into a script be a task, with only one running at a time,
 switching only at pauses, and all sharing the script's top-level names?", the owner chose: "yea".
+
+## D52. Where a script can pause is worked out, and the language server marks it
+
+2026-11-23.
+
+**Chosen.**
+- **A host declares which of its doors can pause** (D49).
+- **Seal works out which procedures can pause from their bodies:** one that calls a pausing door, or a procedure that
+  can pause, can pause too, as failures are worked out (D44).
+- **Nothing is written at a call.** The language server marks every line where a pause can happen (D7), so a reader
+  sees where other tasks may change shared names (D51).
+
+```
+proc on_attack[target]
+    old_hp = hp
+    play_animation("swing")      // marked by the language server, if the host's door can pause
+    hp = old_hp - 1
+end
+```
+
+**Weighed.**
+- Pauses invisible, as in Roblox. Simple, but a bug where another task changes a shared name during a pause is
+  invisible too.
+- A word at every pausing call, as JavaScript's `await`. Visible, but it spreads: every procedure calling one must be
+  marked, and its callers, all the way up, the problem known as "what colour is your function".
+
+**Why this won.** Pauses are visible where scripts are written, in the editor (D7), with nothing that spreads through a
+script's code, the same way Seal treats types and failures.
+
+**Tankun's words.** Asked "Should pausing be worked out, with hosts declaring which doors can pause, Seal finding which
+procedures can from their bodies, and the language server marking each place a pause can happen?", the owner chose:
+"yea".
