@@ -104,3 +104,46 @@ has no `proc.main`.
 **Tankun's words.** "Wait, the host calls or Seal calls?", then, asked "Should a Seal script run its top level once
 when loaded, with no `proc.main`, and the host then calling its procedures?", the owner chose: "yea. Now, a very
 important question, should we allow `proc` to be gradual?"
+
+## D5. A procedure's parameter types may be left out when its own body decides them
+
+2026-11-23.
+
+**Chosen.**
+- **A procedure's parameter types are optional.** Left out, each is worked out from the procedure's own body when the
+  script loads, so the result is fully static, exactly as if the type were written.
+- **Only the procedure's own body counts,** never its callers, so a mistake is found where it is.
+- **When the body can't decide,** as `a + b` can't between `Whole` and `Float`, the procedure is refused. The message
+  names the types that would fit and asks which, without suggesting one, since it can't know (Unio D54).
+- **Writing a type is always allowed.** The host's calls are checked against the types, written or worked out.
+
+```
+mut score = 0
+
+proc on_hit[points]           // points: Whole, since score + points needs two Wholes
+    score = score + points
+end proc
+
+proc add[a, b]                // refused: a and b could be Whole or Float; write which
+    return a + b
+end proc
+```
+
+**Weighed.**
+- Gradual typing, where a parameter with no type is dynamic and checked only while running, as in TypeScript. Tankun
+  meant static inference, not that.
+- Types always written on parameters and results, as Rust, Swift, Kotlin and Go have it, as the design claude first
+  recommended. Heavier than Seal wants where the body makes them obvious.
+- Working types out from callers too, as Haskell and OCaml can. A mistake in one place could change a type elsewhere
+  and be reported far from where it is.
+- A refusal suggesting one type, as the design claude first drafted it. Tankun: it can't know which.
+
+**Why this won.** Types are left off where the procedure's own lines make them obvious, and written where they don't,
+while everything stays static and every mistake is reported in the procedure that has it.
+
+How a procedure's result type is worked out or written, and the refusal's wording, aren't decided yet.
+
+**Tankun's words.** "Not dynamic param, static infer param. So, that's called gradual, right?", "What does that
+mean?", then, asked "Should a procedure's parameter types be optional, worked out from its own body, with the type
+required when the body can't decide?", the owner chose: "Ah, yes. But "and asks you to write it: proc add[a: Whole, b:
+Whole]", you said it doesn't know".
