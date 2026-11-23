@@ -1106,3 +1106,26 @@ Elm.
 
 **Tankun's words.** "Why not?", "Why `Maybe`?", then, asked "Should Seal have no `nil`, but a built-in `Maybe<T>`, a
 `one_of` with `none` and `some[value]`, usable with `match` and `??`?", the owner chose: "yea".
+
+## D39. No contracts for now
+
+2026-11-23.
+
+**Chosen.** Seal has no `requires` or `ensures` for now. A check a procedure needs on its arguments is written as an
+ordinary check in its body. Contracts can be added later, when a real script wants one.
+
+**Weighed.**
+- Optional contracts, as Cyborg has them in its base (Cyborg D29), as `requires` and `ensures` lines at the top of a
+  body. Without a prover, each is a runtime check, a tidier way of writing one by hand; the gain is that the promise
+  sits at the top, where a reader, the language server and the host can see it.
+- Waiting for Unio, as the design claude first argued, "with Ralph able to prove them". Ralph proves things about the
+  language, not about one program's code, and Unio plans no program verifier, so contracts in Unio would be runtime
+  checks too.
+
+**Why this won.** The gain is small without a prover, and adding a feature later is easy where taking one away isn't.
+Types worked out at load time, `Maybe` in place of `nil` (D38), and `match` covering every case (D37) already catch much
+of what simple contracts would.
+
+**Tankun's words.** "Should there be contracts?", "Huh? Are they required?", "Ralph able to prove them? What does that
+mean", "Are labels, families, and defaults decided in Seal?", then, asked "Should Seal leave contracts out for now?",
+the owner chose: "yea".

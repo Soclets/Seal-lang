@@ -25,6 +25,8 @@ end
 - **`returns Type` is optional** (D6, D21).
 - **The line has no `:`** (D9).
 
+Seal has no contracts, `requires` or `ensures`, for now (D39).
+
 **Not decided:** a procedure with no parameters; parameter words for reading, changing or taking over (Unio D130);
 listing the failures a procedure can give; narrowings on a script's own procedures (D13); families.
 
