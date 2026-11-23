@@ -489,3 +489,25 @@ away after hosts rely on it isn't.
 then, asked "Should Seal start with no build modes, with checks removed only where proved unable to fail, to be
 revisited only if the building session shows a real need with numbers?", the owner chose: "yea, but how do you check?
 The optimized way or the other way?"
+
+## D18. Floats are checked after every operation, so every failed check names its exact line
+
+2026-11-23.
+
+**Chosen.** Seal checks each float operation as it happens, so a float that would become infinite or NaN (Unio D177)
+stops the script at its exact line, with no exception like Unio's `final` (Unio D46).
+
+**Weighed.**
+- Cyborg's sticky-flag check at points, which `Unlo\n`'s `final` uses (Unio D46, Cyborg D440). It matters in compiled
+  code, where a float `+` is one CPU instruction; in a VM each instruction already costs many, so one comparison more
+  is a few percent at most. Rust also doesn't expose the CPU's flags without unsafe code per platform, which a sandbox
+  should avoid.
+- No float checks at all, as Luau, Lua and JavaScript have it: `0 / 0` becomes NaN and spreads silently. Seal doesn't
+  need silence to keep the host running, since a stopped script never crashes it (D14).
+
+**Why this won.** Exact lines in every message for almost nothing, paid for many times over by static types, which
+spare Seal's VM the type checks a dynamic VM makes on every operation.
+
+**Tankun's words.** "yea, but how do you check? The optimized way or the other way?" (quoted in D17), "What does Luau
+do?", "What the fuck did I just hear", "Would our static help with speed?", then, asked "Should Seal check floats after
+every operation, so every failed check names its exact line?", the owner chose: "yea".
