@@ -1709,6 +1709,8 @@ The benchmarks are fixed; the building session may add more, never swap or drop 
 Luau and V8 run the Benchmarks Game's existing Lua and JavaScript versions where they exist. Binary-trees joins once
 Seal has records inside records.
 
+(Changed by D58: comparisons are Normal against Normal, under Cyborg's benchmark rules.)
+
 **Weighed.**
 - A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
 - Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
@@ -1722,3 +1724,37 @@ written by others, keep the building honest, and leave how to reach them to the 
 all, just yk", "What benchmarks? Or let the impl-tor decide what benchmarks?", then, asked "Should the prompt fix these
 seven benchmarks, with the Luau and V8 goals, letting the builder add more but never swap or drop any?", the owner
 chose: "yea. What about benchmark types. Ask Cyborg".
+
+## D58. Seal's benchmarks follow Cyborg's rules, and D57's goals are judged Normal against Normal
+
+2026-11-23.
+
+**Chosen.** Seal takes Cyborg's benchmark rules (Cyborg's standard 10.9, from its D77, D78, D364 and D426):
+- **Three kinds, by how a program is written:** Purpose, which isolates one thing and says what it measures; Normal,
+  written as a normal person would, with no tuning; and Ceil, as fast as it can go, split as Cyborg's D364 does:
+  `Ceil.source` (tuned code, built for the baseline CPU), `Ceil.machine` (adding a build for one exact CPU, as
+  `target-cpu=native`), `Ceil.program` (adding a profile of its own run, profile-guided optimization) and
+  `Ceil.machine.program` (both). There's no bare Ceil. A script is never compiled for a CPU (D46), so for Seal the CPU
+  tuning and the profile apply to the VM that runs it.
+- **Every benchmark runs in every kind,** and every number says its kind.
+- **Every result reports six things:** run time (mean, standard deviation and minimum, after warm-up, over at least
+  10 runs), peak memory, program size, load time (cold, and warm where Seal caches), correctness, checked before
+  timing so a wrong answer is never timed, and the setup (machine, operating system, versions, and how busy the
+  machine was). A language with a JIT also gets a warmed-up row.
+- **D57's goals are judged Normal against Normal:** a plain Seal script against plain Luau and JavaScript versions,
+  never against the Benchmarks Game's hand-tuned ones, which are Ceil. Ceil results are reported with no targets.
+- **A Purpose benchmark for the cost of Seal's checks,** above all the float check after every operation (D18):
+  measured, not guessed.
+- **Binary-trees joins** once Seal has records inside records (D57).
+
+**Weighed.**
+- D57 as it stood, running the Benchmarks Game's existing Lua and JavaScript versions. Many are hand-tuned, so a plain
+  Seal script would be compared with tuned code, making the numbers meaningless, as Cyborg's design session pointed out.
+
+**Why this won.** They're the rules Tankun made for Cyborg, proven there: comparing like with like, labelling every
+number, and checking answers before timing them caught real compiler bugs in Cyborg, and its check-cost benchmark is
+what changed Cyborg's D440.
+
+**Tankun's words.** "measured all?", "That isn't what `Ceil.machine` means", "It means shit like PGO", "Shit, what does
+PGO mean", "Wait ,what the fuck. So, what does `Ceil.machine` do?", then, asked "Should Seal take Cyborg's benchmark
+rules as listed, with D57's goals on Normal against Normal?", the owner chose: "yea".

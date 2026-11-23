@@ -48,3 +48,6 @@ goblin_script.call("on_hit", (10,))?;
 - **Performance goals** (D57): faster than Luau's interpreter on every benchmark, faster than V8 `--jitless` on `fib` and
   n-body and within twice it on word count and text building, loading 10,000 lines in under 100 ms, kilobytes per
   loaded script, cheap pausing, all with every check on, on seven fixed benchmarks.
+- **Benchmark rules** (D58): Cyborg's kinds (Purpose, Normal, `Ceil.source`, `Ceil.machine`, `Ceil.program`), every
+  benchmark in every kind, six things reported with correctness first, D57's goals judged Normal against Normal, and a
+  Purpose benchmark for the cost of checks.
