@@ -849,3 +849,22 @@ lives: Whole = 3                        // allowed, though 3 already says it
 
 **Tankun's words.** Asked "Should a name's type be written `name: Type = value`, optional, and required only when the
 value can't say it?", the owner chose: "yea".
+
+## D31. A type with more than one blank to fill in labels each one
+
+2026-11-23.
+
+**Chosen.** Inside `< >`, a type with more than one blank to fill in labels each one, as `Map<key: Text, value:
+Whole>`. A type with one blank, as `List<Text>`, leaves it unlabelled, since nothing can be mixed up (Unio D24's
+convention for a lone first argument).
+
+**Weighed.**
+- By position, as `Map<Text, Whole>` in Rust, Swift and Java: the reader has to know which blank comes first, the same
+  problem D27 refused for building a record by position.
+
+**Why this won.** Wherever two things could be mixed up, each says what it is, as labels do in calls (Unio D24) and
+field names do in records (D27). It adds labels to `< >`, which Unio's D165 has only as "a type, filled in".
+
+**Tankun's words.** "Where's the labels?", "No, I meant the label on the type", then, asked "Should a type with more
+than one blank to fill in label each one, as in `Map<key: Text, value: Whole>`, while `List<Text>` stays unlabelled?",
+the owner chose: "yea".
