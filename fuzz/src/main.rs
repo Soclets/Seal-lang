@@ -98,7 +98,7 @@ fn ending_of(error: &Error) -> (String, String, Option<String>) {
 }
 
 /// Loads a script and calls each of its procedures that takes only whole numbers, as a host would.
-fn run_here(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
+fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: bool) -> Run {
     let output = Arc::new(Mutex::new(String::new()));
     let finish = |ending: String, messages: String, broken: Option<String>| Run {
         output: output.lock().map(|output| output.clone()).unwrap_or_default(),
@@ -112,7 +112,13 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
             return finish("host".to_owned(), message.text(), Some("the fuzzer's own doors were refused".to_owned()));
         }
     };
-    let mut script = match Script::load("fuzz.seal", source, &doors, LIMITS) {
+    // Compiled plainly, a script must give the same answers as with the compiler's shortcuts.
+    let loaded = if plainly {
+        Script::load_plainly("fuzz.seal", source, &doors, LIMITS)
+    } else {
+        Script::load("fuzz.seal", source, &doors, LIMITS)
+    };
+    let mut script = match loaded {
         Ok(script) => script,
         Err(error) => {
             let (ending, messages, broken) = ending_of(&error);
@@ -196,26 +202,26 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
 /// Runs a script on a thread of its own, so that one that freezes is noticed instead of freezing the fuzzer.
 #[must_use]
 pub fn run(source: &str) -> Run {
-    run_as(source, true, false)
+    run_as(source, true, false, false)
 }
 
 /// Runs a generated script, whose procedures must leave no memory behind.
 fn run_strictly(source: &str) -> Run {
-    run_as(source, true, true)
+    run_as(source, true, true, false)
 }
 
 /// Runs a script's top level only, as Unio's `proc.main` runs, for comparing with Ralph.
 #[must_use]
 pub fn run_top_level(source: &str) -> Run {
-    run_as(source, false, false)
+    run_as(source, false, false, false)
 }
 
-fn run_as(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
+fn run_as(source: &str, call_procedures: bool, strict_memory: bool, plainly: bool) -> Run {
     let (sender, receiver) = mpsc::channel();
     let owned = source.to_owned();
     let started = Instant::now();
     let spawned = std::thread::Builder::new().stack_size(1024 * 1024).spawn(move || {
-        let _ = sender.send(run_here(&owned, call_procedures, strict_memory));
+        let _ = sender.send(run_here(&owned, call_procedures, strict_memory, plainly));
     });
     if spawned.is_err() {
         return Run {
@@ -263,7 +269,24 @@ fn judge(source: &str, generated: bool) -> Option<String> {
     {
         return Some("the script gave different results on a second run".to_owned());
     }
-    second.broken
+    if second.broken.is_some() {
+        return second.broken;
+    }
+    // Compiled plainly, with none of the compiler's shortcuts, it gives the same results too. A script that runs
+    // into a limit is left out: the two ways count their steps and their memory a little differently.
+    let plain = run_as(source, true, false, true);
+    let limited = |run: &Run| run.ending == "limit reached";
+    if plain.broken.is_none()
+        && !limited(&second)
+        && !limited(&plain)
+        && (plain.output != second.output || plain.ending != second.ending || plain.messages != second.messages)
+    {
+        return Some(format!(
+            "compiled plainly, the script gave different results:\n--- with shortcuts ({})\n{}{}\n--- plainly ({})\n{}{}",
+            second.ending, second.output, second.messages, plain.ending, plain.output, plain.messages
+        ));
+    }
+    plain.broken
 }
 
 /// Shrinks a failing script: lines are taken out while it still fails the same way (Building rule 6).

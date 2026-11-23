@@ -71,6 +71,8 @@ pub enum Kind {
     Crate,
     /// The script's `one_of` that holds itself, `Tree` (D72).
     Tree,
+    /// `List<Spot>`: records of plain numbers in a list, whose fields loops read and change.
+    Spots,
 }
 
 impl Kind {
@@ -92,6 +94,7 @@ impl Kind {
             Kind::Packs => "List<Pack>",
             Kind::Crate => "Crate",
             Kind::Tree => "Tree",
+            Kind::Spots => "List<Spot>",
         }
     }
 }
@@ -211,6 +214,8 @@ impl Generator {
                 Kind::Packs,
                 Kind::Crate,
                 Kind::Tree,
+                Kind::Spots,
+                Kind::Spots,
             ]
         } else {
             vec![Kind::Whole, Kind::Whole, Kind::Bool, Kind::Text]
@@ -542,6 +547,11 @@ impl Generator {
                     )
                 }
             }
+            Kind::Spots => {
+                let count = self.random.below(4) + 1;
+                let items: Vec<String> = (0..count).map(|_| self.value(Kind::Spot, 1)).collect();
+                format!("[{}]", items.join(", "))
+            }
             Kind::Grid | Kind::Packs => {
                 let inner = if kind == Kind::Grid { Kind::WholeList } else { Kind::Pack };
                 let count = self.random.below(3) + 1;
@@ -655,7 +665,7 @@ impl Generator {
                 format!("show_msg(\"{name}: \" & {name})")
             }
             Kind::Whole | Kind::Bool | Kind::Text | Kind::Float => format!("show_msg(fmt(\"{name}: {{{name}}}\"))"),
-            Kind::WholeList | Kind::TextList | Kind::Dict | Kind::Grid | Kind::Packs => {
+            Kind::WholeList | Kind::TextList | Kind::Dict | Kind::Grid | Kind::Packs | Kind::Spots => {
                 format!("show_msg(fmt(\"{name} has {{{name}.len}}\"))")
             }
             Kind::Pack => {
@@ -667,6 +677,86 @@ impl Generator {
             Kind::Spot => format!("show_msg(fmt(\"{name}: {{{name}.x}} {{{name}.y}}\"))"),
             Kind::Event | Kind::Maybe => String::new(),
         }
+    }
+
+    /// Loops over a `mut` list of `Spot`s that read and change their fields, through loop names and written-out
+    /// places that may or may not be the same item, with every spot shown afterwards. The compiler keeps such
+    /// fields in registers through a run of plain statements; this is what checks it against the plain way.
+    fn spots_loops(&mut self) {
+        let Some(spots) = self.changeable_name(Kind::Spots) else { return };
+        let other = self.read_name(Kind::Spots).filter(|other| *other != spots);
+        let (outer, inner) = (self.fresh(), self.fresh());
+        // The inner loop starts past the outer one's place, or anywhere: the first can never reach the same item.
+        let from = match self.random.below(3) {
+            0 => format!("{outer} + 1"),
+            1 => "1".to_owned(),
+            _ => outer.clone(),
+        };
+        self.line(&format!("for each {outer} in range[from: 1, to: {spots}.len]"));
+        self.depth += 1;
+        self.line(&format!("for each {inner} in range[from: {from}, to: {spots}.len]"));
+        self.depth += 1;
+        let place = |generator: &mut Generator| match generator.random.below(8) {
+            0..=2 => format!("pos: {outer}"),
+            3..=5 => format!("pos: {inner}"),
+            6 => "pos: 1".to_owned(),
+            _ => "offset: 0".to_owned(),
+        };
+        // Both loop names are read, as D61 asks, by reaching items with them.
+        self.line(&format!("{spots}[pos: {inner}].x = {spots}[pos: {outer}].x + 1"));
+        let mut kept: Vec<(String, bool)> = Vec::new();
+        for _ in 0..self.random.below(6) + 2 {
+            let whole = self.random.chance(1, 2);
+            let field = if whole { "x" } else { "y" };
+            let read = |generator: &mut Generator, kept: &[(String, bool)]| {
+                let named: Vec<&(String, bool)> = kept.iter().filter(|(_, is_whole)| *is_whole == whole).collect();
+                match generator.random.below(5) {
+                    0 if !named.is_empty() => {
+                        generator.random.pick(&named).map_or_else(String::new, |(name, _)| name.clone())
+                    }
+                    1 => match &other {
+                        Some(other) => format!("{other}[pos: 1].{field}"),
+                        None => format!("{spots}[{}].{field}", place(generator)),
+                    },
+                    2 => {
+                        if whole {
+                            "2".to_owned()
+                        } else {
+                            "0.5".to_owned()
+                        }
+                    }
+                    _ => format!("{spots}[{}].{field}", place(generator)),
+                }
+            };
+            let operator = if whole {
+                *self.random.pick(&["+", "-"]).unwrap_or(&"+")
+            } else {
+                *self.random.pick(&["+", "-", "*"]).unwrap_or(&"+")
+            };
+            let value = format!("{} {operator} {}", read(self, &kept), read(self, &kept));
+            if self.random.below(4) == 0 {
+                let name = self.fresh();
+                self.line(&format!("{name} = {value}"));
+                kept.push((name, whole));
+            } else {
+                let target = place(self);
+                self.line(&format!("{spots}[{target}].{field} = {value}"));
+            }
+        }
+        // Every name made is read, so that none is refused as never used.
+        for (name, _) in &kept {
+            self.line(&format!("show_msg(\"kept \" & be.Text({name}))"));
+        }
+        self.depth -= 1;
+        self.line("end");
+        self.depth -= 1;
+        self.line("end");
+        let spot = self.fresh();
+        self.line(&format!("for each {spot} in {spots}"));
+        self.depth += 1;
+        self.line(&format!("show_msg(fmt(\"{{{spot}.x}} {{{spot}.y}}\"))"));
+        self.depth -= 1;
+        self.line("end");
     }
 
     /// A change that reaches through fields and places of a `mut` name, or a method at the end of such a way (D62).
@@ -969,6 +1059,8 @@ impl Generator {
                     self.freeze(&dict, false);
                 }
             }
+            // Loops that read and change the fields of a list's records, through places that may be the same item.
+            17 if self.seal() && nested && self.random.chance(1, 3) => self.spots_loops(),
             // A change to a part of a part, through fields and places (D62).
             17 if self.seal() && self.random.chance(1, 2) => self.nested_change(),
             17 if self.seal() => {

@@ -20,6 +20,8 @@ publish = false
 # IMPLEMENTATION.md, Building rule 3: the same lints in every package, and the one command turns warnings into errors.
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# A build made only to measure what a check costs (D58) says so with this setting.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(seal_measure_without_float_checks)'] }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

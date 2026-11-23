@@ -226,6 +226,23 @@ impl Heap {
         self.entry(handle).is_some_and(|entry| entry.holders == 1)
     }
 
+    /// The fields of the record at `place` in a list, to be written in place: given only when the list has one
+    /// holder and it alone holds the record, so that nothing else can see the change (D15).
+    #[inline]
+    pub fn item_fields_to_write(&mut self, list: u64, place: usize) -> Option<&mut [u64]> {
+        let entry = self.entry(list)?;
+        let Object::List { items, .. } = &entry.object else { return None };
+        if entry.holders != 1 {
+            return None;
+        }
+        let item = *items.get(place)?;
+        let entry = self.entry_mut(item)?;
+        match &mut entry.object {
+            Object::Record { fields, .. } if entry.holders == 1 => Some(fields),
+            _ => None,
+        }
+    }
+
     /// Counts one more holder of the value in a slot. A case with no values lives in its slot, with no count.
     #[inline]
     pub fn retain(&mut self, slot: u64) {

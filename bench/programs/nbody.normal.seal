@@ -28,26 +28,22 @@ proc advance[bodies: List<Body>, dt: Float] -> List<Body>
     mut moved = bodies
     count = moved.len
     for each i in range[from: 1, to: count]
-        mut a = moved[pos: i]
         for each j in range[from: i + 1, before: count + 1]
-            mut b = moved[pos: j]
-            dx = a.x - b.x
-            dy = a.y - b.y
-            dz = a.z - b.z
+            dx = moved[pos: i].x - moved[pos: j].x
+            dy = moved[pos: i].y - moved[pos: j].y
+            dz = moved[pos: i].z - moved[pos: j].z
             distance_squared = dx * dx + dy * dy + dz * dz
             mag = dt / (distance_squared * sqrt(distance_squared))
-            a.vx = a.vx - dx * b.mass * mag
-            a.vy = a.vy - dy * b.mass * mag
-            a.vz = a.vz - dz * b.mass * mag
-            b.vx = b.vx + dx * a.mass * mag
-            b.vy = b.vy + dy * a.mass * mag
-            b.vz = b.vz + dz * a.mass * mag
-            moved[pos: j] = b
+            moved[pos: i].vx = moved[pos: i].vx - dx * moved[pos: j].mass * mag
+            moved[pos: i].vy = moved[pos: i].vy - dy * moved[pos: j].mass * mag
+            moved[pos: i].vz = moved[pos: i].vz - dz * moved[pos: j].mass * mag
+            moved[pos: j].vx = moved[pos: j].vx + dx * moved[pos: i].mass * mag
+            moved[pos: j].vy = moved[pos: j].vy + dy * moved[pos: i].mass * mag
+            moved[pos: j].vz = moved[pos: j].vz + dz * moved[pos: i].mass * mag
         end
-        a.x = a.x + dt * a.vx
-        a.y = a.y + dt * a.vy
-        a.z = a.z + dt * a.vz
-        moved[pos: i] = a
+        moved[pos: i].x = moved[pos: i].x + dt * moved[pos: i].vx
+        moved[pos: i].y = moved[pos: i].y + dt * moved[pos: i].vy
+        moved[pos: i].z = moved[pos: i].z + dt * moved[pos: i].vz
     end
     return moved
 end
@@ -79,11 +75,9 @@ proc run[steps] -> Float
         py = py + body.vy * body.mass
         pz = pz + body.vz * body.mass
     end
-    mut sun = bodies[pos: 1]
-    sun.vx = -px / solar_mass
-    sun.vy = -py / solar_mass
-    sun.vz = -pz / solar_mass
-    bodies[pos: 1] = sun
+    bodies[pos: 1].vx = -px / solar_mass
+    bodies[pos: 1].vy = -py / solar_mass
+    bodies[pos: 1].vz = -pz / solar_mass
     mut step = 0
     while step < steps
         bodies = advance(bodies, ~0.01)

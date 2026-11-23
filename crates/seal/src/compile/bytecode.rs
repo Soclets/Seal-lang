@@ -214,6 +214,32 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// Two or three float operations in one step, each checked as on its own (D18). `shape` says how they nest:
+    /// 0 `(a·b)·c`, 1 `a·(b·c)`, 2 `((a·b)·c)·d`, 3 `(a·(b·c))·d`, 4 `(a·b)·(c·d)`, 5 `a·((b·c)·d)`,
+    /// 6 `a·(b·(c·d))`. `ops` has two bits for each operation, in the order they run: 0 `+`, 1 `-`, 2 `*`, 3 `/`.
+    /// A `PlaceOnly` follows for each operation but the last, holding where in the script that operation is.
+    FloatFused {
+        shape: u8,
+        ops: u8,
+        to: u8,
+        a: u8,
+        b: u8,
+        c: u8,
+        d: u8,
+    },
+    /// Never run: its place in the script belongs to an operation inside the `FloatFused` before it.
+    PlaceOnly,
+    /// Reads every field of the record at a place in a list into the registers from `base` on, in one step.
+    UnpackItemAtPosition {
+        base: Register,
+        list: Register,
+        index: Register,
+    },
+    UnpackItemAtOffset {
+        base: Register,
+        list: Register,
+        index: Register,
+    },
     /// Reads a plain field of the record at a place in a list, as `bodies[pos: i].vx`, in one step.
     ItemFieldAtPosition {
         to: Register,

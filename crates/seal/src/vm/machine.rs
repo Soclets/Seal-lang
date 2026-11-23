@@ -127,6 +127,10 @@ fn check_failed(what: &str, when: String, why: &str, pc: usize) -> Stopped {
     (Stop::CheckFailed { what: what.to_owned(), when: Some(when), why: Some(why.to_owned()) }, pc)
 }
 
+/// Whether a float is checked after every operation (D18). Always, except in a build made only to measure what the
+/// check costs (D58): a script never runs without it (D17).
+const FLOAT_CHECKS: bool = !cfg!(seal_measure_without_float_checks);
+
 const WHOLE_RANGE: &str = "a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.";
 const FLOAT_RANGE: &str = "a `Float` is always a real number, never infinite and never not-a-number.";
 
@@ -431,7 +435,7 @@ pub fn run(
             let (left, right) = (float!($left), float!($right));
             let result = left $operator right;
             // trace: D18: a float is checked after every operation.
-            if !result.is_finite() {
+            if FLOAT_CHECKS && !result.is_finite() {
                 return Err(float_not_real(left, $text, right, pc));
             }
             set!($to, result.to_bits());
@@ -665,13 +669,84 @@ pub fn run(
             Instruction::AddFloat { to, left, right } => float_maths!(to, left, right, +, "+"),
             Instruction::SubtractFloat { to, left, right } => float_maths!(to, left, right, -, "-"),
             Instruction::MultiplyFloat { to, left, right } => float_maths!(to, left, right, *, "*"),
+            Instruction::FloatFused { shape, ops, to, a, b, c, d } => {
+                // One operation: worked out and checked exactly as its own instruction would. `$at` finds its place.
+                macro_rules! one {
+                    ($code:expr, $left:expr, $right:expr, $at:expr) => {{
+                        let (left, right): (f64, f64) = ($left, $right);
+                        let (result, operator) = match $code {
+                            0 => (left + right, "+"),
+                            1 => (left - right, "-"),
+                            2 => (left * right, "*"),
+                            _ => {
+                                if right == 0.0 {
+                                    return Err(divided_by_zero(&float_to_text(left), "/", $at));
+                                }
+                                (left / right, "/")
+                            }
+                        };
+                        if FLOAT_CHECKS && !result.is_finite() {
+                            return Err(float_not_real(left, operator, right, $at));
+                        }
+                        result
+                    }};
+                }
+                let (first, second, third) = (ops & 3, (ops >> 2) & 3, (ops >> 4) & 3);
+                let (a, b, c) = (float!(a), float!(b), float!(c));
+                // The last operation's place is this instruction's own; the earlier ones' follow it.
+                let result = match shape {
+                    0 => {
+                        let inner = one!(first, a, b, pc + 1);
+                        pc += 1;
+                        one!(second, inner, c, pc - 1)
+                    }
+                    1 => {
+                        let inner = one!(first, b, c, pc + 1);
+                        pc += 1;
+                        one!(second, a, inner, pc - 1)
+                    }
+                    _ => {
+                        let d = float!(d);
+                        let (at_first, at_second, at_last) = (pc + 1, pc + 2, pc);
+                        pc += 2;
+                        match shape {
+                            2 => {
+                                let inner = one!(first, a, b, at_first);
+                                let middle = one!(second, inner, c, at_second);
+                                one!(third, middle, d, at_last)
+                            }
+                            3 => {
+                                let inner = one!(first, b, c, at_first);
+                                let middle = one!(second, a, inner, at_second);
+                                one!(third, middle, d, at_last)
+                            }
+                            4 => {
+                                let left = one!(first, a, b, at_first);
+                                let right = one!(second, c, d, at_second);
+                                one!(third, left, right, at_last)
+                            }
+                            5 => {
+                                let inner = one!(first, b, c, at_first);
+                                let middle = one!(second, inner, d, at_second);
+                                one!(third, a, middle, at_last)
+                            }
+                            _ => {
+                                let inner = one!(first, c, d, at_first);
+                                let middle = one!(second, b, inner, at_second);
+                                one!(third, a, middle, at_last)
+                            }
+                        }
+                    }
+                };
+                set!(to, result.to_bits());
+            }
             Instruction::DivideFloat { to, left, right } => {
                 let (left, right) = (float!(left), float!(right));
                 if right == 0.0 {
                     return Err(divided_by_zero(&float_to_text(left), "/", pc));
                 }
                 let result = left / right;
-                if !result.is_finite() {
+                if FLOAT_CHECKS && !result.is_finite() {
                     return Err(float_not_real(left, "/", right, pc));
                 }
                 set!(to, result.to_bits());
@@ -689,7 +764,7 @@ pub fn run(
                     _ => (left / right, "/"),
                 };
                 // trace: D18
-                if !result.is_finite() {
+                if FLOAT_CHECKS && !result.is_finite() {
                     return Err(float_not_real(left, operator, right, pc));
                 }
                 set!(to, result.to_bits());
@@ -703,7 +778,7 @@ pub fn run(
                     return Err(divided_by_zero(&float_to_text(left), "/", pc));
                 }
                 let result = left / right;
-                if !result.is_finite() {
+                if FLOAT_CHECKS && !result.is_finite() {
                     return Err(float_not_real(left, "/", right, pc));
                 }
                 set!(to, result.to_bits());
@@ -1626,10 +1701,43 @@ pub fn run(
                     None => return Err(broken("a record unpacked outside its frame", pc)),
                 }
             }
+            Instruction::UnpackItemAtPosition { base: first, list, index }
+            | Instruction::UnpackItemAtOffset { base: first, list, index } => {
+                let zero_based = matches!(instruction, Instruction::UnpackItemAtOffset { .. });
+                let index = whole!(index);
+                let items = items!(get!(list));
+                let Some(&item) = item_place(index, zero_based, items.len()).and_then(|place| items.get(place)) else {
+                    return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, items.len(), pc));
+                };
+                let fields = match heap.get(item) {
+                    Ok(Object::Record { fields, .. }) => fields,
+                    Ok(_) => return Err(broken("a handle that should lead to a record", pc)),
+                    Err(error) => return Err((Stop::from(error), pc)),
+                };
+                let start = usize::from(first);
+                match registers.get_mut(start..start + fields.len()) {
+                    Some(registers) => registers.copy_from_slice(fields),
+                    None => return Err(broken("a record unpacked outside its frame", pc)),
+                }
+            }
             Instruction::PackIntoItemAtPosition { list, index, base: first }
             | Instruction::PackIntoItemAtOffset { list, index, base: first } => {
                 let zero_based = matches!(instruction, Instruction::PackIntoItemAtOffset { .. });
                 let index = whole!(index);
+                // The usual case first: the list alone holds the record, so its fields are written where they are.
+                let start = usize::from(first);
+                let list_handle = get!(list);
+                let written = usize::try_from(if zero_based { index } else { index.wrapping_sub(1) })
+                    .ok()
+                    .and_then(|place| heap.item_fields_to_write(list_handle, place))
+                    .and_then(|fields| {
+                        let from = registers.get(start..start + fields.len())?;
+                        fields.copy_from_slice(from);
+                        Some(())
+                    });
+                if written.is_some() {
+                    continue;
+                }
                 let handle = own!(list);
                 let (found, length) = {
                     let items = items!(handle);
@@ -1686,6 +1794,7 @@ pub fn run(
                 set!(to, number);
             }
 
+            Instruction::PlaceOnly => return Err(broken("a place that's only kept for a message", pc)),
             Instruction::Unreachable => return Err(broken("a place the compiler took for unreachable", pc)),
         }
     }

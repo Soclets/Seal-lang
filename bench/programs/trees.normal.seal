@@ -1,0 +1,41 @@
+one_of Tree
+    leaf
+    node[left: Tree, right: Tree]
+end
+
+proc build[depth: Whole] -> Tree
+    if depth == 0
+        return Tree.leaf
+    else
+        return Tree.node[left: build(depth - 1), right: build(depth - 1)]
+    end
+end
+
+proc count[tree: Tree] -> Whole
+    match tree
+        case leaf
+            return 1
+        case node[left, right]
+            return 1 + count(left) + count(right)
+    end
+end
+
+proc run[max_depth] -> Whole
+    stretch = build(max_depth + 1)
+    mut total = count(stretch)
+    long_lived = build(max_depth)
+    mut depth = 4
+    while depth at_most max_depth
+        mut rounds = 1
+        for each unused doubling in range[from: 1, to: max_depth - depth + 4]
+            rounds = rounds * 2
+        end
+        mut check = 0
+        for each unused round in range[from: 1, to: rounds]
+            check = check + count(build(depth))
+        end
+        total = total + check
+        depth = depth + 2
+    end
+    return total + count(long_lived)
+end

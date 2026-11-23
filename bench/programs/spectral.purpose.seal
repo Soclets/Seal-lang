@@ -1,0 +1,14 @@
+// Purpose: loops over a list of floats. A list of 1,000 floats is summed `rounds` times.
+proc run[rounds] -> Float
+    mut values: List<Float> = []
+    for each i in range[from: 1, to: 1000]
+        values.add(be.Float(i) * 0.5)
+    end
+    mut total = 0.0
+    for each unused round in range[from: 1, to: rounds]
+        for each value in values
+            total = total + value
+        end
+    end
+    return total
+end

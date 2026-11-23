@@ -51,6 +51,11 @@ fn seal(path: &str, argument: i64, warmups: usize, runs: usize) -> Result<String
     let started = Instant::now();
     let mut script = Script::load(path, &source, &doors, LIMITS).map_err(|error| error.to_string())?;
     let load = started.elapsed().as_secs_f64();
+    // The same text loaded again with the same doors: Seal keeps what it compiled, so this is the warm load (D58).
+    let started = Instant::now();
+    let again = Script::load(path, &source, &doors, LIMITS).map_err(|error| error.to_string())?;
+    let load_warm = started.elapsed().as_secs_f64();
+    drop(again);
     let call = |script: &mut Script| -> Result<(Value, f64), String> {
         let started = Instant::now();
         match script.call_values("run", &whole(argument)) {
@@ -72,6 +77,8 @@ fn seal(path: &str, argument: i64, warmups: usize, runs: usize) -> Result<String
     let mut out = String::new();
     let _ = writeln!(out, "result {}", shown(&result));
     let _ = writeln!(out, "load {load:.9}");
+    let _ = writeln!(out, "load_warm {load_warm:.9}");
+    let _ = writeln!(out, "code {}", script.compiled_bytes());
     let _ = writeln!(out, "first {first:.9}");
     let _ = writeln!(out, "times {}", times.join(" "));
     let _ = writeln!(out, "memory {}", script.most_memory_used());

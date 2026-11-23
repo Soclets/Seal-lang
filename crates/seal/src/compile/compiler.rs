@@ -59,6 +59,42 @@ struct Function {
     texts: std::collections::HashSet<Register>,
     /// Names that take over a parameter's value where the parameter is last used: each lives where its parameter did.
     takeovers: HashMap<VariableId, VariableId>,
+    /// The list items whose fields are kept in registers for now, through a run of plain statements.
+    views: Vec<ItemView>,
+    /// Whether the statement being compiled is a plain one, which reads and changes items through their views.
+    views_on: bool,
+    /// Pairs of names known to hold different numbers here, as a `for each j in range[from: i + 1, …]` makes `i`
+    /// and `j`: items reached with one are never the item reached with the other.
+    distinct: Vec<(VariableId, VariableId)>,
+}
+
+/// How float operations are joined into one instruction: the shape, the operations in the order they run, the sides
+/// in the order they're written, and the operations whose places follow the instruction.
+type JoinPlan<'e> = (u8, Vec<u8>, Vec<&'e Expression>, Vec<&'e Expression>);
+
+/// Which item of a list a view is of: the one at a name's number, or at a number written out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ViewKey {
+    Name(VariableId),
+    Number(i64),
+}
+
+/// A list's item, a record of plain numbers, with its fields kept in registers through a run of plain statements:
+/// read into them once, changed there, and written back in one step when the run ends. The list's own value stays
+/// right at every point anything else could see it, since anything else ends the run first.
+#[derive(Clone, Copy, Debug)]
+struct ItemView {
+    list: VariableId,
+    list_register: Register,
+    key: ViewKey,
+    zero_based: bool,
+    /// The register the item's place is in.
+    index: Register,
+    /// The first of the registers its fields are in.
+    base: Register,
+    count: u32,
+    /// Whether a field has been changed since it was read or written back.
+    dirty: bool,
 }
 
 struct Compiler<'p> {
@@ -78,6 +114,8 @@ struct Compiler<'p> {
     crossing_open: Vec<Type>,
     /// The procedure being compiled, when it's not the top level.
     current: Option<u32>,
+    /// Whether to compile plainly, with none of the shortcuts whose answers the fuzzer checks against this.
+    plain: bool,
 }
 
 /// Compiles a checked script.
@@ -87,7 +125,18 @@ struct Compiler<'p> {
 /// Returns a message when the script is past one of the implementation's sizes, or the checked tree isn't what the
 /// compiler expects, which is a bug in Seal.
 pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, Message> {
+    compile_as(program, doors, false)
+}
+
+/// Compiles a checked script, plainly when `plain` is set: with no shortcut for a list's items, so that what the
+/// shortcuts give can be checked against it.
+///
+/// # Errors
+///
+/// As [`compile`].
+pub fn compile_as(program: &Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiler = Compiler {
+        plain,
         program,
         doors,
         out: Compiled {
@@ -512,8 +561,18 @@ impl<'p> Compiler<'p> {
         let held_mark = self.function.held.len();
         let register_mark = self.function.next;
         for statement in block {
+            // Items' fields stay in registers through a run of plain statements; anything else ends the run.
+            let plain = !self.plain && self.is_plain_statement(statement);
+            if !plain || self.changes_a_view_key(statement) {
+                self.flush_views();
+            }
+            self.function.views_on = plain;
             self.statement(statement);
+            self.function.views_on = false;
+            // The registers of the views still in use stay taken.
+            self.function.next = self.function.next.max(self.views_top());
         }
+        self.flush_views();
         // A block that ends by leaving has already freed what it holds on its way out.
         if block.last().is_some_and(|last| {
             matches!(last.kind, StatementKind::Return(_) | StatementKind::Break | StatementKind::Fail(_))
@@ -550,6 +609,492 @@ impl<'p> Compiler<'p> {
                 self.emit(Instruction::SetGlobal { global, from: taken });
             }
             Location::InRegisters(_) => self.internal("a change inside a record kept in registers"),
+        }
+    }
+
+    // ---- float operations joined into one instruction ----
+
+    /// A float `+`, `-`, `*` or `/` that can be joined with others into one instruction: its number, and its two
+    /// sides. One with a number written out on a side has an instruction of its own, and isn't joined.
+    fn joinable<'e>(&self, expression: &'e Expression) -> Option<(u8, &'e Expression, &'e Expression)> {
+        let ExpressionKind::Binary { operator, left, right } = &expression.kind else { return None };
+        if !matches!(self.kind(left.type_id), Type::Float)
+            || matches!(left.kind, ExpressionKind::Float(_))
+            || matches!(right.kind, ExpressionKind::Float(_))
+            || fold(expression).is_some()
+        {
+            return None;
+        }
+        let code = match operator {
+            BinaryOperator::Add => 0,
+            BinaryOperator::Subtract => 1,
+            BinaryOperator::Multiply => 2,
+            BinaryOperator::Divide => 3,
+            _ => return None,
+        };
+        Some((code, left, right))
+    }
+
+    /// Whether a value is already in a register, so that reading it runs nothing: a name, or a field kept in
+    /// registers. Such a value can be read after an operation that might fail without changing what the script does.
+    fn already_in_a_register(&self, expression: &Expression) -> bool {
+        match &expression.kind {
+            ExpressionKind::Variable(name) => {
+                matches!(self.function.locations.get(name), Some(Location::Register(_)))
+            }
+            ExpressionKind::Member { receiver, .. } => match &receiver.kind {
+                ExpressionKind::Variable(record) => {
+                    matches!(self.function.locations.get(record), Some(Location::InRegisters(_)))
+                }
+                ExpressionKind::Item { receiver: list, index, zero_based } if self.function.views_on => {
+                    let (ExpressionKind::Variable(list), key) = (
+                        &list.kind,
+                        match &index.kind {
+                            ExpressionKind::Variable(key) => Some(ViewKey::Name(*key)),
+                            ExpressionKind::Whole(number) => Some(ViewKey::Number(*number)),
+                            _ => None,
+                        },
+                    ) else {
+                        return false;
+                    };
+                    key.is_some_and(|key| {
+                        self.function
+                            .views
+                            .iter()
+                            .any(|view| view.list == *list && view.key == key && view.zero_based == *zero_based)
+                    })
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// Joins two or three float operations into one instruction, when `whole` is the last of such a group. The
+    /// operations run in the order they would on their own, and each is checked and reported as on its own; a
+    /// side read after one of them has run must already be in a register, so that nothing else changes order.
+    fn fused_floats(&mut self, whole: &Expression, to: Register) -> bool {
+        // Every register a joined instruction names fits in a byte.
+        if self.function.next >= 240 || to >= 240 {
+            return false;
+        }
+        let Some((last, left, right)) = self.joinable(whole) else { return false };
+        let inside_left = self.joinable(left);
+        let inside_right = self.joinable(right);
+        let mut plan: Option<JoinPlan> = None;
+        // a·((b·c)·d)
+        if plan.is_none()
+            && let Some((second, inner, d)) = inside_right
+            && let Some((first, b, c)) = self.joinable(inner)
+            && self.already_in_a_register(d)
+        {
+            plan = Some((5, vec![first, second, last], vec![left, b, c, d], vec![inner, right]));
+        }
+        // ((a·b)·c)·d
+        if plan.is_none()
+            && let Some((second, inner, c)) = inside_left
+            && let Some((first, a, b)) = self.joinable(inner)
+            && self.already_in_a_register(c)
+            && self.already_in_a_register(right)
+        {
+            plan = Some((2, vec![first, second, last], vec![a, b, c, right], vec![inner, left]));
+        }
+        // (a·b)·(c·d)
+        if plan.is_none()
+            && let Some((first, a, b)) = inside_left
+            && let Some((second, c, d)) = inside_right
+            && self.already_in_a_register(c)
+            && self.already_in_a_register(d)
+        {
+            plan = Some((4, vec![first, second, last], vec![a, b, c, d], vec![left, right]));
+        }
+        // (a·(b·c))·d
+        if plan.is_none()
+            && let Some((second, a, inner)) = inside_left
+            && let Some((first, b, c)) = self.joinable(inner)
+            && self.already_in_a_register(right)
+        {
+            plan = Some((3, vec![first, second, last], vec![a, b, c, right], vec![inner, left]));
+        }
+        // a·(b·(c·d))
+        if plan.is_none()
+            && let Some((second, b, inner)) = inside_right
+            && let Some((first, c, d)) = self.joinable(inner)
+        {
+            plan = Some((6, vec![first, second, last], vec![left, b, c, d], vec![inner, right]));
+        }
+        // a·(b·c)
+        if plan.is_none()
+            && let Some((first, b, c)) = inside_right
+        {
+            plan = Some((1, vec![first, last], vec![left, b, c], vec![right]));
+        }
+        // (a·b)·c
+        if plan.is_none()
+            && let Some((first, a, b)) = inside_left
+            && self.already_in_a_register(right)
+        {
+            plan = Some((0, vec![first, last], vec![a, b, right], vec![left]));
+        }
+        let Some((shape, operations, sides, earlier)) = plan else { return false };
+        // A side already in a register is read where it is. Any other is worked out into a register set aside before
+        // anything runs, so that every register named stays within a byte however much working out a side takes.
+        let set_aside = self.allocate_many(u32::try_from(sides.len()).unwrap_or(4));
+        let registers: Vec<Register> = sides
+            .iter()
+            .zip(set_aside..)
+            .map(|(side, slot)| {
+                if self.already_in_a_register(side) {
+                    self.value(side)
+                } else {
+                    self.value_into(side, slot);
+                    slot
+                }
+            })
+            .collect();
+        let byte = |register: Option<&Register>| register.and_then(|register| u8::try_from(*register).ok());
+        let (Some(a), Some(b), Some(c), Some(to)) =
+            (byte(registers.first()), byte(registers.get(1)), byte(registers.get(2)), u8::try_from(to).ok())
+        else {
+            self.internal("a joined float instruction naming a register past a byte");
+            return true;
+        };
+        let d = byte(registers.get(3)).unwrap_or(a);
+        let ops = operations.iter().rev().fold(0u8, |ops, code| (ops << 2) | code);
+        self.place = whole.place;
+        self.emit(Instruction::FloatFused { shape, ops, to, a, b, c, d });
+        for operation in earlier {
+            self.place = operation.place;
+            self.emit(Instruction::PlaceOnly);
+        }
+        self.place = whole.place;
+        true
+    }
+
+    // ---- items' fields kept in registers ----
+
+    /// The name a range starts just past, when it counts up from `name + n` with `n` at least 1 and the name can't
+    /// change: every number the range gives is bigger than the name's.
+    fn counts_up_from_past(&self, from: &Expression, step: Option<&Expression>) -> Option<VariableId> {
+        if !step.is_none_or(|step| matches!(step.kind, ExpressionKind::Whole(by) if by >= 1)) {
+            return None;
+        }
+        let ExpressionKind::Binary { operator: BinaryOperator::Add, left, right } = &from.kind else { return None };
+        let (ExpressionKind::Variable(name), ExpressionKind::Whole(more)) = (&left.kind, &right.kind) else {
+            return None;
+        };
+        let fixed = self.program.variable(*name).is_some_and(|variable| !variable.mutable);
+        (fixed && *more >= 1).then_some(*name)
+    }
+
+    /// The parts of `list[pos: k]` or `list[offset: k]` a view needs, when it can have one: the list is a name of
+    /// this procedure's own, its items are records of plain numbers, and the place is a name or a number written
+    /// out.
+    fn view_target(
+        &mut self,
+        list: &Expression,
+        index: &Expression,
+        zero_based: bool,
+    ) -> Option<(VariableId, Register, ViewKey, u32)> {
+        let ExpressionKind::Variable(name) = &list.kind else { return None };
+        let Some(&Location::Register(list_register)) = self.function.locations.get(name) else { return None };
+        let item = match self.kind(list.type_id) {
+            Type::List { item, .. } | Type::Array { item, .. } => *item,
+            _ => return None,
+        };
+        if !matches!(self.kind(item), Type::Record(_)) {
+            return None;
+        }
+        let fields = self.fields_of(item, 0);
+        if fields.is_empty() || fields.len() > 32 || fields.iter().any(|(_, field)| self.is_reference(*field)) {
+            return None;
+        }
+        let key = match &index.kind {
+            ExpressionKind::Variable(key)
+                if matches!(self.function.locations.get(key), Some(Location::Register(_))) =>
+            {
+                ViewKey::Name(*key)
+            }
+            ExpressionKind::Whole(number) => ViewKey::Number(*number),
+            _ => return None,
+        };
+        let _ = zero_based;
+        Some((*name, list_register, key, u32::try_from(fields.len()).unwrap_or(0)))
+    }
+
+    /// Whether two places in the same list could be the same item.
+    fn may_be_the_same_item(&self, first: (ViewKey, bool), second: (ViewKey, bool)) -> bool {
+        match (first, second) {
+            ((ViewKey::Number(a), a_zero), (ViewKey::Number(b), b_zero)) => {
+                a.saturating_sub(i64::from(!a_zero)) == b.saturating_sub(i64::from(!b_zero))
+            }
+            ((ViewKey::Name(a), a_zero), (ViewKey::Name(b), b_zero)) => {
+                a == b
+                    || a_zero != b_zero
+                    || !self.function.distinct.iter().any(|&(x, y)| (x == a && y == b) || (x == b && y == a))
+            }
+            _ => true,
+        }
+    }
+
+    /// The view of an item, made now when there isn't one: its fields are read into registers of their own. A
+    /// view of what could be the same item with a change not yet written back is written back first.
+    fn view(&mut self, list: VariableId, list_register: Register, key: ViewKey, zero_based: bool, count: u32) -> usize {
+        if let Some(found) = self
+            .function
+            .views
+            .iter()
+            .position(|view| view.list == list && view.key == key && view.zero_based == zero_based)
+        {
+            return found;
+        }
+        for position in 0..self.function.views.len() {
+            let Some(other) = self.function.views.get(position).copied() else { continue };
+            if other.list == list
+                && other.dirty
+                && self.may_be_the_same_item((other.key, other.zero_based), (key, zero_based))
+            {
+                self.write_back(position);
+            }
+        }
+        let index = match key {
+            ViewKey::Name(name) => {
+                if let Some(&Location::Register(register)) = self.function.locations.get(&name) {
+                    register
+                } else {
+                    self.internal("a view's place with nowhere to live");
+                    0
+                }
+            }
+            ViewKey::Number(number) => {
+                let register = self.allocate();
+                self.load_whole(register, number);
+                register
+            }
+        };
+        let base = self.allocate_many(count);
+        self.emit(if zero_based {
+            Instruction::UnpackItemAtOffset { base, list: list_register, index }
+        } else {
+            Instruction::UnpackItemAtPosition { base, list: list_register, index }
+        });
+        self.function.views.push(ItemView { list, list_register, key, zero_based, index, base, count, dirty: false });
+        self.function.views.len() - 1
+    }
+
+    /// Writes a view's changed fields back into its item, in place when the list alone holds the item.
+    fn write_back(&mut self, position: usize) {
+        let Some(view) = self.function.views.get_mut(position) else { return };
+        if !view.dirty {
+            return;
+        }
+        view.dirty = false;
+        let (list, index, base, zero_based) = (view.list_register, view.index, view.base, view.zero_based);
+        self.emit(if zero_based {
+            Instruction::PackIntoItemAtOffset { list, index, base }
+        } else {
+            Instruction::PackIntoItemAtPosition { list, index, base }
+        });
+    }
+
+    /// Ends the run of plain statements: every changed view is written back, and none is kept.
+    fn flush_views(&mut self) {
+        for position in 0..self.function.views.len() {
+            self.write_back(position);
+        }
+        self.function.views.clear();
+    }
+
+    /// The first register past the ones the views in use keep.
+    fn views_top(&self) -> u32 {
+        self.function
+            .views
+            .iter()
+            .map(|view| (u32::from(view.base) + view.count).max(u32::from(view.index) + 1))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The register a field of a list's item is kept in, when `expression` reads one in a run of plain statements.
+    fn view_field(&mut self, expression: &Expression) -> Option<Register> {
+        if !self.function.views_on {
+            return None;
+        }
+        let ExpressionKind::Member { receiver, name } = &expression.kind else { return None };
+        let ExpressionKind::Item { receiver: list, index, zero_based } = &receiver.kind else { return None };
+        let (list_name, list_register, key, count) = self.view_target(list, index, *zero_based)?;
+        let field = self.field_index(receiver.type_id, name);
+        // A bad place is reported where the plain way reports it: at the item reached.
+        self.place = receiver.place;
+        let view = self.view(list_name, list_register, key, *zero_based, count);
+        self.function.views.get(view).map(|view| view.base + field)
+    }
+
+    /// Whether working out a value runs nothing but plain maths on numbers this procedure holds in registers, and
+    /// fields of list items that can have views: no call, no jump, nothing that could see a list or change a name.
+    fn is_plain_value(&mut self, expression: &Expression, hidden: &[VariableId]) -> bool {
+        match &expression.kind {
+            ExpressionKind::Whole(_) | ExpressionKind::Float(_) | ExpressionKind::Bool(_) => true,
+            ExpressionKind::Variable(name) => {
+                !self.is_reference(expression.type_id)
+                    && (hidden.contains(name)
+                        || matches!(self.function.locations.get(name), Some(Location::Register(_))))
+            }
+            ExpressionKind::Binary { operator, left, right } => {
+                !matches!(operator, BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Join)
+                    && !matches!(self.kind(left.type_id), Type::Text)
+                    && self.is_plain_value(left, hidden)
+                    && self.is_plain_value(right, hidden)
+            }
+            ExpressionKind::Negate(inner) | ExpressionKind::Not(inner) | ExpressionKind::Sqrt(inner) => {
+                self.is_plain_value(inner, hidden)
+            }
+            ExpressionKind::Convert { conversion: Conversion::WholeToFloat | Conversion::FloatToWhole(_), value } => {
+                self.is_plain_value(value, hidden)
+            }
+            ExpressionKind::Member { receiver, .. } => match &receiver.kind {
+                ExpressionKind::Variable(record) => {
+                    matches!(self.function.locations.get(record), Some(Location::InRegisters(_)))
+                }
+                ExpressionKind::Item { receiver: list, index, zero_based } => {
+                    !self.is_reference(expression.type_id) && self.view_target(list, index, *zero_based).is_some()
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// Whether a statement is a plain one: it gives a number to a name of this procedure's own, or changes a field
+    /// of a list's item that can have a view, working out nothing but plain values.
+    fn is_plain_statement(&mut self, statement: &Statement) -> bool {
+        match &statement.kind {
+            StatementKind::Make { variable, value } | StatementKind::Set { variable, value } => {
+                let made = matches!(statement.kind, StatementKind::Make { .. });
+                !self.is_reference(value.type_id)
+                    && !self.globals.contains_key(variable)
+                    && !self.function.takeovers.contains_key(variable)
+                    && (made || matches!(self.function.locations.get(variable), Some(Location::Register(_))))
+                    && self.is_plain_value(value, &[])
+            }
+            StatementKind::Inside { path, change } => {
+                let ([PathStep::Item { index, zero_based }], StatementKind::SetField { value, .. }) =
+                    (path.steps.as_slice(), &change.kind)
+                else {
+                    return false;
+                };
+                let root = Expression {
+                    kind: ExpressionKind::Variable(path.root),
+                    type_id: path.types.first().copied().unwrap_or(value.type_id),
+                    place: statement.place,
+                };
+                if self.is_reference(value.type_id) || self.view_target(&root, index, *zero_based).is_none() {
+                    return false;
+                }
+                let mut hidden = Vec::new();
+                for (name, worked_out) in &path.lets {
+                    if !self.is_plain_value(worked_out, &hidden) {
+                        return false;
+                    }
+                    hidden.push(*name);
+                }
+                self.is_plain_value(value, &hidden)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether a statement gives a new number to a name some view's item is reached with.
+    fn changes_a_view_key(&self, statement: &Statement) -> bool {
+        let StatementKind::Set { variable, .. } = &statement.kind else { return false };
+        self.function.views.iter().any(|view| view.key == ViewKey::Name(*variable))
+    }
+
+    /// Changes a field of a list's item in the registers its view keeps; the item itself is written back when the
+    /// run of plain statements ends.
+    fn change_through_view(&mut self, path: &Inside, change: &Statement) {
+        let ([PathStep::Item { index, zero_based }], StatementKind::SetField { variable, field, value }) =
+            (path.steps.as_slice(), &change.kind)
+        else {
+            self.internal("a change through a view that isn't a field of a list's item");
+            return;
+        };
+        let root = Expression {
+            kind: ExpressionKind::Variable(path.root),
+            type_id: path.types.first().copied().unwrap_or(value.type_id),
+            place: change.place,
+        };
+        let Some((list, list_register, key, count)) = self.view_target(&root, index, *zero_based) else {
+            self.internal("a change through a view of something that can't have one");
+            return;
+        };
+        let record_type = self.variable_type(*variable);
+        let field = self.field_index(record_type, field);
+        let place = self.place;
+        // With the item's view already there, plain maths works its new value out straight into the field's
+        // register. Otherwise the value comes first and the view after, in the order the plain way reaches them, so
+        // that a bad place is found in the same order either way.
+        let already = self
+            .function
+            .views
+            .iter()
+            .find(|view| view.list == list && view.key == key && view.zero_based == *zero_based)
+            .map(|view| view.base + field);
+        let mut worked_out_in_place = false;
+        for (position, (hidden, worked_out)) in path.lets.iter().enumerate() {
+            let final_one = position + 1 == path.lets.len();
+            let is_the_value = matches!(&value.kind, ExpressionKind::Variable(read) if read == hidden);
+            match already {
+                Some(target)
+                    if final_one && is_the_value && matches!(worked_out.kind, ExpressionKind::Binary { .. }) =>
+                {
+                    // Plain maths reads what it needs before its one instruction writes.
+                    self.value_into(worked_out, target);
+                    worked_out_in_place = true;
+                }
+                _ => {
+                    let register = self.held_value(worked_out);
+                    self.function.locations.insert(*hidden, Location::Register(register));
+                }
+            }
+        }
+        if !worked_out_in_place {
+            let from = self.value(value);
+            self.place = place;
+            let view = self.view(list, list_register, key, *zero_based, count);
+            let Some(target) = self.function.views.get(view).map(|view| view.base + field) else { return };
+            if from != target {
+                self.emit(Instruction::Move { to: target, from });
+            }
+        }
+        // Any other view of what could be the same item is out of date now.
+        self.drop_views_that_may_be(list, key, *zero_based);
+        if let Some(view) = self
+            .function
+            .views
+            .iter_mut()
+            .find(|view| view.list == list && view.key == key && view.zero_based == *zero_based)
+        {
+            view.dirty = true;
+        }
+    }
+
+    /// Drops every other view of what could be the same item as the one at `key`, writing back any with a change
+    /// of its own first.
+    fn drop_views_that_may_be(&mut self, list: VariableId, key: ViewKey, zero_based: bool) {
+        let mut position = 0;
+        while position < self.function.views.len() {
+            let Some(other) = self.function.views.get(position).copied() else { break };
+            let itself = other.list == list && other.key == key && other.zero_based == zero_based;
+            if !itself
+                && other.list == list
+                && self.may_be_the_same_item((other.key, other.zero_based), (key, zero_based))
+            {
+                self.write_back(position);
+                self.function.views.remove(position);
+            } else {
+                position += 1;
+            }
         }
     }
 
@@ -683,9 +1228,14 @@ impl<'p> Compiler<'p> {
         let held_mark = self.function.held.len();
         let register_mark = self.function.next;
         match &statement.kind {
+            // In a run of plain statements, a field of a list's item is changed in the registers its view keeps.
+            StatementKind::Inside { path, change } if self.function.views_on => {
+                self.change_through_view(path, change);
+            }
             // A plain field of a record at a place in a list, as `bodies[pos: i].vx = v`, is changed in one step.
             StatementKind::Inside { path, change }
-                if matches!(path.steps.as_slice(), [PathStep::Item { .. }])
+                if !self.plain
+                    && matches!(path.steps.as_slice(), [PathStep::Item { .. }])
                     && matches!(&change.kind, StatementKind::SetField { value, .. } if !self.is_reference(value.type_id)) =>
             {
                 let ([PathStep::Item { index, zero_based }], StatementKind::SetField { variable, field, value }) =
@@ -905,7 +1455,15 @@ impl<'p> Compiler<'p> {
                     self.emit(Instruction::AddWholeSmall { to: counter, left: counter, right: 1 });
                 }
                 self.function.loops.push(Loop { held_mark: self.function.held.len(), breaks: Vec::new() });
+                // A range counting up from past a name that can't change never reaches that name's number.
+                let apart = self.counts_up_from_past(from, step.as_ref());
+                if let Some(below) = apart {
+                    self.function.distinct.push((below, *item));
+                }
                 self.block(body);
+                if apart.is_some() {
+                    self.function.distinct.pop();
+                }
                 let next = self.emit(Instruction::NextInRange { to: item_register, base, offset: 0 });
                 self.patch(enter, next);
                 self.patch(next, top);
@@ -1309,6 +1867,9 @@ impl<'p> Compiler<'p> {
         if let Some(register) = self.field_register(expression) {
             return register;
         }
+        if let Some(register) = self.view_field(expression) {
+            return register;
+        }
         let register = self.allocate();
         if self.value_into(expression, register) {
             self.hold(register);
@@ -1403,8 +1964,15 @@ impl<'p> Compiler<'p> {
                     }
                     return false;
                 }
+                if let Some(from) = self.view_field(expression) {
+                    if from != to {
+                        self.emit(Instruction::Move { to, from });
+                    }
+                    return false;
+                }
                 // A plain field of a record at a place in a list, as `bodies[pos: i].vx`, is read in one step.
                 if let ExpressionKind::Item { receiver: list, index, zero_based } = &receiver.kind
+                    && !self.plain
                     && matches!(self.kind(receiver.type_id), Type::Record(_))
                     && !matches!(self.kind(list.type_id), Type::Text)
                     && !self.is_reference(expression.type_id)
@@ -2156,6 +2724,9 @@ impl<'p> Compiler<'p> {
         if let Some(instruction) = self.constant_maths(operator, left, right, is_float, to) {
             self.place = whole.place;
             self.emit(instruction);
+            return;
+        }
+        if is_float && !self.plain && self.fused_floats(whole, to) {
             return;
         }
         let is_text = matches!(self.kind(left.type_id), Type::Text);

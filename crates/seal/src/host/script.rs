@@ -10,7 +10,7 @@ use super::doors::{Doors, Loaded};
 use super::value::Value;
 use crate::check::check;
 use crate::compile::bytecode::{Compiled, CompiledProcedure, Crossing};
-use crate::compile::compiler::compile;
+use crate::compile::compiler::compile_as;
 use crate::message::{Message, MessageKind, Messages, Place};
 use crate::signature::HostType;
 use crate::syntax::parser::parse;
@@ -161,13 +161,30 @@ impl Script {
     /// Returns [`Error::Refused`] with every message when the script doesn't pass checking, and
     /// [`Error::Stopped`] when its top level stops.
     pub fn load(name: &str, source: &str, doors: &Doors, limits: Limits) -> Result<Script, Error> {
+        Self::load_as(name, source, doors, limits, false)
+    }
+
+    /// Loads a script compiled plainly, with none of the compiler's shortcuts for a list's items. It runs the same
+    /// script to the same answers, only slower: the fuzzer loads every script both ways and compares them.
+    ///
+    /// # Errors
+    ///
+    /// As [`Script::load`].
+    #[doc(hidden)]
+    pub fn load_plainly(name: &str, source: &str, doors: &Doors, limits: Limits) -> Result<Script, Error> {
+        Self::load_as(name, source, doors, limits, true)
+    }
+
+    fn load_as(name: &str, source: &str, doors: &Doors, limits: Limits, plain: bool) -> Result<Script, Error> {
         // The same text loaded again with the same doors has already been checked and compiled.
-        let prepared = match doors.kept(source) {
+        let prepared = match doors.kept(source).filter(|_| !plain) {
             Some(loaded) => Ok(Ok(loaded)),
-            None => catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors))).map(|prepared| {
+            None => catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors, plain))).map(|prepared| {
                 prepared.map(|compiled| {
                     let loaded = Loaded { source: source.into(), compiled: Arc::new(compiled) };
-                    doors.keep(loaded.clone());
+                    if !plain {
+                        doors.keep(loaded.clone());
+                    }
                     loaded
                 })
             }),
@@ -212,7 +229,7 @@ impl Script {
     ///
     /// Returns [`Error::Refused`] with every message when the script doesn't pass checking.
     pub fn check(name: &str, source: &str, doors: &Doors) -> Result<(), Error> {
-        match catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors))) {
+        match catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors, false))) {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(mut messages)) => {
                 for message in &mut messages {
@@ -228,12 +245,12 @@ impl Script {
         }
     }
 
-    fn prepare(name: &str, source: &str, doors: &Doors) -> Result<Compiled, Vec<Message>> {
+    fn prepare(name: &str, source: &str, doors: &Doors, plain: bool) -> Result<Compiled, Vec<Message>> {
         let _ = name;
         let tree = parse(source).map_err(|message| vec![message])?;
         let signatures = doors.signatures();
         let program = check(&tree, &signatures)?;
-        compile(&program, &signatures).map_err(|message| vec![message])
+        compile_as(&program, &signatures, plain).map_err(|message| vec![message])
     }
 
     /// Sets the script's memory up and runs its top level (D4).
@@ -762,6 +779,13 @@ impl Script {
     #[must_use]
     pub fn most_memory_used(&self) -> usize {
         self.machine.heap.most()
+    }
+
+    /// How many bytes the script's compiled instructions and constants take, for measuring (D58).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn compiled_bytes(&self) -> usize {
+        (self.compiled.code.len() + self.compiled.constants.len()) * 8
     }
 
     /// Why the script stopped, when it has (D14).
