@@ -26,7 +26,29 @@ board: Array<Whole>[len: 64] = [all: 0]
 ```
 
 **Not decided:** how a type is written on a name in Seal, as in the example's `bag: List<Text>[len.max: 10]`, when it
-can't be worked out from the value; records, maps and other types.
+can't be worked out from the value; maps and other types.
+
+## Records
+
+```
+record Enemy
+    name: Text
+    hp: Whole
+    x: Float
+    y: Float
+end
+
+mut goblin = Enemy[name: "Goblin", hp: 30, x: 0.0, y: 0.0]
+goblin.hp = goblin.hp - 5
+```
+
+- **`record Name` declares a record,** its fields one per line, each with its type, closed by `end` (D20, D27).
+- **It's built with `[ ]`, naming every field;** a field left out is refused (D27).
+- **A field is read with `.field`,** and changed only through a `mut` name. A record is a value: `b = a` gives `b` its
+  own copy (D15, D27).
+- **At the doors a record is a Rust struct** (D27).
+
+**Not decided:** defaults for fields; methods on records; records inside records; `fmt` braces holding `name.field`.
 
 ## `fmt`
 

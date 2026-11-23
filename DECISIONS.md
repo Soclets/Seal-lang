@@ -723,3 +723,49 @@ cost little and suit each.
 
 **Tankun's words.** Asked "Should Seal give every message to the host both as Unio-style text and as its separate
 parts?", the owner chose: "yea".
+
+## D27. Records: declared with `record Name`, built with `Name[field: value]`, read with `.field`
+
+2026-11-23.
+
+**Chosen.**
+- **`record Name` declares a record,** its fields one per line, each with its type written, closed by `end` (D20). The
+  fields are its contract, as a procedure's line is.
+- **It's built with `[ ]`, naming every field:** `Enemy[name: "Goblin", hp: 30, x: 0.0, y: 0.0]`, the shape labels
+  and settings already have (Unio D24, D165, D167, D170). A field left out is refused, so adding a field later makes
+  every place that builds one say its value.
+- **A field is read with `.field`,** and changed only through a `mut` name. A record is a value, so `b = a` gives `b`
+  its own copy (D15).
+- **At the doors a record is a Rust struct,** so a host can pass whole records in and out (D15, D16).
+
+```
+record Enemy
+    name: Text
+    hp: Whole
+    x: Float
+    y: Float
+end
+
+mut goblin = Enemy[name: "Goblin", hp: 30, x: 0.0, y: 0.0]
+goblin.hp = goblin.hp - 5
+```
+
+Defaults for fields, methods on records, records inside records, and `fmt` braces holding `name.field`, which D12
+doesn't allow yet, aren't decided.
+
+**Weighed.**
+- `struct`, as C, Rust, Swift and Go have it: short for "structure", jargon to a beginner. `class` and `object`: they
+  promise methods, inheritance and shared references, which Seal doesn't have. `type`: too general.
+- Building by position, as `Enemy["Goblin", 30, 0.0, 0.0]`: which number is which can't be seen, and reordering the
+  fields silently breaks every place a record is built.
+- `Enemy[name = "Goblin"]`, as Python and Kotlin have it: in Seal `=` makes or changes a name (D2).
+- `Enemy{name: "Goblin"}`, as Rust and JavaScript have it: in Seal braces fill in text (D12).
+
+**Why this won.** "Record" is the standard technical name for exactly this, a fixed set of named, typed fields, from
+the office record card of facts about one thing, and it says what D15 makes it: values written down together and
+copied as a whole. Unio has no records yet, only the word in passing in D165, so Seal's choice is likely to become
+Unio's.
+
+**Tankun's words.** "Why `record`?", "Unio doesn't have records yet", "Is it accurate?", "What does record mean in
+Englusg", "Why `field: value`?", then, asked "Should Seal have records, declared with `record Name`, built with
+`Name[field: value]`, and read with `.field`?", the owner chose: "yea".
