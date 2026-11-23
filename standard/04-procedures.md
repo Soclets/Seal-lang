@@ -3,26 +3,27 @@
 ## Definitions
 
 ```
-proc name[parameters] returns Type
+proc name[parameters] -> Type ! [failures]
     body
 end
 ```
 
 where `name` is the procedure's name, `parameters` its parameters separated by commas, `Type` the type it gives back,
-and `body` its statements. `proc`, `returns`, the brackets and `end` are written as they are (D20, D21).
+`failures` the failures it can give, and `body` its statements. `proc`, `->`, `!`, the brackets and `end` are written
+as they are (D20, D21, D45).
 
 ```
 proc on_hit[points]
     score = score + points
 end
 
-proc average[a: Float, b: Float] returns Float
+proc average[a: Float, b: Float] -> Float
     return (a + b) / 2.0
 end
 ```
 
 - **Each parameter is its name, with its type optional,** as `points` or `a: Float` (D5, D21).
-- **`returns Type` is optional** (D6, D21).
+- **`-> Type` and `! [failures]` are optional,** worked out from the body when left off (D6, D44, D45).
 - **The line has no `:`** (D9).
 
 Seal has no contracts, `requires` or `ensures`, for now (D39).

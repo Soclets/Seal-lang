@@ -27,7 +27,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `:` at the end of an opening line | nothing | D9 |
 | `end if`, `end while`, `end proc name`, `end otherwise` | `end` | D20 |
 | `else if` | `elif` | D10 |
-| `proc name[$a: Whole] returns Whole:` | `proc name[a: Whole] returns Whole`, types and `returns` optional | D5, D6, D21 |
+| `proc name[$a: Whole] returns Whole:` | `proc name[a: Whole] -> Whole`, types and `->` optional | D5, D6, D21, D45 |
 | `show_msg.fmt("{$x}")` | `fmt("{x}")`, given to whatever the host's door is | D12 |
 | `show_msg`, `ask`, `random` | doors, if the host opens them, under the names it chooses | D11 |
 | `.unio` | `.seal` | D25 |

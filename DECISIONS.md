@@ -180,6 +180,8 @@ by D9, D20 and D21.)
 
 **Why this won.** It completes D5, so a procedure's types are written only where its own lines leave them open.
 
+(Changed by D45: written `-> Type`.)
+
 **Tankun's words.** Asked "Should a procedure's result type be optional too, worked out from its `return`s, with
 `returns` allowed for writing it?", the owner chose: "yea".
 
@@ -600,6 +602,8 @@ end
   home.
 
 **Why this won.** It's Unio's procedure line with only what Seal's earlier decisions removed or made optional.
+
+(Changed by D45: `-> Type` in place of `returns`.)
 
 **Tankun's words.** Asked "Should a Seal procedure's first line be `proc name[params]`, with optional types and an
 optional `returns`?", the owner chose: "yea".
@@ -1288,6 +1292,35 @@ level = load_level("cave") ?? default_level
 **Why this won.** Failing on purpose gets a plain word, and failures are handled the way types are: worked out, and
 written only where wanted.
 
+(Changed by D45: written `! [ … ]`.)
+
 **Tankun's words.** "Why is it there?", then, asked "Should Seal fail on purpose with `fail name`, with a procedure's
 failures worked out from its body, optionally written as `fails [ … ]` on the first line?", the owner chose: "yea.
 Should Seal have `->` instead of `returns`?"
+
+## D45. `-> Type` for the result and `! [ … ]` for failures, in place of `returns` and `fails`
+
+2026-11-23.
+
+**Chosen.** A procedure's first line writes its result as `-> Type` and its failures as `! [ … ]`, result first, both
+optional and worked out from the body when left off (D6, D44). `returns` and `fails` aren't keywords in Seal.
+
+```
+proc load_level[name] -> Level ! [not_found, broken]
+proc average[a: Float, b: Float] -> Float
+proc save[game] ! [disk_full]
+```
+
+This changes D6, D21 and D44.
+
+**Weighed.**
+- `returns Level fails [not_found, broken]`, as Unio writes them, which the design claude recommended keeping: words
+  read aloud and explain themselves, and Seal so far chooses words where they read naturally. `!` means "not" in most
+  languages, so a first guess at `-> Level ! [not_found]` could be "returns not a Level".
+
+**Why this won.** Tankun's choice, compact where both parts are written, with `->` from Rust and Swift and `!` for
+failures from Zig. Since both are usually worked out, they're written only where wanted.
+
+**Tankun's words.** "What about `proc load_level[name] -> Level ! [not_found, broken]`", "No", then,
+asked "Should Seal write a procedure's result as `-> Type` and its failures as `! [ … ]`, both optional, in place of
+`returns` and `fails`?", the owner chose: "yea".

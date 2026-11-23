@@ -31,8 +31,8 @@ Each `case` runs until the next `case`, as in Unio (D37).
 ## Failing on purpose
 
 `fail name` fails on purpose, and a procedure's failures are worked out from its body: every `fail`, and every failure
-passed up with `?` (D44). They may be written on the first line as `fails [not_found, broken]`, after `returns` if
-that's written, and must then match the body (D44). A door can fail too, with failures its host declares (D44).
+passed up with `?` (D44). They may be written on the first line as `! [not_found, broken]`, after `-> Type` if
+that's written, and must then match the body (D44, D45). A door can fail too, with failures its host declares (D44).
 
 ```
 proc load_level[name]
