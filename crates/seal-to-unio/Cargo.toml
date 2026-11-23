@@ -10,3 +10,7 @@ workspace = true
 
 [dependencies]
 seal = { path = "../seal" }
+
+[[bin]]
+name = "seal-to-unio"
+path = "src/main.rs"

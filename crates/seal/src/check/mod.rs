@@ -1224,6 +1224,19 @@ impl<'a> Checker<'a> {
             }
             None => checked.type_id,
         };
+        if wanted.is_none()
+            && matches!(checked.kind, ExpressionKind::BuildCase { case: 0, .. })
+            && !self.program.types.is_settled(checked.type_id)
+        {
+            // trace: D30, D38
+            self.refuse_why(
+                value.place,
+                "`Maybe.none` can't say what the `Maybe` holds, so the name's type has to be written",
+                "a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.",
+            );
+            self.program.types.settle_as_error(checked.type_id);
+            return None;
+        }
         if self.program.types.resolve(checked.type_id) == NOTHING {
             // trace: Unio D38
             self.refuse_why(

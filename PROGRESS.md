@@ -29,8 +29,13 @@ Each ends with something running. `[x]` done, `[ ]` not yet.
   tests pass (2026-11-23).
 - [x] **C2. The host's side** (D48, D49, D51 to D54): `Doors`, `Script::load`, `call`, `resume`, `cancel`, `Limits`,
   `#[derive(Seal)]`, an example host in `crates/seal/tests/`.
-- [ ] **C3. The fuzzer** (`fuzz/`): random valid and invalid scripts against loading and running, under the limits.
-- [ ] **C4. The Unio translator and the comparison with Ralph** (D19).
+- [x] **C3. The fuzzer** (`fuzz/`): random valid and invalid scripts against loading and running, under the limits.
+  It runs in the one command (6,000 scripts, fixed seed) and by hand: `cargo run --release -p seal-fuzzer -- --seed N
+  --seconds N`. Found so far: `div.floor (x)` and `x div.floor -5` misread by the lexer's spacing check (fixed).
+- [x] **C4. The Unio translator and the comparison with Ralph** (D19): `crates/seal-to-unio`, and `seal-fuzzer --ralph`,
+  which runs in the one command. Ralph has no `Float`, lists, `for each`, `.len`, dividing or the biggest `Whole`s built
+  yet, so the comparison covers `Whole` maths and overflow, `Bool`, `Text`, `&`, `be.Text`, `be.Whole`, comparisons,
+  logic, `if`, `while`, procedures and `show_msg`. 2 tests and 400 fuzzed scripts match; no difference found yet.
 - [ ] **C5. Benchmarks** (`bench/`): the seven of D57 in D58's kinds, against Luau and Node; `bench/RESULTS.md`.
 - [ ] **C6. Performance work** until D57's goals hold, then the final report.
 

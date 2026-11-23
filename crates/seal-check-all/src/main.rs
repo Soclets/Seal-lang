@@ -99,6 +99,21 @@ fn main() -> ExitCode {
     all_passed &=
         step("unit tests", "cargo", &["test", "-j", JOBS, "--workspace", "--release", "--", "--test-threads", JOBS]);
 
+    // Building rule 6: the fuzzer runs with everything else. A fixed seed keeps this run the same every time; longer
+    // runs with other seeds are made by hand, as `cargo run --release -p seal-fuzzer -- --seed N --seconds N`.
+    all_passed &= step(
+        "fuzzer",
+        "cargo",
+        &["run", "-q", "-j", JOBS, "--release", "-p", "seal-fuzzer", "--", "--seed", "1", "--count", "2000"],
+    );
+
+    // D19: Seal's results are compared with Ralph's, as a black box, on the tests and on fuzzed scripts.
+    all_passed &= step(
+        "comparison with Ralph",
+        "cargo",
+        &["run", "-q", "-j", JOBS, "--release", "-p", "seal-fuzzer", "--", "--ralph", "--seed", "1", "--count", "400"],
+    );
+
     println!("== tests/");
     let seal = root.join("target/release/seal");
     let mut folders: Vec<PathBuf> = fs::read_dir("tests")

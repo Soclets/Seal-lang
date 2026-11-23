@@ -11,8 +11,14 @@ use crate::syntax::tree as syntax;
 fn chain_length(expression: &syntax::Expression) -> usize {
     match &expression.kind {
         syntax::ExpressionKind::Call { callee, arguments } if name_path(callee).is_some() => {
-            let inner =
-                arguments.first().filter(|entry| entry.label.is_none()).map_or(0, |entry| chain_length(&entry.value));
+            // Brackets around the inner call don't make the chain any shorter.
+            let inner = arguments.first().filter(|entry| entry.label.is_none()).map_or(0, |entry| {
+                let mut value = &entry.value;
+                while let syntax::ExpressionKind::Group(grouped) = &value.kind {
+                    value = grouped;
+                }
+                chain_length(value)
+            });
             1 + inner
         }
         _ => 0,

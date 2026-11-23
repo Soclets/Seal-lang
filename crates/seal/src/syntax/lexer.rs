@@ -374,6 +374,10 @@ impl Lexer {
 
     /// Whether a value just ended, so that a `-` here is between two values.
     fn after_value(&self) -> bool {
+        // The `floor` of `div.floor` is part of an operator, not a value.
+        if ends_with_rounding(&self.current) {
+            return false;
+        }
         matches!(
             self.current.last().map(|token| &token.kind),
             Some(
@@ -665,12 +669,14 @@ fn number_token(number: u32, characters: &[char], start: usize) -> Result<(Token
 /// Seal's spacing isn't decided (the standard, chapter 2). Unio's fixed spacing (Unio D98) is the one form every
 /// example and test uses, so that form is read, and anything else stops as not designed yet.
 fn check_spacing(tokens: &[Token]) -> Result<(), Message> {
-    for pair in tokens.windows(2) {
+    for (index, pair) in tokens.windows(2).enumerate() {
         let [before, after] = pair else { continue };
         let Gap::Spaces(actual) = after.gap else {
             continue;
         };
-        let wanted = wanted_spaces(&before.kind, &after.kind);
+        // `div.floor` and its like are operators, with a space on each side like any other (Unio D70, D98).
+        let after_operator = ends_with_rounding(tokens.get(..=index).unwrap_or(&[]));
+        let wanted = if after_operator { 1 } else { wanted_spaces(&before.kind, &after.kind) };
         if actual != wanted {
             let column = before.place.column + before.place.width;
             let place = Place::new(before.place.line, column, actual.max(1));
@@ -689,6 +695,14 @@ fn check_spacing(tokens: &[Token]) -> Result<(), Message> {
         }
     }
     Ok(())
+}
+
+/// Whether the tokens end with `div.floor`, `div.trunc`, `rem.floor` or `rem.trunc` (Unio D70, D71).
+fn ends_with_rounding(tokens: &[Token]) -> bool {
+    let [.., word, dot, rounding] = tokens else { return false };
+    matches!(word.kind, TokenKind::Keyword(Keyword::Div | Keyword::Rem))
+        && dot.kind == TokenKind::Symbol(Symbol::Dot)
+        && matches!(&rounding.kind, TokenKind::Name(name) if name == "floor" || name == "trunc")
 }
 
 fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
