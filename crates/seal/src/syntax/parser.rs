@@ -317,6 +317,11 @@ impl Parser {
                 .with_why("`[ ]` describes the values a procedure takes, and this one takes none."));
             }
             loop {
+                // trace: D61
+                let unused = self.at_keyword(Keyword::Unused);
+                if unused {
+                    self.advance();
+                }
                 let name = self.expect_name("a parameter's name")?;
                 let written_type = if self.at_symbol(Symbol::Colon) {
                     self.advance();
@@ -324,7 +329,7 @@ impl Parser {
                 } else {
                     None
                 };
-                parameters.push(Parameter { name, written_type });
+                parameters.push(Parameter { name, written_type, unused });
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
@@ -752,6 +757,11 @@ impl Parser {
         let opener = self.opener("for");
         self.expect_keyword(Keyword::For)?;
         self.expect_keyword(Keyword::Each)?;
+        // trace: D61
+        let item_unused = self.at_keyword(Keyword::Unused);
+        if item_unused {
+            self.advance();
+        }
         let item = self.expect_name("the item's name")?;
         let position = if self.at_keyword(Keyword::At) {
             self.advance();
@@ -762,6 +772,9 @@ impl Parser {
                 _ => return Err(self.unexpected("`pos`, `offset` or `key`")),
             };
             self.advance();
+            if self.at_keyword(Keyword::Unused) {
+                return Err(Message::not_designed_yet(self.here(), "`unused` on a `for each`'s `at` name"));
+            }
             Some((kind, self.expect_name("a name")?))
         } else {
             None
@@ -771,7 +784,10 @@ impl Parser {
         self.end_line()?;
         let body = self.body(&opener)?;
         self.end_of(&opener)?;
-        Ok(Statement { kind: StatementKind::ForEach { item, position, source, body }, place: opener.place })
+        Ok(Statement {
+            kind: StatementKind::ForEach { item, item_unused, position, source, body },
+            place: opener.place,
+        })
     }
 
     /// trace: D37

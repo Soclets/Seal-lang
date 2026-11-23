@@ -656,7 +656,7 @@ impl<'a> Checker<'a> {
                 type_id,
                 kind: VariableKind::Parameter,
                 mutable: false,
-                marked_unused: false,
+                marked_unused: parameter.unused,
                 read: false,
                 top_level: false,
                 captured: false,
@@ -852,6 +852,35 @@ impl<'a> Checker<'a> {
         true
     }
 
+    /// trace: D37, D61. A case takes out only the values it reads: some of them, by name, in the order they're
+    /// declared.
+    fn check_case_values(&mut self, case: &syntax::MatchCase, fields: &[(String, TypeId)]) {
+        let written: Vec<&str> = case.values.iter().map(|word| word.text.as_str()).collect();
+        let declared: Vec<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
+        if let Some(word) = case.values.iter().find(|word| !declared.contains(&word.text.as_str())) {
+            self.refuse_why(
+                word.place,
+                format!("the case `{}` has no value `{}`", case.name.text, word.text),
+                "a case's values come out by name.",
+            );
+            return;
+        }
+        let mut left = declared.iter();
+        let in_order = written.iter().all(|name| left.any(|declared| declared == name));
+        // A value taken out twice is refused as a name made twice.
+        let twice = written.iter().enumerate().any(|(at, name)| written.iter().skip(at + 1).any(|later| later == name));
+        if !in_order && !twice {
+            self.not_designed(case.name.place, "taking out a case's values in another order than they're declared");
+        }
+    }
+
+    /// Marks a name `unused`: never read, on purpose (D2, D61).
+    fn mark_unused(&mut self, id: VariableId, unused: bool) {
+        if let Some(variable) = self.program.variables.get_mut(id.0 as usize) {
+            variable.marked_unused = unused;
+        }
+    }
+
     /// Makes a name that's new in the current block, as a loop's item or a case's value.
     fn make_local(&mut self, name: &syntax::Word, type_id: TypeId, kind: VariableKind) -> VariableId {
         let local = self.context.scopes.iter().rev().find_map(|scope| scope.get(&name.text).copied());
@@ -893,7 +922,7 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// trace: D2
+    /// trace: D2, D61
     fn check_unused(&mut self, scope: &HashMap<String, VariableId>) {
         let mut unused: Vec<(Place, String, VariableKind)> = scope
             .values()
@@ -905,14 +934,26 @@ impl<'a> Checker<'a> {
         for (place, name, kind) in unused {
             match kind {
                 VariableKind::Named => self.refuse(place, format!("`{name}` is never used")),
-                VariableKind::Parameter => {
-                    self.not_designed(place, format!("a parameter that's never read, as `{name}`,"));
-                }
-                VariableKind::LoopItem | VariableKind::LoopPosition => {
-                    self.not_designed(place, format!("a `for each` name that's never read, as `{name}`,"));
-                }
-                // The standard's own `match` example leaves a case's value unread (chapter 6).
-                VariableKind::CaseValue => {}
+                VariableKind::Parameter => self.refuse_why(
+                    place,
+                    format!("`{name}` is never used"),
+                    &format!("a parameter that's never read on purpose is marked, as `unused {name}`."),
+                ),
+                VariableKind::LoopItem => self.refuse_why(
+                    place,
+                    format!("`{name}` is never used"),
+                    &format!("a `for each` name that's never read on purpose is marked, as `for each unused {name}`."),
+                ),
+                VariableKind::LoopPosition => self.refuse_why(
+                    place,
+                    format!("`{name}` is never used"),
+                    "a `for each` that doesn't read where it is leaves its `at` part out.",
+                ),
+                VariableKind::CaseValue => self.refuse_why(
+                    place,
+                    format!("`{name}` is never used"),
+                    "a `case` takes out only the values it reads.",
+                ),
             }
         }
     }
@@ -1069,8 +1110,8 @@ impl<'a> Checker<'a> {
                 self.context.loop_depth -= 1;
                 StatementKind::While { condition, body }
             }
-            syntax::StatementKind::ForEach { item, position, source, body } => {
-                self.for_each(item, position.as_ref(), source, body)?
+            syntax::StatementKind::ForEach { item, item_unused, position, source, body } => {
+                self.for_each(item, *item_unused, position.as_ref(), source, body)?
             }
             syntax::StatementKind::Match { subject, cases } => self.match_statement(subject, cases),
             syntax::StatementKind::Break => {
@@ -1473,6 +1514,7 @@ impl<'a> Checker<'a> {
     fn for_each(
         &mut self,
         item: &syntax::Word,
+        item_unused: bool,
         position: Option<&(syntax::PositionKind, syntax::Word)>,
         source: &syntax::Expression,
         body: &[syntax::Statement],
@@ -1515,6 +1557,7 @@ impl<'a> Checker<'a> {
             self.refuse_plain_range(&from, &end, inclusive, step.as_ref(), source.place);
             self.context.scopes.push(HashMap::new());
             let item_id = self.make_local(item, WHOLE, VariableKind::LoopItem);
+            self.mark_unused(item_id, item_unused);
             let position_id = match position {
                 Some((syntax::PositionKind::Key, word)) => {
                     self.refuse(word.place, "`at key` is for going through a `Dict`");
@@ -1574,6 +1617,7 @@ impl<'a> Checker<'a> {
         let root = Self::root_variable(&checked);
         self.context.scopes.push(HashMap::new());
         let item_id = self.make_local(item, item_type, VariableKind::LoopItem);
+        self.mark_unused(item_id, item_unused);
         let position_id =
             position.map(|(kind, word)| (self.make_local(word, position_type, VariableKind::LoopPosition), *kind));
         if let Some(root) = root {
@@ -1689,22 +1733,7 @@ impl<'a> Checker<'a> {
             let fields =
                 index.and_then(|index| case_types.get(index)).map(|case| case.fields.clone()).unwrap_or_default();
             if index.is_some() {
-                let written: Vec<&str> = case.values.iter().map(|word| word.text.as_str()).collect();
-                let declared: Vec<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
-                if written != declared {
-                    if let Some(word) = case.values.iter().find(|word| !declared.contains(&word.text.as_str())) {
-                        self.refuse_why(
-                            word.place,
-                            format!("the case `{}` has no value `{}`", case.name.text, word.text),
-                            "a case's values come out by name.",
-                        );
-                    } else {
-                        self.not_designed(
-                            case.name.place,
-                            "taking out only some of a case's values, or in another order than they're declared,",
-                        );
-                    }
-                }
+                self.check_case_values(case, &fields);
             }
             for word in &case.values {
                 let field = fields.iter().position(|(name, _)| *name == word.text);
@@ -1719,7 +1748,10 @@ impl<'a> Checker<'a> {
             if root.is_some() {
                 self.context.iterating.pop();
             }
-            self.context.scopes.pop();
+            // trace: D61. A value taken out and never read is refused.
+            if let Some(scope) = self.context.scopes.pop() {
+                self.check_unused(&scope);
+            }
             arms.push(MatchArm { case: case_number, values, body });
         }
         if known {

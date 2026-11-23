@@ -714,8 +714,14 @@ impl Generator {
                         self.value(Kind::Whole, 0)
                     ),
                 };
-                self.line(&format!("for each {item} in {range}"));
-                self.loop_body(&[(item, Kind::Whole)]);
+                // One loop in six never reads its counter, and says so (D61).
+                if self.random.chance(1, 6) {
+                    self.line(&format!("for each unused {item} in {range}"));
+                    self.loop_body(&[]);
+                } else {
+                    self.line(&format!("for each {item} in {range}"));
+                    self.loop_body(&[(item, Kind::Whole)]);
+                }
             }
             14 if nested && self.seal() => {
                 let text_list = self.random.chance(1, 3);
@@ -917,6 +923,11 @@ impl Generator {
         for (index, kind) in parameters.iter().enumerate() {
             let parameter = self.fresh();
             header.push_str(if index > 0 { ", " } else { "[" });
+            // Now and then a parameter after the first is never read, and says so (D61); the body can't reach it.
+            if index > 0 && self.seal() && self.random.chance(1, 6) {
+                let _ = write!(header, "unused {parameter}: {}", kind.written());
+                continue;
+            }
             let _ = write!(header, "{parameter}: {}", kind.written());
             names.push((parameter, *kind));
         }
@@ -958,7 +969,7 @@ impl Generator {
         for _ in 0..self.random.below(4) {
             self.statement();
         }
-        // Every parameter is read, since one that's never read isn't decided yet.
+        // Every parameter not marked `unused` is read, since one that's never read is refused (D61).
         let unread: Vec<(String, Kind)> = self
             .scopes
             .first()

@@ -53,6 +53,8 @@ impl Procedure {
 pub struct Parameter {
     pub name: Word,
     pub written_type: Option<TypeExpression>,
+    /// Marked `unused`: never read, on purpose (D61).
+    pub unused: bool,
 }
 
 /// `parameter as label` on a `labels` line (D41, D42).
@@ -157,6 +159,8 @@ pub enum StatementKind {
     },
     ForEach {
         item: Word,
+        /// The item is marked `unused`: never read, on purpose (D61).
+        item_unused: bool,
         position: Option<(PositionKind, Word)>,
         source: Expression,
         body: Block,
