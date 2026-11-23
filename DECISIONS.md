@@ -1876,3 +1876,29 @@ memory model comes from, works the same way.
 
 **Tankun's words.** Asked "Should a `mut` name allow changes through any depth of fields and positions, with a method at
 the end, leaving `Dict` keys partway along for later?", the owner chose: "??".
+
+## D63. Unio's line rules, in Seal's syntax: comments, blank lines, indentation, spacing, line endings and `\`
+
+2026-11-23.
+
+**Chosen.** Seal takes Unio's rules for how lines are written:
+- **Comments:** `//` comments to the end of the line, and `///` is a doc comment on the lines right before a
+  declaration (Unio D74). A block comment is `comment name` on its own line, closed by a plain `end` (D20), and
+  everything between is ignored.
+- **Blank lines:** one in a row anywhere; two or more in a row are refused (Unio D97).
+- **Indentation:** 4 spaces per level; anything else, a tab included, is refused, with the corrected line as the fix
+  (Unio D10).
+- **Spacing:** fixed, as Unio's table has it, with one space on each side of operators, `->`, `!`, `==` and `!=`
+  included (D45, D59), and none inside brackets; a spacing mistake is refused, with the corrected line as the fix
+  (Unio D98, D100).
+- **Line endings:** `\r\n` counts as one line break (Unio D144).
+- **Text:** `\` makes the next character literal, as `\"` and `\\`, and `\{` inside `fmt` text (Unio D30).
+
+**Weighed.**
+- Free spacing, as Lua and Python allow. Every refusal gives the fix, and fixed spacing makes every script look alike
+  to whoever reads it.
+
+**Why this won.** They're designed and tested in Unio, and nothing in Seal's purpose asks for them to differ. Seal's
+building session read Unio's conventions meanwhile and stopped on everything else.
+
+**Tankun's words.** Asked "Should Seal take Unio's line rules as listed, in Seal's syntax?", the owner chose: "??".

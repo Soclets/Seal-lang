@@ -42,13 +42,25 @@ where `opening line` is the block's first line and `body` its statements.
 
 ## Indentation
 
-Indentation is required: a body is indented one level deeper than its opening line (D9, D20).
+Indentation is required: a body is indented one level deeper than its opening line (D9, D20). One level is 4 spaces,
+and anything else, a tab included, is refused, with the corrected line as the fix (D63, Unio D10).
 
-**Not decided:** how many spaces one level is; tabs; how a statement's later lines are indented.
+**Not decided:** how a statement's later lines are indented.
+
+## Spacing and comments
+
+- **Spacing is fixed,** as Unio's table has it (Unio's standard, chapter 2), with one space on each side of operators,
+  `->`, `!`, `==` and `!=` included, and none inside brackets; a mistake is refused with the corrected line as the fix
+  (D63, Unio D98, D100).
+- **`//` comments to the end of the line,** and **`///`** is a doc comment on the lines right before a declaration
+  (D63, Unio D74).
+- **`comment name` on its own line starts a block comment,** closed by a plain `end`; everything between is ignored
+  (D20, D63).
+- **One blank line in a row is fine; two or more are refused** (D63, Unio D97).
+- **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144).
 
 ## Files
 
 A script is one file ending in `.seal` (D25).
 
-**Not decided:** comments; blank lines; spacing around operators; line endings; whether a script can use another
-script.
+**Not decided:** whether a script can use another script.
