@@ -1458,3 +1458,45 @@ without Seal owning time, and parallelism comes for free from scripts sharing no
 **Tankun's words.** "Should Seal be able to be concurrent?", then, asked "Should Seal scripts be fully separate and
 movable between threads, able to pause through a door and be resumed by the host, with no parallelism inside one script
 for now?", the owner chose: "yea".
+
+## D50. The same results on every machine, bit for bit, and future maths functions correctly rounded
+
+2026-11-23.
+
+**Chosen.**
+- **A script, given the same calls and the same answers from its doors, gives the same results on every machine, bit
+  for bit,** floats included. Seal's part is what happens inside the seal; recording and replaying what comes in, and
+  keeping its own code deterministic, is the host's (D11).
+- **What already keeps it:** step counting (D14), a `Dict`'s insertion order (D32), randomness through the host (D11),
+  and `+`, `-`, `*`, `/` and `sqrt`, which IEEE 754 makes correctly rounded and so the same on every machine, with
+  nothing fused or reordered (D17). The memory cap counts Seal's own sizes, not the operating system's.
+- **A maths function Seal adds later, such as `sin`, must be correctly rounded:** the closest `Float` to the true answer.
+  It's ported to Rust with no `unsafe`, following CORE-MATH's algorithms, and checked against Ralph, which computes the
+  correctly rounded answer the slow, provable way, with extra digits and one final rounding, as Cyborg's oracle does
+  (Cyborg D256), through D19's comparison.
+
+**Weighed.**
+- No promise, as Unio's D163 makes none. For Unio the cost was proofs and holding LLVM back; an interpreter does each
+  float operation one at a time, so for Seal it's nearly free.
+- Stability through one pure-Rust maths library, not correctly rounded. Enough for the same bits on every machine, as
+  Cyborg's design session confirmed, but an update to the library can change the last bit, breaking replays recorded
+  before it, and an independent implementation such as Ralph can only agree with a correctly rounded one.
+- CORE-MATH itself. Correctly rounded and fast, but C: calling it needs `unsafe`, a bug in it would sit inside the
+  sandbox's walls, and every host's build would need a C compiler for every target. Allowed only as a last resort,
+  listed under IMPLEMENTATION.md's rule 2.
+- Proving the functions in Rocq and turning them into Rust. Months of research per function, and Rocq can't produce
+  Rust that's fast, or trusted.
+
+**Why this won.** Replays and lockstep multiplayer become possible for a careful host, Seal's own tests give the same
+output everywhere, and correct rounding keeps that true across library updates and lets Ralph check every bit. Proof
+goes where it's cheap and decisive, in Ralph's definition of the right answer, and speed where it matters, in the Rust
+port, with tests joining them.
+
+**Tankun's words.** "Do we really need full stable floats?", "Wait, wait. Doesn't that depend on the host? The replay
+accuracy?", "Why not full stable floats?", "Wait, doesn't stable floats mean both?", "Wait, so why does Cyborg even use
+CORE-MATH?", "Yeah, but stable floats as you said, don't require that", "No, does stable floats mean that?", "Ah, so
+CORE-MATH isn't about stable floats, just about math?", "Can you just fucking ask Cyborg Design Claude like the fucking
+rule says?", "Why not CORE-MATH?", "80k LOC only? I thought it was gonna be 3m LOC and with Rocq", "So, do we port
+some to Rust? Or port some to Rocq, and also make Rocq be able to transpile to Rust?", then, asked "Should Seal promise
+the same results on every machine, bit for bit, with any maths function it adds later correctly rounded, ported to Rust
+and checked against Ralph?", the owner chose: "yea".

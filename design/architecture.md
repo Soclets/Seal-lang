@@ -42,4 +42,6 @@ goblin_script.call("on_hit", (10,))?;
   between threads; scripts talk only through the host; a door can pause a script, and the host resumes it later; no
   parallelism inside one script for now.
 
-**Not decided:** determinism across machines.
+- **Determinism** (D50): a script, given the same calls and door answers, gives the same results on every machine, bit
+  for bit. Maths functions added later are correctly rounded, ported to Rust with no `unsafe` after CORE-MATH's
+  algorithms, and checked against Ralph.

@@ -33,6 +33,11 @@ The wording follows Unio's rules: plain sentences, no error codes, no "did you m
 **Not decided:** each message's wording; a kind for a script stopped by a limit; how `?? crash`'s message reads in a
 script.
 
+## The same everywhere
+
+A script, given the same calls and the same answers from its doors, gives the same results on every machine, bit for
+bit, floats included (D50). A maths function Seal adds later must be correctly rounded (D50).
+
 ## Testing against Ralph
 
 What Seal shares with Unio is compared against Unio's oracle, Ralph, as a black box, through a translator from Seal to
