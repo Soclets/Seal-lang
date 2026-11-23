@@ -1,0 +1,18 @@
+proc run[words] -> Whole
+    mut counts: Dict<key: Text, value: Whole> = [:]
+    mut seed = 42
+    mut made = 0
+    while made < words
+        seed = (seed * 1664525 + 1013904223) rem.floor 4294967296
+        word = "word" & (seed div.floor 65536 rem.floor 5000)
+        counts[key: word] = (counts[key: word] ?? 0) + 1
+        made = made + 1
+    end
+    mut most = 0
+    for each count in counts
+        if count > most
+            most = count
+        end
+    end
+    return counts.len * 1000000 + most
+end

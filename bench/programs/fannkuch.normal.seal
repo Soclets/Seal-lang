@@ -1,0 +1,68 @@
+proc run[n] -> Whole
+    mut perm1: List<Whole> = []
+    mut count: List<Whole> = []
+    mut fill = 0
+    while fill < n
+        perm1.add(fill)
+        count.add(0)
+        fill = fill + 1
+    end
+    mut max_flips = 0
+    mut checksum = 0
+    mut permutations = 0
+    mut r = n
+    mut done = false
+    while not done
+        while r != 1
+            count[offset: r - 1] = r
+            r = r - 1
+        end
+        mut perm = perm1
+        mut flips = 0
+        mut k = perm[offset: 0]
+        while k != 0
+            mut low = 0
+            mut high = k
+            while low < high
+                swap = perm[offset: low]
+                perm[offset: low] = perm[offset: high]
+                perm[offset: high] = swap
+                low = low + 1
+                high = high - 1
+            end
+            flips = flips + 1
+            k = perm[offset: 0]
+        end
+        if flips > max_flips
+            max_flips = flips
+        end
+        if permutations rem.floor 2 == 0
+            checksum = checksum + flips
+        else
+            checksum = checksum - flips
+        end
+        permutations = permutations + 1
+        mut rotating = true
+        while rotating
+            if r == n
+                done = true
+                rotating = false
+            else
+                first = perm1[offset: 0]
+                mut i = 0
+                while i < r
+                    perm1[offset: i] = perm1[offset: i + 1]
+                    i = i + 1
+                end
+                perm1[offset: r] = first
+                count[offset: r] = count[offset: r] - 1
+                if count[offset: r] > 0
+                    rotating = false
+                else
+                    r = r + 1
+                end
+            end
+        end
+    end
+    return checksum * 100 + max_flips
+end

@@ -1,0 +1,50 @@
+proc eval_a[i: Whole, j: Whole] -> Float
+    return 1.0 / be.Float((i + j) * (i + j + 1) div.floor 2 + i + 1)
+end
+
+proc times[u: List<Float>, size: Whole] -> List<Float>
+    mut out: List<Float> = []
+    for each i in range[from: 0, before: size]
+        mut sum = 0.0
+        for each value at offset j in u
+            sum = sum + eval_a(i, j) * value
+        end
+        out.add(sum)
+    end
+    return out
+end
+
+proc times_transposed[u: List<Float>, size: Whole] -> List<Float>
+    mut out: List<Float> = []
+    for each i in range[from: 0, before: size]
+        mut sum = 0.0
+        for each value at offset j in u
+            sum = sum + eval_a(j, i) * value
+        end
+        out.add(sum)
+    end
+    return out
+end
+
+proc run[size] -> Float
+    mut u: List<Float> = []
+    mut filled = 0
+    while filled < size
+        u.add(1.0)
+        filled = filled + 1
+    end
+    mut v = u
+    mut round = 0
+    while round < 10
+        v = times_transposed(times(u, size), size)
+        u = times_transposed(times(v, size), size)
+        round = round + 1
+    end
+    mut vbv = 0.0
+    mut vv = 0.0
+    for each value at pos i in u
+        vbv = vbv + value * v[pos: i]
+        vv = vv + v[pos: i] * v[pos: i]
+    end
+    return sqrt(vbv / vv)
+end

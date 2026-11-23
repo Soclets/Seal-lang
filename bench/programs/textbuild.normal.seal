@@ -1,0 +1,9 @@
+proc run[count] -> Text
+    mut text = ""
+    mut number = 0
+    while number < count
+        text = text & number & ","
+        number = number + 1
+    end
+    return text
+end
