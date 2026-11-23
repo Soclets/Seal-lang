@@ -1033,7 +1033,9 @@ impl<'a> Checker<'a> {
                 if !self.program.types.is_error(checked.type_id) {
                     let is_call = matches!(
                         Self::without_handling(&checked).kind,
-                        ExpressionKind::Call { .. }
+                        // A call that was refused has had its message already.
+                        ExpressionKind::Error
+                            | ExpressionKind::Call { .. }
                             | ExpressionKind::DoorCall { .. }
                             | ExpressionKind::ListAdd { .. }
                             | ExpressionKind::ListRemove { .. }

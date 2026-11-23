@@ -135,6 +135,10 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool) -> Run {
         let before = script.memory_in_use();
         // Most procedures take other things than one whole number; those calls are refused, which must be safe too.
         let mut called = script.call_values(&name, &[seal::Argument { label: None, value: Value::Whole(5) }]);
+        if matches!(called, Err(seal::Error::Refused(_))) {
+            // A procedure that takes nothing is called with nothing (D60).
+            called = script.call_values(&name, &[]);
+        }
         let mut resumes = 0;
         while let Ok(Called::Paused(task)) = called {
             if let Err(why) = script.audit() {

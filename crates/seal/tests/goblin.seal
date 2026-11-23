@@ -89,3 +89,11 @@ proc save_game[slot]
             fail no_slot
     end
 end
+
+proc on_tick
+    hp = hp + 1
+end
+
+proc full_hp -> Whole
+    return 30
+end

@@ -265,7 +265,12 @@ impl Checker<'_> {
                 ),
                 None => self.refuse(
                     place,
-                    format!("`{name}` takes {} arguments, but this call gives {}", labels.len(), arguments.len()),
+                    format!(
+                        "`{name}` takes {} argument{}, but this call gives {}",
+                        labels.len(),
+                        if labels.len() == 1 { "" } else { "s" },
+                        arguments.len()
+                    ),
                 ),
             }
             return None;

@@ -304,30 +304,35 @@ impl Parser {
             return Err(Message::refused(self.here(), "a procedure's parameters go in `[ ]`, not `( )`")
                 .with_why("`( )` calls a procedure; `[ ]` describes one."));
         }
-        if !self.at_symbol(Symbol::OpenSquare) {
-            return Err(Message::not_designed_yet(self.here(), "a procedure with no parameters"));
-        }
-        self.advance();
         let mut parameters = Vec::new();
-        if self.at_symbol(Symbol::CloseSquare) {
-            return Err(Message::not_designed_yet(self.here(), "a procedure with no parameters"));
-        }
-        loop {
-            let name = self.expect_name("a parameter's name")?;
-            let written_type = if self.at_symbol(Symbol::Colon) {
-                self.advance();
-                Some(self.type_expression()?)
-            } else {
-                None
-            };
-            parameters.push(Parameter { name, written_type });
-            if self.at_symbol(Symbol::Comma) {
-                self.advance();
-            } else {
-                break;
+        // trace: D60. A procedure that takes nothing has no brackets.
+        if self.at_symbol(Symbol::OpenSquare) {
+            self.advance();
+            if self.at_symbol(Symbol::CloseSquare) {
+                let name = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+                return Err(Message::refused(
+                    self.here(),
+                    format!("a procedure that takes nothing has no `[ ]`: it's written `proc {name}`"),
+                )
+                .with_why("`[ ]` describes the values a procedure takes, and this one takes none."));
             }
+            loop {
+                let name = self.expect_name("a parameter's name")?;
+                let written_type = if self.at_symbol(Symbol::Colon) {
+                    self.advance();
+                    Some(self.type_expression()?)
+                } else {
+                    None
+                };
+                parameters.push(Parameter { name, written_type });
+                if self.at_symbol(Symbol::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect_symbol(Symbol::CloseSquare)?;
         }
-        self.expect_symbol(Symbol::CloseSquare)?;
         let result = if self.at_symbol(Symbol::Arrow) {
             self.advance();
             Some(self.type_expression()?)
@@ -1252,8 +1257,10 @@ mod tests {
     }
 
     #[test]
-    fn a_procedure_with_no_parameters_is_not_designed_yet() {
-        let kind = parse("proc tick\nend\n").err().map(|message| message.kind);
-        assert_eq!(kind, Some(MessageKind::NotDesignedYet));
+    fn d60_a_procedure_that_takes_nothing_has_no_brackets() {
+        let script = parse("proc tick\nend\nproc count -> Whole\n    return 1\nend\ntick()\n");
+        assert!(script.is_ok(), "{:?}", script.err());
+        let kind = parse("proc tick[]\nend\n").err().map(|message| message.kind);
+        assert_eq!(kind, Some(MessageKind::Refused));
     }
 }

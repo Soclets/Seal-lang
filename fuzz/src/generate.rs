@@ -883,7 +883,8 @@ impl Generator {
             self.random.pick(&["work", "pick", "mix", "check"]).copied().unwrap_or("work"),
             self.procedures.len()
         );
-        let parameter_count = self.random.below(3) + 1;
+        // One procedure in six takes nothing, and so has no brackets (D60).
+        let parameter_count = if self.random.chance(1, 6) { 0 } else { self.random.below(3) + 1 };
         let scalar =
             [Kind::Whole, Kind::Whole, if self.seal() { Kind::Float } else { Kind::Whole }, Kind::Bool, Kind::Text];
         let parameters: Vec<Kind> = (0..parameter_count)
@@ -911,17 +912,17 @@ impl Generator {
         let parameters = if pauses { vec![Kind::Whole] } else { parameters };
         let info = ProcedureInfo { name: name.clone(), parameters: parameters.clone(), result, fails, pauses };
         self.scopes.push(Vec::new());
-        let mut header = format!("proc {name}[");
+        let mut header = format!("proc {name}");
         let mut names = Vec::new();
         for (index, kind) in parameters.iter().enumerate() {
             let parameter = self.fresh();
-            if index > 0 {
-                header.push_str(", ");
-            }
+            header.push_str(if index > 0 { ", " } else { "[" });
             let _ = write!(header, "{parameter}: {}", kind.written());
             names.push((parameter, *kind));
         }
-        header.push(']');
+        if !parameters.is_empty() {
+            header.push(']');
+        }
         if let Some(result) = result
             && (!self.seal() || self.random.chance(1, 2))
         {

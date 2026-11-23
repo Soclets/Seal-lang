@@ -127,6 +127,18 @@ fn d48_loading_runs_the_top_level_and_the_host_calls_procedures() -> Result<(), 
 }
 
 // trace: D5, D6, D48
+// trace: D60
+#[test]
+fn d60_a_procedure_that_takes_nothing_is_called_with_nothing() -> Result<(), Box<dyn std::error::Error>> {
+    let (mut script, _world) = load()?;
+    script.call::<()>("on_tick", ())?;
+    assert_eq!(script.call::<String>("hp_left", (" hp".to_owned(),))?, Called::Finished("31 hp".to_owned()));
+    assert_eq!(script.call::<i64>("full_hp", ())?, Called::Finished(30));
+    // Arguments it doesn't take are refused before anything runs.
+    assert!(matches!(script.call::<()>("on_tick", (1i64,)), Err(Error::Refused(_))));
+    Ok(())
+}
+
 #[test]
 fn d48_a_call_is_checked_by_name_and_types() -> Result<(), Box<dyn std::error::Error>> {
     let (mut script, _world) = load()?;

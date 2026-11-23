@@ -110,15 +110,16 @@ impl Translator<'_> {
         if procedure.can_fail {
             return not_shared("a procedure that fails on purpose");
         }
-        let mut header = format!("proc {}[", procedure.name);
+        // A procedure that takes nothing has no brackets in Unio either (Unio D4, Seal's D60).
+        let mut header = format!("proc {}", procedure.name);
         for (position, &parameter) in procedure.parameters.iter().enumerate() {
             let type_id = self.program.variable(parameter).map_or(procedure.result, |variable| variable.type_id);
-            if position > 0 {
-                header.push_str(", ");
-            }
+            header.push_str(if position > 0 { ", " } else { "[" });
             let _ = write!(header, "{}: {}", self.name(parameter), self.written_type(type_id)?);
         }
-        header.push(']');
+        if !procedure.parameters.is_empty() {
+            header.push(']');
+        }
         if !matches!(self.program.types.get(procedure.result), Type::Nothing) {
             let _ = write!(header, " returns {}", self.written_type(procedure.result)?);
         }
