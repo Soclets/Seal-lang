@@ -1500,3 +1500,44 @@ rule says?", "Why not CORE-MATH?", "80k LOC only? I thought it was gonna be 3m L
 some to Rust? Or port some to Rocq, and also make Rocq be able to transpile to Rust?", then, asked "Should Seal promise
 the same results on every machine, bit for bit, with any maths function it adds later correctly rounded, ported to Rust
 and checked against Ralph?", the owner chose: "yea".
+
+## D51. Each call into a script is a task; one runs at a time, switching only at pauses
+
+2026-11-23.
+
+**Chosen.**
+- **Each call the host makes into a script is a task.** While one task is paused at a door (D49), the host can call
+  the script again, and the new call runs as another task.
+- **Only one task of a script runs at a time,** and they switch only at pauses. Between two pauses a task is never
+  interrupted, so nothing needs locks and no change is torn in half.
+- **A script's tasks share its top-level names,** so a task that resumes sees what others changed meanwhile.
+- **A door's name and labels, such as `wait(seconds: 2)`, are the host's** (D11); this decision is only about what
+  pausing does.
+
+```
+mut hp = 30
+
+proc patrol[guard]
+    while true
+        walk_to(guard, x: 10)
+        wait(seconds: 2)
+    end
+end
+
+proc on_hit[amount]
+    hp = hp - amount
+end
+```
+
+While `patrol` waits, the host can call `on_hit`; when `patrol` resumes, `hp` is lower.
+
+**Weighed.**
+- A paused script refusing every call until it's resumed. Simpler, but a patrolling guard couldn't be hit.
+- Tasks switching at any moment, as threads do. Every shared name would need locks, and a change could be torn.
+
+**Why this won.** It's how Lua's coroutines and Roblox's scripts behave, which game scripting relies on, and switching
+only at pauses keeps every stretch between them as simple as a script with no tasks.
+
+**Tankun's words.** "When the fuck are we gonna design `wait` shit?", "What the fuck is `seconds: 2`, isn't it
+non-rich `wait(2 secs)`?", then, asked "Should each call into a script be a task, with only one running at a time,
+switching only at pauses, and all sharing the script's top-level names?", the owner chose: "yea".
