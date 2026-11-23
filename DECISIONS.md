@@ -1808,3 +1808,42 @@ building session stopped on it as "not designed yet".
 
 **Tankun's words.** Asked "Should a procedure that takes nothing be written with no brackets, and always called with
 `()`?", the owner chose: "y".
+
+## D61. Unread parameters and `for each` names take `unused`; a `case` takes out only what it reads
+
+2026-11-23.
+
+**Chosen.** D2's rule, that a name made and never read is refused, holds everywhere a name is made:
+- **A parameter never read is refused,** unless marked `unused`, as `proc on_hit[unused amount]`, for a host's callback
+  whose shape is fixed (D3).
+- **A `for each` name never read is refused,** unless marked `unused`, as `for each unused round in range[from: 1, to:
+  3]`.
+- **A `case` takes out only the values it reads,** as `case healed[by]`; taking out a value and never reading it is
+  refused. A case needs no `unused`.
+
+```
+proc on_hit[unused amount]
+    show_msg("ouch")
+end
+
+match event
+    case healed[by]
+        show_msg(fmt("{by} healed you"))
+    ...
+end
+```
+
+where `...` stands for the other cases.
+
+**Weighed.**
+- Letting parameters and `for each` names go unread. A typo, as `amont` for `amount`, would hide there as D2 refuses it
+  elsewhere.
+- `unused` inside a case, as `case healed[unused amount, by]`. Leaving the value out says the same, shorter.
+
+**Why this won.** One rule wherever a name is made, so a typo never hides, and `unused` says "on purpose" wherever it's
+needed. Chapter 6's `match` example broke it, by taking out `amount` and never reading it; it's fixed with this entry.
+Seal's building session stopped on it as "not designed yet".
+
+**Tankun's words.** "`?` means "What?", `??` means "yes", `???` means "no". Only works if the msg only has that",
+"?", then, asked "Should unread parameters and `for each` names be refused unless marked `unused`, with a `case`
+taking out only the values it reads?", the owner chose: "??".

@@ -111,14 +111,15 @@ mut last = Event.hurt[amount: 5]
 match last
     case hurt[amount]
         hp = hp - amount
-    case healed[amount, by]
+    case healed[by]
         show_msg(fmt("{by} healed you"))
     case idle
 end
 ```
 
 - **Every case must be covered;** there's no catch-all (D37).
-- **A case's values come out by name,** read-only, for that case's body (D37).
+- **A case's values come out by name,** read-only, for that case's body, and a case takes out only the values it
+  reads (D37, D61).
 - **A case runs until the next `case`,** and one `end` closes the `match` (D37).
 
 ## `Maybe`

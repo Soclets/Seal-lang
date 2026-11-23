@@ -18,6 +18,8 @@ where `name` is the name and `value` its value. `mut`, `unused` and `=` are writ
   meant: a typo such as `tires = tries + 1` is caught this way (D2, Unio D54).
 - **`unused` marks a name that's never read on purpose,** so it isn't refused, and reading it later is refused.
   Throwing a value away is the same: give it a name and mark it `unused` (D3).
+- **The same holds for parameters and `for each` names,** as `proc on_hit[unused amount]` and `for each unused round
+  in …`; a `case` instead takes out only the values it reads (D61).
 
 ```
 mut tries = 0
