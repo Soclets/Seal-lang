@@ -172,7 +172,8 @@ proc average[a: Float, b: Float] returns Float      // written, as allowed
 end proc
 ```
 
-How a procedure's first line is written, with or without `:`, isn't decided yet; these examples only show the shape.
+How a procedure's first line is written, with or without `:`, isn't decided yet; these examples only show the shape. (Decided
+by D9, D20 and D21.)
 
 **Weighed.**
 - `returns` always written, as Unio has it. The same reasoning as D5: the body already says it.
@@ -572,3 +573,30 @@ enough, as in Lua and Luau, which most game scripters know. It changes Tankun's 
 **Tankun's words.** "`ebd proc`? The fuck", "Wait, wait. Doesn't Unio use `end while` too? Because it doesn't have a
 name, but `proc` does", "What if we went just `end`?", then, asked "Should every block in Seal close with a plain
 `end`?", the owner chose: "yea".
+
+## D21. A procedure's first line is `proc name[params]`, with optional types and `returns`
+
+2026-11-23.
+
+**Chosen.** A procedure starts with `proc`, its name, and its parameters in `[ ]`, as in Unio (Unio D165, D166). Each
+parameter's type is optional (D5), `returns` with the result type is optional (D6), the line has no `:` (D9), and the
+procedure closes with `end` (D20).
+
+```
+proc on_hit[points]
+    score = score + points
+end
+
+proc average[a: Float, b: Float] returns Float
+    return (a + b) / 2.0
+end
+```
+
+**Weighed.**
+- A shape of Seal's own, such as `fn` or `def`. Unio's `proc` and `[ ]` already fit, and keep a Unio programmer at
+  home.
+
+**Why this won.** It's Unio's procedure line with only what Seal's earlier decisions removed or made optional.
+
+**Tankun's words.** Asked "Should a Seal procedure's first line be `proc name[params]`, with optional types and an
+optional `returns`?", the owner chose: "yea".
