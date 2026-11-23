@@ -259,3 +259,29 @@ How `elif` is spelt is its own decision; this one is about the `:` only.
 
 **Tankun's words.** Asked "Should block-opening lines like `if` and `while` have no `:` in Seal?", the owner chose:
 "yea".
+
+## D10. `elif`, taught as short for "else if"
+
+2026-11-23.
+
+**Chosen.** Seal writes `elif` where Unio writes `else if`. It's one keyword, and the docs teach it as short for "else
+if", as Unio teaches `fmt` and `pos` (Unio D2).
+
+```
+if guess < secret
+    show_msg("Too low")
+elif guess > secret
+    show_msg("Too high")
+else
+    show_msg("Correct!")
+end if
+```
+
+**Weighed.**
+- `else if`, as Unio has it. Plain English, but two keywords doing one job.
+- `elsif`, as Ruby has it. Less known.
+
+**Why this won.** One keyword for one job, in the short spelling Unio's D2 prefers, and already known from Python and
+Bash. Tankun's sketch used it.
+
+**Tankun's words.** Asked "Should Seal use `elif`, taught as short for "else if"?", the owner chose: "yea".
