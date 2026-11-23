@@ -1,0 +1,5 @@
+score = 42
+alive = true
+show_msg("Score: " & score)
+show_msg("Alive: " & alive)
+show_msg("Name: " & "Mia")

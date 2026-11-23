@@ -1,0 +1,1 @@
+A record is declared, built naming every field, read and changed through mut, and copied as a whole. D15, D27, D28.

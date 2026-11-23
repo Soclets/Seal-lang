@@ -1,0 +1,1 @@
+A door pauses the script, and the host resumes it, carrying on where it paused. D49, D51.

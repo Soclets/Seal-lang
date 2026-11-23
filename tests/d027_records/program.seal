@@ -1,0 +1,13 @@
+record Enemy
+    name: Text
+    hp: Whole
+end
+
+mut goblin = Enemy[name: "Goblin", hp: 30]
+goblin.hp = goblin.hp - 5
+show_msg(fmt("{goblin.name} has {goblin.hp} HP"))
+
+orc = Enemy[name: "Orc", hp: 50]
+mut copy = orc
+copy.hp = 10
+show_msg(fmt("{orc.hp} {copy.hp}"))

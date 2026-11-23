@@ -1,0 +1,18 @@
+secret = rand(from: 1, to: 100)
+mut tries = 0
+mut won = false
+while tries < 7 and not won
+    guess = be.Whole(ask("Your guess: ")) ?? 0
+    tries = tries + 1
+    if guess < secret
+        show_msg("Too low")
+    elif guess > secret
+        show_msg("Too high")
+    else
+        show_msg(fmt("Correct! You got it in {tries} tries"))
+        won = true
+    end
+end
+if not won
+    show_msg(fmt("Out of tries! It was {secret}."))
+end

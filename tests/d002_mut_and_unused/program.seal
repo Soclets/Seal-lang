@@ -1,0 +1,4 @@
+mut score = 10
+score = score + 5
+unused old = score
+show_msg(fmt("Score: {score}"))

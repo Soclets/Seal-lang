@@ -1,0 +1,16 @@
+mut stock: Dict<key: Text, value: Whole> = ["sword": 1, "potion": 3]
+stock[key: "potion"] = 4
+stock[key: "shield"] = 2
+potions = stock[key: "potion"] ?? 0
+axes = stock[key: "axe"] ?? 0
+show_msg(fmt("{potions} potions, {axes} axes"))
+stock.remove(key: "sword") ?? ignore
+for each count at key item in stock
+    show_msg(fmt("{item}: {count}"))
+end
+if stock.has(key: "sword")
+    show_msg("still a sword")
+else
+    show_msg("no sword")
+end
+show_msg(fmt("{stock.len} kinds"))

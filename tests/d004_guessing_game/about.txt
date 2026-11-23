@@ -1,0 +1,1 @@
+Tankun's guessing game in final Seal form: the top level runs once, with mut, elif, a plain end, fmt and the test host's doors. D2, D4, D8 to D12, D20, D56.

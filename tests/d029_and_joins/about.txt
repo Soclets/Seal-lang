@@ -1,0 +1,1 @@
+& joins text, turning a Whole or a Bool into text by itself. D16, D29.

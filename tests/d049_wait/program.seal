@@ -1,0 +1,9 @@
+proc countdown[start]
+    mut n = start
+    while n > 0
+        show_msg(fmt("{n}"))
+        wait(seconds: 1)
+        n = n - 1
+    end
+    show_msg("go")
+end

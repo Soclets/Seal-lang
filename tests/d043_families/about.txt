@@ -1,0 +1,1 @@
+A script gives its procedure a narrowing in a fam.proc block. D43.

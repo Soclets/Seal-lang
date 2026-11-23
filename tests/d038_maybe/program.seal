@@ -1,0 +1,19 @@
+proc first_above[scores: List<Whole>, limit: Whole] -> Maybe<Whole>
+    for each score in scores
+        if score > limit
+            return Maybe.some[value: score]
+        end
+    end
+    return Maybe.none
+end
+
+scores = [3, 12, 7]
+found = first_above(scores, 10)
+match found
+    case some[value]
+        show_msg(fmt("found {value}"))
+    case none
+        show_msg("none found")
+end
+high = first_above(scores, 20) ?? 0
+show_msg(fmt("high: {high}"))

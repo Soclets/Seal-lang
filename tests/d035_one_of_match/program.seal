@@ -1,0 +1,24 @@
+one_of Event
+    idle
+    hurt[amount: Whole]
+    healed[amount: Whole, by: Text]
+end
+
+mut hp = 30
+
+proc handle[event: Event]
+    match event
+        case idle
+            show_msg("nothing happens")
+        case hurt[amount]
+            hp = hp - amount
+            show_msg(fmt("hurt for {amount}, {hp} left"))
+        case healed[amount, by]
+            hp = hp + amount
+            show_msg(fmt("{by} healed {amount}, {hp} left"))
+    end
+end
+
+handle(Event.hurt[amount: 5])
+handle(Event.idle)
+handle(Event.healed[amount: 3, by: "Mia"])
