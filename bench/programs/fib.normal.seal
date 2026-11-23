@@ -1,8 +1,9 @@
 proc fib[n: Whole] -> Whole
     if n < 2
         return n
+    else
+        return fib(n - 1) + fib(n - 2)
     end
-    return fib(n - 1) + fib(n - 2)
 end
 
 proc run[n] -> Whole

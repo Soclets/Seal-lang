@@ -32,6 +32,20 @@ enum ProcedureState {
 }
 
 /// Something a type must allow, checked once the type is worked out (D5).
+/// How a statement can leave the block it's in (D68).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Leaving {
+    /// It always leaves: a `return`, a `break`, a `fail`, or an `if` or `match` whose every way does.
+    Always,
+    /// Some way through an `if` leaves (Unio D9).
+    SomeWayOfIf,
+    /// Some case of a `match` leaves, which no decision covers.
+    SomeWayOfMatch,
+}
+
+/// Why a spelling can't be taken twice (D71).
+const NO_SHADOWING: &str = "one spelling means one thing wherever it's seen.";
+
 /// Why the top level can't hand anything to a caller (D67).
 pub(super) const TOP_LEVEL: &str = "the top level runs once, when the script loads, with nobody calling it.";
 
@@ -208,16 +222,15 @@ impl<'a> Checker<'a> {
         self.declare_globals(script);
         self.context.scopes.push(HashMap::new());
         let mut top_level = Vec::new();
-        let mut left = false;
+        let mut left: Option<(Place, Leaving)> = None;
         for item in &script.items {
             if let syntax::Item::Statement(statement) = item {
-                if left {
-                    self.not_designed(statement.place, "a line after a `return`, `break` or `fail` in the same block");
-                    left = false;
+                if let Some((place, leaving)) = left.take() {
+                    self.refuse_after_leaving(statement.place, place, leaving);
                 }
                 self.top_level_line = Some(statement.place);
                 if let Some(checked) = self.statement(statement) {
-                    left = Self::leaves(&checked);
+                    left = Self::leaving(&checked).map(|leaving| (checked.place, leaving));
                     top_level.push(checked);
                 }
                 self.top_level_line = None;
@@ -854,17 +867,39 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether a new name may be spelt `name`: it can't be a word that's already a procedure, a door or a built-in.
+    /// Whether a new name may be spelt `name`: one spelling means one thing, so it can't be a word that's already a
+    /// procedure, a door or one of Seal's own words (D71).
     fn check_new_name(&mut self, name: &syntax::Word) -> bool {
-        if BUILT_IN_WORDS.contains(&name.text.as_str()) {
-            self.not_designed(name.place, format!("a name spelt like the built-in `{}`", name.text));
-            return false;
-        }
-        if self.words.contains(&name.text) {
-            self.not_designed(name.place, format!("a name spelt like the procedure or door `{}`", name.text));
-            return false;
-        }
-        true
+        let word = name.text.as_str();
+        let taken_by = if BUILT_IN_WORDS.contains(&word) {
+            "one of Seal's own words"
+        } else if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
+            "one of the host's doors"
+        } else if self.words.contains(word) {
+            "a procedure"
+        } else {
+            return true;
+        };
+        self.refuse_why(
+            name.place,
+            format!("`{word}` is already {taken_by}, so nothing else can be named `{word}`"),
+            NO_SHADOWING,
+        );
+        false
+    }
+
+    /// Refuses a name made inside a procedure with a top-level name's spelling (D71).
+    fn refuse_top_level_spelling(&mut self, name: &syntax::Word, what: &str) {
+        let Some(&global) = self.globals.get(&name.text) else { return };
+        let made = self.variable(global).map_or(Place::default(), |variable| variable.place);
+        self.messages.push(
+            Message::refused(
+                name.place,
+                format!("`{}` is already a top-level name, so {what} can't be named `{}`", name.text, name.text),
+            )
+            .with_because(format!("line {} makes it", made.line), made)
+            .with_why(NO_SHADOWING),
+        );
     }
 
     /// trace: D37, D61. A case takes out only the values it reads: some of them, by name, in the order they're
@@ -902,13 +937,9 @@ impl<'a> Checker<'a> {
         if let Some(existing) = local {
             self.refuse_existing(name, existing);
         } else if self.context.procedure.is_some() && self.globals.contains_key(&name.text) {
-            self.not_designed(
-                name.place,
-                format!(
-                    "a name made inside a procedure by `for each` or `case`, spelt like the top-level name `{}`,",
-                    name.text
-                ),
-            );
+            // trace: D71
+            let what = if kind == VariableKind::CaseValue { "a `case`'s value" } else { "a `for each` name" };
+            self.refuse_top_level_spelling(name, what);
         }
         self.check_new_name(name);
         let id = self.new_variable(Variable {
@@ -990,11 +1021,11 @@ impl<'a> Checker<'a> {
         let mut scope = HashMap::new();
         let parameters = self.program.procedure(id).map(|procedure| procedure.parameters.clone()).unwrap_or_default();
         for &parameter in &parameters {
-            // A parameter may share a top-level name's spelling, and stands in front of it inside its procedure
-            // (tests/d038_maybe).
+            // trace: D71. A parameter can't take a spelling that already means something.
             if let Some(variable) = self.variable(parameter) {
                 let word = syntax::Word { text: variable.name.clone(), place: variable.place };
                 self.check_new_name(&word);
+                self.refuse_top_level_spelling(&word, "a parameter");
                 scope.insert(word.text, parameter);
             }
         }
@@ -1005,14 +1036,20 @@ impl<'a> Checker<'a> {
         let result = self.program.procedure(id).map_or(ERROR, |procedure| procedure.result);
         if self.context.returned_value == Some(true) {
             if !Self::block_leaves(&body) {
-                self.not_designed(
+                // trace: D68, Unio D57, D149
+                self.refuse_why(
                     procedure.end_place,
-                    format!(
-                        "a procedure that gives a value but can reach its `end` without a `return`, as `{}` can,",
-                        procedure.name()
-                    ),
+                    format!("`{}` gives a value, but it can reach its `end` without a `return`", procedure.name()),
+                    "when any `return` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.",
                 );
             }
+        } else if let Some(last) = body.last().filter(|last| matches!(last.kind, StatementKind::Return(None))) {
+            // trace: D68, Unio D57
+            self.refuse_why(
+                last.place,
+                "this `return` is the procedure's last line, where the procedure ends anyway",
+                "a bare `return` leaves a procedure early.",
+            );
         } else if !self.program.types.unify(result, NOTHING) {
             // trace: D6
             let wanted = self.describe(result);
@@ -1042,20 +1079,76 @@ impl<'a> Checker<'a> {
     fn block(&mut self, statements: &[syntax::Statement]) -> Block {
         self.context.scopes.push(HashMap::new());
         let mut block = Vec::new();
-        let mut left = false;
+        // The line before, when it always leaves this block, or is an `if` or a `match` that can.
+        let mut left: Option<(Place, Leaving)> = None;
         for statement in statements {
-            if left {
-                self.not_designed(statement.place, "a line after a `return`, `break` or `fail` in the same block");
-                left = false;
+            if let Some((place, leaving)) = left.take() {
+                self.refuse_after_leaving(statement.place, place, leaving);
             }
             if let Some(checked) = self.statement(statement) {
-                left = Self::leaves(&checked);
+                left = Self::leaving(&checked).map(|leaving| (checked.place, leaving));
                 block.push(checked);
             }
         }
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
         block
+    }
+
+    /// trace: D68, Unio D9, D57. Nothing follows a line that always leaves, or an `if` where any way leaves.
+    fn refuse_after_leaving(&mut self, place: Place, before: Place, leaving: Leaving) {
+        match leaving {
+            Leaving::Always => self.messages.push(
+                Message::refused(place, "this line can never run")
+                    .with_because(format!("line {} always leaves this block", before.line), before)
+                    .with_why("nothing follows `return`, `break` or `fail` in the same block."),
+            ),
+            Leaving::SomeWayOfIf => self.messages.push(
+                Message::refused(place, "this line follows an `if` that can leave")
+                    .with_because(format!("line {} opens that `if`", before.line), before)
+                    .with_why(
+                        "when any way through an `if` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the ways that don't leave.",
+                    ),
+            ),
+            Leaving::SomeWayOfMatch => {
+                self.not_designed(place, "a line after a `match` where some case leaves, by `return`, `break` or `fail`,");
+            }
+        }
+    }
+
+    /// How a statement can leave the block it's in, when it can: always, or by some way through an `if` or a
+    /// `match`.
+    fn leaving(statement: &Statement) -> Option<Leaving> {
+        if Self::leaves(statement) {
+            return Some(Leaving::Always);
+        }
+        match &statement.kind {
+            StatementKind::If { branches, otherwise } => (branches.iter().any(|(_, block)| Self::can_leave(block, 0))
+                || otherwise.as_ref().is_some_and(|block| Self::can_leave(block, 0)))
+            .then_some(Leaving::SomeWayOfIf),
+            StatementKind::Match { arms, .. } => {
+                arms.iter().any(|arm| Self::can_leave(&arm.body, 0)).then_some(Leaving::SomeWayOfMatch)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether some way through a block leaves it by `return` or `fail`, or by a `break` out of a loop around it.
+    /// `loops` counts the loops entered inside the block: a `break` in one of those only leaves that loop.
+    fn can_leave(block: &[Statement], loops: u32) -> bool {
+        block.iter().any(|statement| match &statement.kind {
+            StatementKind::Return(_) | StatementKind::Fail(_) => true,
+            StatementKind::Break => loops == 0,
+            StatementKind::If { branches, otherwise } => {
+                branches.iter().any(|(_, block)| Self::can_leave(block, loops))
+                    || otherwise.as_ref().is_some_and(|block| Self::can_leave(block, loops))
+            }
+            StatementKind::Match { arms, .. } => arms.iter().any(|arm| Self::can_leave(&arm.body, loops)),
+            StatementKind::While { body, .. }
+            | StatementKind::ForRange { body, .. }
+            | StatementKind::ForEach { body, .. } => Self::can_leave(body, loops + 1),
+            _ => false,
+        })
     }
 
     /// Whether a statement always leaves its block, by `return`, `break` or `fail`.
@@ -1072,8 +1165,9 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether a block always leaves: one of its lines does. A line after that one has its own message.
     fn block_leaves(block: &Block) -> bool {
-        block.last().is_some_and(Self::leaves)
+        block.iter().any(Self::leaves)
     }
 
     #[allow(clippy::too_many_lines)] // one case per kind of statement
@@ -1098,12 +1192,20 @@ impl<'a> Checker<'a> {
                             | ExpressionKind::ListRemove { .. }
                             | ExpressionKind::DictRemove { .. }
                     );
+                    // trace: D70, Unio D120, D161
                     if !is_call {
-                        self.not_designed(expression.place, "a line that only works out a value");
-                    } else if !self.program.types.unify(checked.type_id, NOTHING) {
-                        self.not_designed(
+                        let found = self.describe(checked.type_id);
+                        self.refuse_why(
                             expression.place,
-                            "a call that gives a value standing alone, its value unused,",
+                            format!("this line works out {found}, but nothing uses it"),
+                            "a line that only works out a value does nothing; keep the value under a name, or give it to a `mut` name with `=`.",
+                        );
+                    } else if !self.program.types.unify(checked.type_id, NOTHING) {
+                        let found = self.describe(checked.type_id);
+                        self.refuse_why(
+                            expression.place,
+                            format!("this call gives {found}, but nothing uses it"),
+                            "a call that gives a value is used: kept under a name, passed on, or compared; `unused name = …` drops it on purpose.",
                         );
                     }
                 }
@@ -2196,6 +2298,62 @@ pub(crate) mod tests {
         );
     }
 
+    // trace: D68, Unio D9, D57, D149
+    #[test]
+    fn d68_returns_and_ifs_that_leave() {
+        let guard = "proc pick[n: Whole] -> Whole\n    if n > 0\n        return 1\n    end\n    return 2\nend\n";
+        assert_eq!(whats(guard), vec!["refused: this line follows an `if` that can leave"]);
+        let after = "proc pick[n: Whole] -> Whole\n    return n\n    show_msg(\"x\")\nend\n";
+        assert_eq!(whats(after), vec!["refused: this line can never run"]);
+        let bare = "proc tick[n: Whole]\n    show_msg(be.Text(n))\n    return\nend\n";
+        assert_eq!(
+            whats(bare),
+            vec!["refused: this `return` is the procedure's last line, where the procedure ends anyway"]
+        );
+        let forever = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            return n\n        else\n            n = n + 1\n        end\n    end\nend\n";
+        assert_eq!(
+            whats(forever),
+            vec!["refused: `first_big` gives a value, but it can reach its `end` without a `return`"]
+        );
+        let fine = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            return n\n        else\n            n = n + 1\n        end\n    end\n    return n\nend\n";
+        assert!(whats(fine).is_empty(), "{:?}", whats(fine));
+    }
+
+    // trace: D69
+    #[test]
+    fn d69_a_for_each_over_a_top_level_name() {
+        let changes = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    for each e in enemies\n        hurt(e)\n    end\nend\n";
+        assert_eq!(
+            whats(changes),
+            vec!["refused: `hurt` can change `enemies`, which this `for each` is going through"]
+        );
+        let copied = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    now = enemies\n    for each e in now\n        hurt(e)\n    end\nend\n";
+        assert!(whats(copied).is_empty(), "{:?}", whats(copied));
+    }
+
+    // trace: D70, D71
+    #[test]
+    fn d70_dropped_values_and_d71_no_shadowing() {
+        let call = "proc two -> Whole\n    return 2\nend\ntwo()\n";
+        assert_eq!(whats(call), vec!["refused: this call gives `Whole`, but nothing uses it"]);
+        assert!(whats("proc two -> Whole\n    return 2\nend\nunused dropped = two()\n").is_empty());
+        assert_eq!(whats("score = 1\nscore + 1\n"), vec!["refused: this line works out `Whole`, but nothing uses it"]);
+        let parameter = "results = [3]\nproc best[results: List<Whole>] -> Whole\n    return results.len\nend\nshow_msg(be.Text(results.len))\n";
+        assert_eq!(
+            whats(parameter),
+            vec!["refused: `results` is already a top-level name, so a parameter can't be named `results`"]
+        );
+        let procedure = "proc roll -> Whole\n    return 4\nend\nroll = roll()\nshow_msg(be.Text(roll))\n";
+        assert_eq!(
+            whats(procedure).first().map(String::as_str),
+            Some("refused: `roll` is already a procedure, so nothing else can be named `roll`")
+        );
+        assert_eq!(
+            whats("show_msg = \"hi\"\n").first().map(String::as_str),
+            Some("refused: `show_msg` is already one of the host's doors, so nothing else can be named `show_msg`")
+        );
+    }
+
     #[test]
     fn every_test_script_passes_checking() {
         let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
@@ -2235,15 +2393,16 @@ pub(crate) mod tests {
     // trace: D6
     #[test]
     fn d06_every_return_must_agree() {
-        let messages =
-            whats("proc pick[n: Whole]\n    if n > 0\n        return 1\n    end\n    return \"none\"\nend\n");
+        let messages = whats(
+            "proc pick[n: Whole]\n    if n > 0\n        return 1\n    else\n        return \"none\"\n    end\nend\n",
+        );
         assert_eq!(messages, vec!["refused: this `return` gives `Text`, but the procedure gives `Whole`"]);
     }
 
     // trace: D44, Unio D23
     #[test]
     fn d44_a_failure_must_be_dealt_with() {
-        let source = "proc risky[n: Whole]\n    if n > 1\n        fail too_big\n    end\n    return n\nend\nx = risky(2)\nshow_msg(\"\" & x)\n";
+        let source = "proc risky[n: Whole]\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2)\nshow_msg(\"\" & x)\n";
         assert_eq!(whats(source), vec!["refused: this can fail with `too_big`, and nothing deals with the failure"]);
     }
 }

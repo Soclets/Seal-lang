@@ -350,20 +350,19 @@ impl Visitor for WriteCollector {
 }
 
 /// Finds a `for each` over a top-level name whose body could change that name from somewhere else: through a
-/// procedure it calls, or through another task while it's paused (D51). What happens then isn't decided.
+/// procedure it calls, or through another task while it's paused (D51). Both are refused (D69).
 struct LoopChecker<'p> {
     facts: &'p Facts<'p>,
     may_write: &'p [BTreeSet<VariableId>],
-    any_writes: &'p BTreeSet<VariableId>,
     messages: Vec<Message>,
 }
 
 struct LoopBodyChecker<'p> {
     facts: &'p Facts<'p>,
     may_write: &'p [BTreeSet<VariableId>],
-    changed_by_tasks: bool,
     name: VariableId,
-    found: Option<(Place, &'static str)>,
+    /// Where the trouble is, and the procedure that can change the name, when it's a call rather than a pause.
+    found: Option<(Place, Option<ProcedureId>)>,
 }
 
 impl Visitor for LoopBodyChecker<'_> {
@@ -374,9 +373,9 @@ impl Visitor for LoopBodyChecker<'_> {
         if let ExpressionKind::Call { procedure, .. } = &expression.kind
             && self.may_write.get(procedure.0 as usize).is_some_and(|writes| writes.contains(&self.name))
         {
-            self.found = Some((expression.place, "calling a procedure that changes"));
-        } else if self.changed_by_tasks && self.facts.pauses(expression) {
-            self.found = Some((expression.place, "pausing while another task could change"));
+            self.found = Some((expression.place, Some(*procedure)));
+        } else if self.facts.pauses(expression) {
+            self.found = Some((expression.place, None));
         }
     }
 }
@@ -389,19 +388,29 @@ impl Visitor for LoopChecker<'_> {
         if !variable.top_level {
             return;
         }
-        let mut body_checker = LoopBodyChecker {
-            facts: self.facts,
-            may_write: self.may_write,
-            changed_by_tasks: self.any_writes.contains(&name),
-            name,
-            found: None,
-        };
+        let mut body_checker = LoopBodyChecker { facts: self.facts, may_write: self.may_write, name, found: None };
         walk_block(body, &mut body_checker);
-        if let Some((place, what)) = body_checker.found {
-            self.messages.push(Message::not_designed_yet(
-                place,
-                format!("{what} `{}` inside a `for each` that's going through it", variable.name),
-            ));
+        // trace: D69
+        let name = &variable.name;
+        match body_checker.found {
+            Some((place, Some(procedure))) => {
+                let called = self.facts.program.procedure(procedure).map_or("this", |procedure| procedure.name.as_str());
+                self.messages.push(
+                    Message::refused(place, format!("`{called}` can change `{name}`, which this `for each` is going through"))
+                        .with_because(format!("line {} opens the `for each`", statement.place.line), statement.place)
+                        .with_why(format!(
+                            "what a `for each` goes through can't change inside it; copying `{name}` into a name of its own first lets the loop go through the copy."
+                        )),
+                );
+            }
+            Some((place, None)) => self.messages.push(
+                Message::refused(place, format!("this can pause, while a `for each` is going through the top-level name `{name}`"))
+                    .with_because(format!("line {} opens the `for each`", statement.place.line), statement.place)
+                    .with_why(format!(
+                        "another task could change `{name}` during the pause; copying it into a name of its own first lets the loop go through the copy."
+                    )),
+            ),
+            None => {}
         }
     }
 }
@@ -800,13 +809,11 @@ impl Checker<'_> {
                 break;
             }
         }
-        let any_writes: BTreeSet<VariableId> = may_write.iter().flatten().copied().collect();
 
         let facts = Facts { program: &self.program, doors: self.doors, failure_ids: &self.failure_ids };
         let mut messages = Vec::new();
         let mut handling = HandlingChecker { facts: &facts, messages: Vec::new() };
-        let mut loops =
-            LoopChecker { facts: &facts, may_write: &may_write, any_writes: &any_writes, messages: Vec::new() };
+        let mut loops = LoopChecker { facts: &facts, may_write: &may_write, messages: Vec::new() };
         for block in self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level]) {
             walk_block(block, &mut handling);
             walk_block(block, &mut loops);

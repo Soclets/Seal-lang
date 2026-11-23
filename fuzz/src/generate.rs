@@ -983,15 +983,6 @@ impl Generator {
                     }
                 }
             }
-            // Unio refuses anything after an `if` that leaves (Unio D9), so a `break` mid-body is Seal's alone.
-            20 if self.in_loop && nested && self.seal() => {
-                let condition = self.value(Kind::Bool, 1);
-                self.line(&format!("if {condition}"));
-                self.depth += 1;
-                self.line("break");
-                self.depth -= 1;
-                self.line("end");
-            }
             _ => {
                 let kind = if self.seal() {
                     *self.random.pick(&[Kind::Whole, Kind::Float]).unwrap_or(&Kind::Whole)
@@ -1028,6 +1019,15 @@ impl Generator {
         }
         self.in_loop = was_in_loop;
         self.close_scope();
+        // Nothing follows an `if` that can leave (D68, Unio D9), so a `break` comes last in its loop's body.
+        if self.random.chance(1, 6) {
+            let condition = self.value(Kind::Bool, 1);
+            self.line(&format!("if {condition}"));
+            self.depth += 1;
+            self.line("break");
+            self.depth -= 1;
+            self.line("end");
+        }
         self.depth -= 1;
         self.line("end");
     }
@@ -1118,7 +1118,9 @@ impl Generator {
             self.depth += 1;
             self.line("fail too_low");
             self.depth -= 1;
-            self.line("end");
+            // Nothing follows an `if` that can leave (D68, Unio D9): the rest of the body is the way that doesn't.
+            self.line("else");
+            self.depth += 1;
         }
         for _ in 0..self.random.below(4) {
             self.statement();
@@ -1150,6 +1152,10 @@ impl Generator {
         self.close_scope();
         if let Some(returned) = returned {
             self.line(&format!("return {returned}"));
+        }
+        if fails {
+            self.depth -= 1;
+            self.line("end");
         }
         self.depth -= 1;
         self.line("end");
