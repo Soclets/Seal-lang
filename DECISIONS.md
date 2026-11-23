@@ -1783,3 +1783,28 @@ A deliberate difference from Unio, as D1 allows.
 language written in an editor (D7).
 
 **Tankun's words.** "It's Seal, lol", "It's supposed to be shorter, that overlap isn't even that hard".
+
+## D60. A procedure that takes nothing has no brackets, and every call writes `()`
+
+2026-11-23.
+
+**Chosen.** As in Unio (Unio D4): a procedure that takes nothing is written with no brackets after its name, and every
+call to it, by the script or by the host, writes `()`.
+
+```
+proc on_tick
+    timer = timer + 1
+end
+
+on_tick()
+```
+
+**Weighed.**
+- Empty brackets, as `proc on_tick[]`. A list describing nothing; `[ ]` holds or describes values (Unio D165).
+- A call without `()`, as `on_tick`. A call would look like reading a name, hiding that something runs.
+
+**Why this won.** It's Unio's rule, and a host's `on_tick` is one of the commonest things a game script has. Seal's
+building session stopped on it as "not designed yet".
+
+**Tankun's words.** Asked "Should a procedure that takes nothing be written with no brackets, and always called with
+`()`?", the owner chose: "y".

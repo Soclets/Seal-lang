@@ -28,7 +28,10 @@ end
 
 Seal has no contracts, `requires` or `ensures`, for now (D39).
 
-**Not decided:** a procedure with no parameters; parameter words for reading, changing or taking over (Unio D130).
+A procedure that takes nothing has no brackets, and every call writes `()`: `proc on_tick`, called as `on_tick()`
+(D60, Unio D4).
+
+**Not decided:** parameter words for reading, changing or taking over (Unio D130).
 A procedure's failures: chapter 7.
 
 ## Families
