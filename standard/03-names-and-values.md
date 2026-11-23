@@ -42,6 +42,9 @@ capitalised, as `Whole` and `List`, so a capital always means a type (D24).
 
 - **There's no `$`** (D7).
 - **A name can't be a keyword:** `mut if = 3` is refused (D7).
+- **A name can't be made where its spelling already means something,** a top-level name, another name in use, a
+  procedure, a door or a built-in, whether as a name, a parameter, a `for each` name or a `case` value: there's no
+  shadowing (D71).
 - **The host's doors and their narrowings follow the same spelling,** checked when the host opens them (D24).
 
 **Not decided:** letters beyond English; Seal's full list of keywords.

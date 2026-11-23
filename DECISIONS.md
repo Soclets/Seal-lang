@@ -2132,3 +2132,29 @@ purpose. Seal's building session stopped on it as "not designed yet".
 
 **Tankun's words.** Asked "Should a value-giving call standing alone, and a line that only works out a value, be
 refused, with `unused` as the way to drop a value on purpose?", the owner chose: "??".
+
+## D71. One spelling means one thing wherever it's seen: no shadowing
+
+2026-11-23.
+
+**Chosen.** A name can't be made, as a name, a parameter, a `for each` name or a `case` value, where its spelling
+already means something: a top-level name, another name in use, a procedure, a door or a built-in. It's D56's "while a
+name exists, it can't be made again" applied everywhere, with no exceptions.
+
+```
+results = [3, 12, 7]
+proc best[results]        // refused: results is a top-level name
+roll = roll()             // refused: roll is a procedure
+show_msg = "hi"           // refused: show_msg is a door
+```
+
+**Weighed.**
+- Shadowing, as most languages allow, where an inner name hides an outer one of the same spelling. A classic source of
+  "why didn't my change stick?" bugs, and easier to hit in Seal, whose names have no `$` (D7).
+- Unio's split, where a `$` name can share a procedure's spelling (Unio D127). Seal has no `$` to tell them apart.
+
+**Why this won.** A reader never has to work out which of two things a spelling means, and the cost is picking another
+word now and then. Seal's building session asked, after test d038 relied on a parameter sharing a top-level name.
+
+**Tankun's words.** Asked "Should a name be refused wherever its spelling already means something there, with no
+shadowing at all?", the owner chose: "??".
