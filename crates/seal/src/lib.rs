@@ -6,7 +6,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic)]
 
+pub mod check;
 pub mod message;
+pub mod number;
+pub mod signature;
 pub mod syntax;
 
 pub use message::{Message, MessageKind, Messages, Place};

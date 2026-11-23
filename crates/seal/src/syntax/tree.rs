@@ -320,7 +320,7 @@ pub enum ExpressionKind {
     Text(String),
     Name(String),
     /// A capitalised word standing as a value's start, as `Event` in `Event.idle`.
-    TypeName(String),
+    TypeName(Word),
     /// `receiver.name`: a field, a fact, a narrowing or a case, sorted out by checking.
     Member {
         receiver: Box<Expression>,

@@ -1162,7 +1162,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::False) => ExpressionKind::Bool(false),
             TokenKind::Keyword(Keyword::Be) => ExpressionKind::Name("be".to_owned()),
             TokenKind::Name(name) => ExpressionKind::Name(name),
-            TokenKind::TypeName(name) => ExpressionKind::TypeName(name),
+            TokenKind::TypeName(text) => ExpressionKind::TypeName(Word { text, place }),
             TokenKind::Symbol(Symbol::OpenRound) => {
                 let inner = self.full_expression()?;
                 let close = self.expect_symbol(Symbol::CloseRound)?;
