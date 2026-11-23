@@ -28,6 +28,8 @@ examples in Seal's syntax (README).
   are checked after every operation (D18).
 - **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and
   `[all: value]` (D22, Unio D75 to D80, D167 to D169).
+- **A list's `len.max` is part of its type:** moving a list into a limit at least as big, or none, is allowed, and into
+  a smaller one it can fail with `full`, as `big_bag ?? []`; a literal longer than its `len.max` is refused (D73).
 
 ```
 mut bag: List<Text>[len.max: 10] = []
@@ -79,7 +81,8 @@ potions = stock[key: "potion"] ?? 0
 
 - **`Dict<key: Key, value: Value>` holds values looked up by key,** each key once. `Dict` is short for dictionary
   (D32).
-- **Its literal writes the keys as values,** and `[:]` is an empty one (D32).
+- **Its literal writes the keys as values,** and `[:]` is an empty one; the same key twice in one literal is refused
+  (D32, D73).
 - **It's reached with `key:`;** setting a key through a `mut` name replaces its value or adds it (D32).
 - **A missing key is the failure `missing`,** handled with `??` or `otherwise` (D32, Unio D23).
 - **It keeps the order keys were added in,** and is copied as a whole, a Rust `HashMap` at the doors (D15, D32).

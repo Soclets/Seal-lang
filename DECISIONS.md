@@ -2196,3 +2196,33 @@ behaviour trees, menus, skill trees and bags inside bags.
 
 **Tankun's words.** "What for?", then, asked "Should records be allowed inside records, and a type allowed to hold
 itself only where a value can end, through a `one_of` case, a list, a `Dict` or a `Maybe`?", the owner chose: "??".
+
+## D73. A list moves freely into a limit at least as big, and fails with `full` into a smaller one
+
+2026-11-23.
+
+**Chosen.**
+- **A list's `len.max` is part of its type** (Unio D167).
+- **Moving a list into a name whose limit is at least as big, or has none, is allowed:** it always fits.
+- **Moving it into a smaller limit, or from no limit into a limited name, can fail with `full`** (Unio D168), handled
+  with `??` or `otherwise` (Unio D23), as `mut small: List<Text>[len.max: 5] = big_bag ?? []`. Like a `Dict` lookup
+  (D32), it's a failure that isn't a call.
+- **The same key twice in one `Dict` literal is refused,** since one of the two would silently vanish.
+- **A list literal longer than its `len.max` is refused,** the written form of `full`.
+
+```
+mut roomy: List<Text>[len.max: 10] = small_bag
+mut small: List<Text>[len.max: 5] = big_bag ?? []
+```
+
+**Weighed.**
+- Refusing every move between different limits, as the design claude first proposed. Seal already has the failure
+  for "it might not fit".
+
+**Why this won.** A move that always fits needs nothing, and one that might not says what happens when it doesn't,
+with the failure Seal already has for a full list. Tankun pointed out it could be handled.
+
+**Tankun's words.** "?", "Don't you handle num 3?", "Wait, does Seal have full err handling yet?", "correct?", then,
+asked "Should a list move into any limit at least as big freely, and into a smaller limit with `full` as a failure
+handled with `??` or `otherwise`, while a repeated `Dict` key and an over-long list literal are refused?", the owner
+chose: "??".
