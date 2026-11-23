@@ -1,4 +1,4 @@
-# Prompt for Seal's first building milestone
+# Prompt for building Seal
 
 Copy the block below and paste it into a new Claude Code session opened in `/Users/ts/Seal`, with Worktree off, on
 Claude Fable 5.2 at `high` effort. Written by the design session on 2026-11-23, after reading Anthropic's "Prompting
@@ -47,31 +47,41 @@ Read these before writing any code, in this order, and read a file before making
 5. `tests/README.md` and every test in `tests/`: your contract, with the test host's doors defined in the README.
 </sources>
 
-<first_milestone>
-Done when all of these hold:
-1. **The workspace and its first two parts exist** (D47): the `seal` library a host depends on, and the `seal`
-   command, which checks a script and runs it with the test host from `tests/README.md`. The language server and the
-   Unio translator come in a later milestone; set up only their empty packages now.
-2. **Every test in `tests/` passes,** output and exit status byte for byte, run as `tests/README.md` describes. Give the
-   whole build, lint and test run one command, and keep each test's status in `test-status.json`.
+<finish_line>
+Build all of Seal as decided, except what belongs to editors. Done when all of these hold:
+1. **Four of the five parts work** (D47): the `seal` library a host depends on; the `seal` command, which checks a
+   script and runs it with the test host from `tests/README.md`; the fuzzer; and the Unio translator, with the
+   comparison against Ralph (D19). The fifth part, the language server (D7, and D52's marks for pauses), is left for
+   later: set up only its empty package.
+2. **Every decision from D1 to D58 is built,** except the language server's parts, and every test in `tests/` passes,
+   output and exit status byte for byte, run as `tests/README.md` describes. Give the whole build, lint and test run
+   one command, and keep each test's status in `test-status.json`.
 3. **The host's side works as D48 sketches it,** with the names yours to choose: doors as typed Rust closures, doors and
    limits chosen per script, loading and calling returning errors, never crashing, tasks, pausing, resuming and
    cancelling (D49, D51 to D54), and the step budget and memory cap (D14, D53). Show it with a small example host in
    the library's own tests.
-4. **The fuzzer runs from the start** (Building rule 6): random scripts, valid and not, thrown at loading and running.
+4. **The fuzzer runs throughout** (Building rule 6): random scripts, valid and not, thrown at loading and running.
    Nothing it finds may crash the host, hang past the step budget, or exceed the memory cap.
-5. **The benchmarks are in place** (D57, D58): all seven, in every kind, with the six things D58 reports, run against
+5. **The comparison with Ralph runs** (D19): the translator turns the parts Seal shares with Unio into Unio programs,
+   and Seal's results match Ralph's on the tests and on fuzzed scripts, as far as Ralph supports them. A difference is
+   a bug in one of them; tell the design session which, and why.
+6. **D57's performance goals are met,** on all seven benchmarks in every kind, with the six things D58 reports, against
    Luau's interpreter (installed at `/Users/ts/.rokit/bin/luau`; run it with native code generation off) and Node's V8
-   with and without `--jitless` (Node 24 is at `/usr/local/bin/node`). Record the numbers in `bench/RESULTS.md`, and say
-   plainly where Seal meets D57's goals and where it doesn't yet. Meeting every goal isn't required for this milestone;
-   honest numbers are, and the work towards the goals continues in the next.
+   with and without `--jitless` (Node 24 is at `/usr/local/bin/node`), recorded in `bench/RESULTS.md`. Where a goal
+   can't be met after real effort, write down honestly what you tried, what the numbers are and why, and bring it to
+   Tankun through the design session rather than lowering the bar yourself.
+
+Work in checkpoints that each end with something running, such as the tests passing, the host's side done, the
+comparison with Ralph running, or a benchmark goal met. Report each checkpoint to Tankun as it lands, and carry
+straight on to the next.
 
 Several refusals and stops are decided but have no wording yet (see each decision and chapter 10 of the standard).
 Draft each in Unio's message layout (Unio D54), list the drafts in `PROGRESS.md`, and send them to the design session,
 which brings them to Tankun. Build them with the draft wording meanwhile.
 
-When all five hold, report it to Tankun and stop: what comes next is Tankun's call.
-</first_milestone>
+"Finished" means everything decided so far. When all six hold, report it to Tankun and stop: what comes next is
+Tankun's call.
+</finish_line>
 
 <the_central_rule>
 Never design the language in code. Where the decisions and the standard are silent, or mark something **Not decided**,
@@ -92,7 +102,7 @@ become the language without Tankun deciding it.
 
 <keep_going>
 This is long work, and Tankun wants it built straight through. Please avoid stopping while you still owe work the
-milestone asks for. Status notes are welcome, and so are questions on open decisions, but put them in the same message
+finish line asks for. Status notes are welcome, and so are questions on open decisions, but put them in the same message
 as your next tool call and carry on with whatever doesn't depend on the answer. If you notice yourself offering to
 wait or inviting Tankun to redirect you, do the next part instead. Ordinary obstacles, such as a failing build, a
 flaky benchmark, a timeout or a tool error, get diagnosed and worked through, not reported and left.
@@ -126,7 +136,7 @@ compaction you can carry on from them and `git log`.
 - Use 3 CPU cores for builds, tests and benchmarks (Building rule 13), as in `cargo build -j 3`. Run benchmarks with
   nothing else heavy running, and record how busy the machine was (D58).
 - If you hand work to a subagent, its prompt carries IMPLEMENTATION.md's rules, since the hook doesn't reach it.
-- Build what this milestone needs, with no extra features or options.
+- Build what the decisions ask for, with no extra features or options.
 </working_with_others>
 
 <reports>
@@ -139,8 +149,8 @@ it is. Close each report with a short recap that stands on its own: what you fou
 1. Run `pwd`, then read the sources above.
 2. Pin the Rust toolchain in `rust-toolchain.toml` (rustc 1.96.1 is installed), and set up the workspace with the lints
    from Building rule 3 in every package.
-3. Write `PROGRESS.md`: your plan for the milestone in small steps that each end with something running, and where
-   each optimization arrives (Building rule 5).
+3. Write `PROGRESS.md`: your plan in checkpoints and small steps that each end with something running, and where each
+   optimization arrives (Building rule 5).
 4. Write the test runner and the one command, and watch every test fail.
 5. Make the smallest script run end to end, from text to bytecode to the VM to the test host's `show_msg`, then widen
    one test at a time, with the fuzzer and the benchmarks growing alongside.
