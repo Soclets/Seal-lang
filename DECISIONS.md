@@ -1972,7 +1972,44 @@ end
 **Why this won.** Every length says exactly what it counts, in short words that stay accurate, and a script can count
 what players see without ever cutting an emoji in half.
 
+(Changed by D66: graphemes are the default, so a bare `.len` counts them, and text is reached by graphemes.)
+
 **Tankun's words.** "Mf, where's narrowings", "Can we shorten the other two? Not bytes", "Where's codepoints", "The fuck?
 What unit is chars", "`.bytes`, `ucp`, `ugp`? Not bare `cp` for obvious reasons.", "Why no graphemes?", then, asked
 "Should text's length come in all three, `.len.egc`, `.len.ucp` and `.len.bytes`, with each Seal version pinning one
 Unicode version, a bare `.len` refused, and the rest working in code points?", the owner chose: "yea".
+
+## D66. Seal's text defaults to graphemes: `.len`, `[pos:]`, `[offset:]` and `for each` all count what a person sees
+
+2026-11-23.
+
+**Chosen.**
+- **A bare `.len` on text counts extended grapheme clusters,** what a person sees as one character, so `.len` and
+  `.len.egc` are the same.
+- **`[pos:]`, `[offset:]` and `for each` reach a text by graphemes,** each giving one grapheme as a `Text`, so they
+  always agree with `.len`.
+- **`.len.ucp` and `.len.bytes` stay as narrowings** for the rarer need, as `.nearest.even` is beside `.nearest`
+  (Unio D178).
+- **`.split(by:)` and `.split.no_empty(by:)`** are unchanged.
+
+```
+for each i in range[from: 1, to: name.len]
+    show_msg(name[pos: i])          // never half an emoji
+end
+```
+
+This changes D65, which refused a bare `.len` and reached text by code points.
+
+**Weighed.**
+- D65's way, every length naming its unit and text reached by code points: right for Unio, the language for learning
+  things properly, but a surprise to a scripter who sees 👍🏽 counted as 2.
+- Graphemes for `.len` alone. `.len` and `[pos:]` would count different things, and a loop over a name would cut an
+  emoji in half.
+
+**Why this won.** Seal is meant to be easier to write, so it counts what people see, as Swift's `String.count` does,
+and everything about text agrees with that count. The cost is speed: reaching the 500th grapheme means walking the
+text, negligible for the short texts games use, and the VM can remember the boundaries it has found.
+
+**Tankun's words.** "Actually, wait. Since it's Seal, and not Unio (learn master). Should we default to egc?", then,
+asked "Should Seal's text default to graphemes for `.len`, `[pos:]`, `[offset:]` and `for each`, with `.len.ucp` and
+`.len.bytes` as narrowings?", the owner chose: "yea".

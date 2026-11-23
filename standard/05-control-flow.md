@@ -56,6 +56,6 @@ As in Unio (D22, Unio D171 to D174):
 
 `range` is in chapter 8. Unio's standard, chapter 5, has the rules in full.
 
-`for each` goes through a text by code points (D65).
+`for each` goes through a text by graphemes, what a person sees as one character (D65, D66).
 
 **Not decided:** leaving an outer loop; other loops.
