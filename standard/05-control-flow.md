@@ -18,8 +18,8 @@ end
 
 ## Comparisons and logic
 
-`==`, `!=`, `<`, `>`, `at_least` and `at_most` compare, and `and`, `or` and `not` combine, as in Unio (D22, Unio D17,
-D34). Comparisons on `Float`s are exact (Unio D184).
+`==`, `!=`, `<`, `>`, `at_least` and `at_most` compare, and `and`, `or` and `not` combine (D22, Unio D17, D34). Unio
+now writes `eq` and `not_eq` (Unio D190); Seal keeps `==` and `!=` (D59). Comparisons on `Float`s are exact (Unio D184).
 
 Unio's standard, chapter 5, has the rules in full.
 
