@@ -1628,3 +1628,23 @@ script that went wrong never keeps running on broken state.
 
 **Tankun's words.** Asked "Should the host be able to cancel a paused task, ending it at its pause, while a failed
 check or limit in any task stops the whole script?", the owner chose: "yea".
+
+## D55. No units: hosts say units through their doors' labels
+
+2026-11-23.
+
+**Chosen.** Seal has no units. A host says what unit a door takes through its label, as in `wait(seconds: 2)` or
+`move(guard, by_meters: 3)`, so every call says its unit and the language server shows it (D7). Units can come later
+if scripts keep tripping over them.
+
+**Weighed.**
+- Units as Cyborg has them (Cyborg D255), on types, with conversions and families, so `wait(2 secs)` is a `Duration`
+  and `wait(2)` is refused. They also catch adding seconds to meters, and an unlabelled value carried around before it
+  reaches a door; far too heavy for an easy scripting language.
+
+**Why this won.** Labels already give most of the benefit for no new concept, and a door's labels are the host's to
+choose (D11).
+
+**Tankun's words.** "What the fuck is `seconds: 2`, isn't it non-rich `wait(2 secs)`?" (quoted in D51), "Cyborg units?
+💀", then, asked "Should Seal leave units out, with hosts saying units through their doors' labels?", the owner chose:
+"yea. Shouldn't it be `secs:`?"

@@ -21,6 +21,7 @@ calls Seal is the building session's to propose.
 - **A host can give its doors narrowings,** declared with the door, working exactly like Seal's own; an unknown one is
   refused at load time, with the door's real narrowings listed (D13, Unio D102).
 - **Values cross the doors as copies,** and the host's own objects arrive as IDs (D15).
+- **Seal has no units;** a door says its unit through its labels, as in `wait(seconds: 2)` (D55).
 
 - **A door can fail,** with failures the host declares, handled like any other (D44).
 
