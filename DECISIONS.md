@@ -2042,3 +2042,41 @@ host waiting for it. It belonged with D4; Seal's building session found the gap.
 
 **Tankun's words.** "?", "?", "Oopsies. I meant yes", after being asked "Should those three be refused at the top
 level?".
+
+## D68. Unio's `return` rules and its D9: every way gives a value, nothing follows a leaving line or an `if` that can leave
+
+2026-11-23.
+
+**Chosen.** Seal takes, in its own syntax:
+- **Unio's D57:** if any `return` in a procedure gives a value, every way through must end in one; nothing may follow
+  `return`, `break` or `fail` in the same block; and a bare `return` as a procedure's last line is refused.
+- **Unio's D149:** a `while` counts as able to end, whatever its condition, so a procedure looping with `while true`
+  still needs a `return` after the loop.
+- **Unio's D9:** when any way through an `if` leaves, by `return`, `break` or a failure, nothing may follow its `end` in
+  the same block; code that runs afterwards goes in the ways that don't leave.
+
+```
+proc on_hit[amount]
+    if not alive
+        return
+    else
+        hp = hp - amount
+    end
+end
+```
+
+Since Seal works out a procedure's result (D6), "a procedure that gives a value" means one with any `return` that gives
+a value, written `-> Type` or not.
+
+**Weighed.**
+- Guard clauses, as in Lua, Roblox scripts and most languages: `if not alive` … `return` … `end`, then the rest. A
+  habit Roblox scripters bring, and the body sits one level shallower; but a guard clause reads as two things in a row
+  when it's one or the other.
+- Leaving D9 out of Seal, as the design claude first did, judging it too strict for a quick scripting language.
+
+**Why this won.** Tankun has chosen D9's rule each time it came up: in Plainly v1 (its D50), in Cyborg (its D430) and in
+Unio, and its reasons, paths that read as alternatives at no cost at run time, don't depend on who the language is
+for. `elif` keeps long chains flat.
+
+**Tankun's words.** "Hm, why no `if` rule?", then, asked "Should Seal take Unio's `return` rules (D57, D149) and its D9,
+so that nothing follows an `if` that can leave?", the owner chose: "incl".
