@@ -28,7 +28,27 @@ end
 Seal has no contracts, `requires` or `ensures`, for now (D39).
 
 **Not decided:** a procedure with no parameters; parameter words for reading, changing or taking over (Unio D130);
-listing the failures a procedure can give; narrowings on a script's own procedures (D13); families.
+listing the failures a procedure can give.
+
+## Families
+
+A script gives its procedures narrowings in a family, a word and its kinds declared together (D43, Unio D41):
+
+```
+fam.proc spawn
+    proc spawn[kind]
+        ...
+    end
+    proc spawn.boss[kind]
+        ...
+    end
+end
+```
+
+where each `...` stands for that procedure's body.
+
+- **Each member is the word itself, or reads as "a Y kind of X"** for its name `X.Y`; anything else is refused (D43).
+- **`fam.handler`,** for a failure's handlers, comes once Seal has handlers (D43).
 
 ## Worked-out types
 

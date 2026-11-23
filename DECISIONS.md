@@ -1216,3 +1216,42 @@ as the very piece of the call it stands for. Tankun asked for the brackets.
 in `defaults` corect?", then, asked "Should `labels` and `defaults` put their lists in `[ ]`, with `defaults` written as
 the call would write it, `[times: 1]`, after `labels`, for labelled parameters only, with plain values?", the owner
 chose: "yea".
+
+## D43. Unio's families: `fam.proc` now, `fam.handler` once Seal has handlers
+
+2026-11-23.
+
+**Chosen.**
+- **Seal takes Unio's families** (Unio D41), in Seal's syntax: a word and its kinds declared together in a `fam.kind`
+  block, holding only that kind, with no `:` and a plain `end` (D9, D20).
+- **`fam.proc` now,** so a script can give its own procedures narrowings. Each member is the word itself or reads as
+  "a Y kind of X" for its name `X.Y`; anything else is refused.
+- **`fam.handler` comes with handlers,** once Seal decides how a procedure lists the failures it can give (Unio D39,
+  D42), since a handler covers a known set of failures.
+
+```
+fam.proc spawn
+    proc spawn[kind]
+        ...
+    end
+    proc spawn.boss[kind]
+        ...
+    end
+end
+
+spawn.boss("dragon")
+```
+
+where each `...` stands for that procedure's body.
+
+**Weighed.**
+- Narrowings declared anywhere, as `proc spawn.boss` beside `proc spawn` with no block, as the design claude first
+  proposed. Unio's D41 weighed and refused exactly that: variants scatter, and families stop being a visible thing.
+  "Short scripts" doesn't change it; a script can grow past a screen.
+- `fam.proc` alone, without handlers ever. `fam` is one idea in Unio, with two kinds.
+
+**Why this won.** Every variant of a word sits in one place, checked as a kind of it, the same in Seal as in Unio, and
+the same for a host's doors and their narrowings, declared together (D13).
+
+**Tankun's words.** "Why no `fam`?", "You do know `fam` houses handlers too, right?", then, asked "Should Seal take
+Unio's families, `fam.proc` now and `fam.handler` once Seal has handlers?", the owner chose: "yea".
