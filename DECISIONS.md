@@ -633,3 +633,29 @@ A later Unio decision changing one of these is brought to Tankun for Seal too; i
 
 **Tankun's words.** Asked "Should Seal adopt these seven groups from Unio, with Seal's syntax changes applied?", the
 owner chose: "Yea. How the fuck does Luau shorten Workspace, should we have that?"
+
+## D23. No host-given values: a script gets what it needs from the host through doors
+
+2026-11-23.
+
+**Chosen.** A host gives a script doors only (D11), not ready-made named values. A script that needs a host's object or
+value gets it through a door, once, at its top level:
+
+```
+ws = get_service("Workspace")
+level = level_name()
+```
+
+The name it makes is read-only unless made with `mut` (D2), and an object arrives as an ID (D15).
+
+**Weighed.**
+- Named, read-only values from the host, as Roblox gives every script `workspace`, `game` and `script`, which the
+  design claude first proposed. They save one line per script, for one more concept with rules of its own: read-only,
+  clashes with the script's names, and how the language server shows them.
+
+**Why this won.** A door already does it in one line, as Roblox's own `game:GetService("Workspace")` does. If many
+hosts come to want ready-made names, they can be added later without breaking anything.
+
+**Tankun's words.** "That's the same as doing `local ws = game:GetService("Workspace")`, right?", then, asked "Should
+Seal leave out host-given values, with doors covering them?", the owner chose: "yea. What about Seal naming
+conventions? `GetService` or `get_service`".
