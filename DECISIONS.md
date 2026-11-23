@@ -1573,3 +1573,33 @@ script's code, the same way Seal treats types and failures.
 **Tankun's words.** Asked "Should pausing be worked out, with hosts declaring which doors can pause, Seal finding which
 procedures can from their bodies, and the language server marking each place a pause can happen?", the owner chose:
 "yea".
+
+## D53. The step budget counts each run between pauses; the memory cap covers the whole script
+
+2026-11-23.
+
+**Chosen.**
+- **The step budget (D14) counts each run between pauses:** from a call or a resume to the next pause or the end. Each
+  resume starts a fresh budget.
+- **So a loop that pauses every pass can run forever,** as a patrol, a spawner or a day-night cycle wants, while a loop
+  that never pauses is still stopped.
+- **The memory cap covers the whole script,** across all its tasks (D51), since memory is held, not spent.
+
+```
+proc patrol[guard]
+    while true
+        walk_to(guard, x: 10)
+        wait(seconds: 2)          // each pass starts a fresh step budget
+    end
+end
+```
+
+**Weighed.**
+- A budget for a whole call, across its pauses. A patrol would eventually be stopped, though it never hogs the host.
+- A memory cap per task. A script's tasks share its names and values (D51), so its memory is one whole.
+
+**Why this won.** The step budget exists to stop a script freezing its host (D14), and a script that pauses hands
+control back each time, so only a stretch with no pause can freeze anything.
+
+**Tankun's words.** Asked "Should the step budget count each run between pauses, with a fresh budget at every resume,
+while the memory cap covers the whole script?", the owner chose: "yea".

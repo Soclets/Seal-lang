@@ -40,8 +40,10 @@ calls Seal is the building session's to propose.
 ## Limits
 
 Each script gets a step budget and a memory cap, set by the host (D14):
-- **A call into the script that runs past its step budget stops there,** at the same place on every machine.
-- **A script that would hold more than its cap stops** the same way.
+- **A call into the script that runs past its step budget stops there,** at the same place on every machine. The
+  budget counts each run between pauses, so each resume starts a fresh one (D53).
+- **A script that would hold more than its cap stops** the same way. The cap covers the whole script, all its tasks
+  together (D53).
 - **The host gets control back, told why,** and decides what happens next. A stopped script never crashes the host.
 
 **Not decided:** what a step is, the limits' defaults, and how the host is told; the building session proposes them
