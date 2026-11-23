@@ -33,8 +33,8 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
   `seal-fuzzer --ralph`.
 - [x] **C5. Benchmarks** (`bench/`): D57's seven and binary-trees, which D72 let join, in D58's kinds, against Luau
   and Node; `bench/RESULTS.md`.
-- [ ] **C6. Performance work.** Every goal is met except one: the Normal n-body, written with D62's direct changes,
-  is slower than Luau's. See "Benchmarks".
+- [x] **C6. Performance work.** Every goal of D57 is met, Normal against Normal. See "Benchmarks" and
+  `bench/RESULTS.md`.
 
 ## Decisions built since D58
 
@@ -90,8 +90,12 @@ The VM, and its optimizations (Building rule 5):
 - **In-place change.** `x = x & y`, `list.add`, `record.field = v`, `dict[key: k] = v`, and D62's deeper changes change
   the value in place when it has one holder.
 - **Superinstructions.** Compare-and-jump, arithmetic with a constant, `for each` over a `range` as one instruction, a
-  `Dict` read-then-set as one lookup, joining text in one step, and a field of a list's record read or changed in one
-  step (`bodies[pos: i].vx`).
+  `Dict` read-then-set as one lookup, joining text in one step, a field of a list's record read or changed in one
+  step (`bodies[pos: i].vx`), and two or three float operations in one step, each checked as on its own.
+- **A list item's fields kept in registers** through a run of plain statements (ones that only work out numbers and
+  change such fields): read into registers at the first use, changed there, written back once when the run ends.
+  Two places that could be the same item are never both kept with a change waiting, unless a range says they can't
+  be the same, as `for each j in range[from: i + 1, …]` does.
 - **A `mut` record of plain numbers kept in registers**, written back in one step.
 - **Small procedures written out in place** of a call to them.
 - **The host's side:** a script's compiled form is kept by its doors and shared by every script loaded from the same
@@ -107,16 +111,18 @@ The VM, and its optimizations (Building rule 5):
 
 `bench/RESULTS.md` has every number. In short, judged Normal against Normal (D58):
 
-- **Faster than Luau's interpreter:** met on `fib`, spectral-norm, fannkuch, word count, text building, binary-trees
-  and the patrolling scripts (loading, resuming, footprint). **Not met on n-body** as now written.
-- **n-body, honestly.** Until D62, a body's fields could only be changed by copying the body out, changing it and
-  putting it back, and that program beats Luau (it's kept as `nbody.ceil.seal`, the Ceil.source program). With D62
-  the plain way to write it is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the Normal program, and it's
-  about 1.5 times Luau's time. What was tried: reading and changing a field of a list's record in one instruction
-  each, which took it from 167 ms to 106 ms against Luau's 70 ms. What would close the gap, not built: keeping a list
-  item's fields in registers across a loop's body (which needs knowing that `i` and `j` are different items, as
-  `for each j in range[from: i + 1, …]` says), and joining two float operations into one instruction. Which of the
-  two programs counts as Normal is a question for the design session.
+- **Faster than Luau's interpreter:** met on all eight: `fib`, n-body, spectral-norm, fannkuch, word count, text
+  building, binary-trees, and the patrolling scripts (loading, resuming, footprint).
+- **n-body, and what D62 changed.** Until D62, a body's fields could only be changed by copying the body out, changing
+  it and putting it back. With D62 the plain way is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the
+  Normal program, and the copy-out one is kept as `nbody.ceil.seal`, the Ceil.source program. Written the plain way it
+  first took 167 ms against Luau's 70 ms. Three things brought it under Luau's time, each general, none knowing the
+  benchmark: a field of a list's record read or changed in one instruction (106 ms); a list item's fields kept in
+  registers through a run of plain statements, read once and written back once (74 ms); and two or three float
+  operations joined into one instruction, each still checked as on its own (67 ms). The margin over Luau is small,
+  about 4%.
+- **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
+  must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 9 ms.
 - **Footprint:** a paused patrolling script holds 512 bytes of its cap, about 1.8 KB of real memory.
@@ -151,7 +157,8 @@ New questions the new decisions raised, each built as a stop or noted beside wha
 - **D72.** Passing a value of a type that holds itself between a host and a script (stops as not built yet): the
   host's side needs a way to name a type inside itself, and a deep value mustn't overrun the host's stack.
 - **D73.** Built wherever a list goes where a type is wanted: a name, an argument, a field, a `return`.
-- **D58.** Which n-body is the Normal one (see "Benchmarks").
+- **D58.** Is n-body's Normal program rightly the one written with D62's direct changes, with the copy-out one as
+  Ceil.source? (Built that way; both beat Luau.)
 
 Disagreements reported: chapter 9's "Not decided: labels and defaults on doors" against D51, D55 and tests/README.md
 (built: labels on doors, no defaults).
@@ -204,7 +211,9 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 
 ## Not built yet
 
-- Working out a type from a later line (D5) where a `.add`, a `??`, a change or a `match` needs it before then.
+- Working out a type from a later line (D5) in one spot: a change at a place, `name[pos: n] = v`, on a name whose
+  type isn't known by then, since a place doesn't say whether it's a list or an array. (A `??`, a `match`, `.add`,
+  `.remove`, and a change by field or by key now say what the type must be, and it's worked out there.)
 - More than 65,000 top-level names used by procedures, registers in one procedure, or constants.
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).

@@ -320,9 +320,12 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         Message::refused(place, "this `///` has no declaration after it")
             .with_why("a `///` comment describes the declaration on the line after it.")
     };
+    // One line's characters, in room that every line reuses.
+    let mut characters: Vec<char> = Vec::new();
     for (index, text) in physical.iter().enumerate() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
-        let mut characters: Vec<char> = text.chars().collect();
+        characters.clear();
+        characters.extend(text.chars());
         let leading = characters.iter().take_while(|&&character| character == ' ').count();
         if let Some((depth, _)) = comment_block {
             // Everything inside a block comment is ignored; a plain `end` at its own depth closes it.
@@ -483,7 +486,8 @@ fn column_of(index: usize) -> u32 {
 
 impl Lexer {
     fn finish_line(&mut self, physical: &[&str]) -> Result<(), Message> {
-        let tokens = std::mem::take(&mut self.current);
+        // The next line's tokens get room for a usual line at once, instead of growing into it.
+        let tokens = std::mem::replace(&mut self.current, Vec::with_capacity(12));
         check_spacing(&tokens, &std::mem::take(&mut self.mistakes), physical)?;
         self.type_depth = 0;
         self.lines.push(Line { indentation: self.current_indentation, tokens, place: self.current_place });

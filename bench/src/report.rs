@@ -176,6 +176,11 @@ fn same_answer(left: &str, right: &str) -> bool {
     }
 }
 
+/// A share of another time, as a percentage: with a decimal place when it's small.
+fn share(part: f64) -> String {
+    if part < 0.1 { format!("{:.1}%", part * 100.0) } else { format!("{:.0}%", part * 100.0) }
+}
+
 fn seconds(value: f64) -> String {
     if value >= 0.001 {
         format!("{:.2} ms", value * 1000.0)
@@ -188,7 +193,9 @@ fn seconds(value: f64) -> String {
 
 #[allow(clippy::cast_precision_loss)] // sizes shown to one decimal place
 fn bytes(value: u64) -> String {
-    if value >= 1 << 20 {
+    if value >= 1 << 30 {
+        format!("{:.0} GB", value as f64 / f64::from(1 << 30))
+    } else if value >= 1 << 20 {
         format!("{:.1} MB", value as f64 / f64::from(1 << 20))
     } else if value >= 1 << 10 {
         format!("{:.1} KB", value as f64 / f64::from(1 << 10))
@@ -409,14 +416,17 @@ impl Report {
             self.out,
             "Tests: loading, pausing, footprint. Each script is loaded from its own copy of the same text and \
              paused in its patrol; then every one is resumed {} times, and then a procedure of each is called {} \
-             times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes.\n",
+             times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes. Loading is timed two \
+             ways: every script from a text of its own, so that nothing compiled is reused, and every script from the \
+             same text, where Seal reuses what it compiled, and Luau and Node compile once and make each script from \
+             that.\n",
             PATROL.1, PATROL.1, PATROL_PURPOSE.1, self.runs
         );
         let _ = writeln!(
             self.out,
-            "| Engine | Kind | Load, each script | Resume, each | Call, each | Memory, each script | Peak memory | Notes |"
+            "| Engine | Kind | Load, each from its own text | Load, each from the same text | Resume, each | Call, each | Memory, each script | Peak memory | Notes |"
         );
-        let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|");
+        let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|---|");
         let script = self.root.join("bench/programs/patrol.normal.seal");
         for (kind, (count, rounds)) in [("Purpose", PATROL_PURPOSE), ("Normal", PATROL), ("Ceil", PATROL)] {
             let wanted = (count + 2 * count * rounds).to_string();
@@ -467,7 +477,7 @@ impl Report {
                 if !same_answer(&result, &wanted) {
                     let _ = writeln!(
                         self.out,
-                        "| {engine} | {label} | **wrong answer**: `{result}` where `{wanted}` is right | | | | | |"
+                        "| {engine} | {label} | **wrong answer**: `{result}` where `{wanted}` is right | | | | | | |"
                     );
                     self.problems.push(format!("patrol {label} on {engine} gave a wrong answer"));
                     continue;
@@ -487,10 +497,19 @@ impl Report {
                 };
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a count of bytes
                 let memory = numbers.get("memory_each").map_or(0, |values| mean(values) as u64);
+                // Seal times loading from a text of its own apart, and reuses what it compiled for the same text. The
+                // others compile each time unless told otherwise, and time the compiled-once way apart.
+                let (own_text, same_text) =
+                    if engine == "Seal" { ("load_fresh_each", "load_each") } else { ("load_each", "load_shared_each") };
                 if label == "Normal" {
-                    for name in ["load_each", "resume_each", "call_each"] {
+                    for (name, kept_as) in [
+                        (own_text, "load_own_text"),
+                        (same_text, "load_same_text"),
+                        ("resume_each", "resume_each"),
+                        ("call_each", "call_each"),
+                    ] {
                         if let Some(values) = numbers.get(name) {
-                            self.normal.insert((format!("patrol.{name}"), engine.clone()), mean(values));
+                            self.normal.insert((format!("patrol.{kept_as}"), engine.clone()), mean(values));
                         }
                     }
                     #[allow(clippy::cast_precision_loss)] // a count of bytes
@@ -498,8 +517,9 @@ impl Report {
                 }
                 let _ = writeln!(
                     self.out,
-                    "| {engine} | {label} | {} | {} | {} | {} | {} | {memory_note}{}{stand_in} |",
-                    cell("load_each"),
+                    "| {engine} | {label} | {} | {} | {} | {} | {} | {} | {memory_note}{}{stand_in} |",
+                    cell(own_text),
+                    cell(same_text),
                     cell("resume_each"),
                     cell("call_each"),
                     bytes(memory),
@@ -556,9 +576,9 @@ impl Report {
         let _ = writeln!(out, "|---|---|---|---|---|");
         let verdict = |seal: Option<f64>, other: Option<f64>, limit: f64| match (seal, other) {
             (Some(seal), Some(other)) if seal < other * limit => {
-                format!("**met**: Seal takes {:.0}% of its time", seal / other * 100.0)
+                format!("**met**: Seal takes {} of its time", share(seal / other))
             }
-            (Some(seal), Some(other)) => format!("**not met**: Seal takes {:.0}% of its time", seal / other * 100.0),
+            (Some(seal), Some(other)) => format!("**not met**: Seal takes {} of its time", share(seal / other)),
             _ => "not measured".to_owned(),
         };
         let shown = |value: Option<f64>| value.map_or_else(|| "?".to_owned(), seconds);
@@ -573,13 +593,34 @@ impl Report {
                 verdict(seal, luau, 1.0)
             );
         }
-        for part in ["load_each", "resume_each"] {
+        // The patrolling scripts as one run: every script loaded from the same text, then resumed. Luau is taken
+        // at its better way of loading the same text, compiled once.
+        #[allow(clippy::cast_precision_loss)] // counts of scripts and rounds
+        let whole_run = |engine: &str| {
+            let load = time("patrol.load_same_text", engine)?;
+            let resume = time("patrol.resume_each", engine)?;
+            Some(load * PATROL.0 as f64 + resume * (PATROL.0 * PATROL.1) as f64)
+        };
+        let (seal, luau) = (whole_run("Seal"), whole_run("Luau (interpreter)"));
+        let _ = writeln!(
+            out,
+            "| 1. Faster than Luau's interpreter | patrolling scripts, the whole run: loading {} from one text, resuming each {} times | {} | {} | {} |",
+            PATROL.0,
+            PATROL.1,
+            shown(seal),
+            shown(luau),
+            verdict(seal, luau, 1.0)
+        );
+        for (part, what) in [
+            ("resume_each", "resuming each"),
+            ("load_same_text", "loading each from the same text"),
+            ("load_own_text", "loading each from a text of its own"),
+        ] {
             let name = format!("patrol.{part}");
             let (seal, luau) = (time(&name, "Seal"), time(&name, "Luau (interpreter)"));
             let _ = writeln!(
                 out,
-                "| 1. Faster than Luau's interpreter | patrolling scripts, {} | {} | {} | {} |",
-                if part == "load_each" { "loading each" } else { "resuming each" },
+                "| 1. Faster than Luau's interpreter | patrolling scripts, {what} | {} | {} | {} |",
                 shown(seal),
                 shown(luau),
                 verdict(seal, luau, 1.0)
@@ -624,6 +665,19 @@ impl Report {
         }
         out
     }
+}
+
+/// Luau's version: its command prints none, so it's read from where the installed program lives.
+fn luau_version() -> String {
+    std::fs::canonicalize(LUAU)
+        .ok()
+        .and_then(|path| {
+            path.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).find(|part| {
+                part.split('.').count() == 3
+                    && part.chars().all(|character| character.is_ascii_digit() || character == '.')
+            })
+        })
+        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn version(program: &str, flag: &str) -> String {
@@ -723,7 +777,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     let _ = writeln!(
         text,
         "- **Luau:** `{}`, its interpreter, with native code generation off (the default of the `luau` command).",
-        version(LUAU, "--version")
+        luau_version()
     );
     let _ = writeln!(
         text,

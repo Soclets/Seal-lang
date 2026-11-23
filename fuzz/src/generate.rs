@@ -687,14 +687,16 @@ impl Generator {
         let other = self.read_name(Kind::Spots).filter(|other| *other != spots);
         let (outer, inner) = (self.fresh(), self.fresh());
         // The inner loop starts past the outer one's place, or anywhere: the first can never reach the same item.
-        let from = match self.random.below(3) {
-            0 => format!("{outer} + 1"),
-            1 => "1".to_owned(),
-            _ => outer.clone(),
+        // A range that starts past its end is a failed check, so the one starting past the outer place stops
+        // `before:` one past the list's length, which is empty when there's nothing left.
+        let range = match self.random.below(3) {
+            0 => format!("range[from: {outer} + 1, before: {spots}.len + 1]"),
+            1 => format!("range[from: 1, to: {spots}.len]"),
+            _ => format!("range[from: {outer}, to: {spots}.len]"),
         };
         self.line(&format!("for each {outer} in range[from: 1, to: {spots}.len]"));
         self.depth += 1;
-        self.line(&format!("for each {inner} in range[from: {from}, to: {spots}.len]"));
+        self.line(&format!("for each {inner} in {range}"));
         self.depth += 1;
         let place = |generator: &mut Generator| match generator.random.below(8) {
             0..=2 => format!("pos: {outer}"),

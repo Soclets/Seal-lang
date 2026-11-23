@@ -840,6 +840,12 @@ impl Checker<'_> {
             };
             return Expression { kind: ExpressionKind::Handle { call: Box::new(checked), fallback }, type_id, place };
         }
+        // trace: D5. A value that isn't a call can only be a `Maybe` here, so that's what its type is worked out as.
+        if matches!(self.program.types.get(checked.type_id), Type::Variable(_)) {
+            let inner = self.program.types.fresh();
+            let maybe = self.program.types.maybe(inner);
+            self.program.types.unify(checked.type_id, maybe);
+        }
         match self.program.types.get(checked.type_id).clone() {
             Type::Maybe(inner) => {
                 if let syntax::Fallback::Value(value) = fallback {

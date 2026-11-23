@@ -18,9 +18,22 @@
     `;
     let walks = 0;
     const walkTo = (guard, x) => { walks = walks + 1; };
+    // Loading from the same text, compiled once: each script is a fresh pair of functions made by the one function.
+    let started = performance.now();
+    const make = new Function("walkTo", source);
+    let shared = [];
+    for (let guard = 0; guard < count; guard++) {
+        const [patrol] = make(walkTo);
+        const task = patrol(guard);
+        task.next();
+        shared.push(task);
+    }
+    const loadedShared = (performance.now() - started) / 1000;
+    shared = null;
+    walks = 0;
     if (globalThis.gc) { globalThis.gc(); }
     const before = process.memoryUsage().heapUsed;
-    let started = performance.now();
+    started = performance.now();
     const tasks = [], steps = [];
     for (let guard = 0; guard < count; guard++) {
         const [patrol, step] = new Function("walkTo", source)(walkTo);
@@ -48,6 +61,7 @@
     const called = (performance.now() - started) / 1000;
     console.log("result " + walks);
     console.log("load_each " + (loaded / count).toFixed(9));
+    console.log("load_shared_each " + (loadedShared / count).toFixed(9));
     console.log("resume_each " + (resumed / (count * rounds)).toFixed(9));
     console.log("call_each " + (called / (count * rounds)).toFixed(9));
     console.log("memory_each " + Math.round((after - before) / count));

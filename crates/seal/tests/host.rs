@@ -315,3 +315,49 @@ fn d49_scripts_are_separate_and_move_between_threads() -> Result<(), Box<dyn std
     assert_eq!(first.call::<String>("hp_left", (String::new(),))?, Called::Finished("20".to_owned()));
     Ok(())
 }
+
+// The compiler's shortcuts for a list's items and for float maths give what the plain way gives.
+#[test]
+fn shortcuts_for_list_items_give_the_plain_answers() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "record Ball
+    x: Float
+    v: Float
+    hits: Whole
+end
+
+proc settle[count: Whole] -> Float
+    mut balls = [Ball[x: 0.0, v: 1.5, hits: 0], Ball[x: 4.0, v: -0.5, hits: 0], Ball[x: 9.0, v: 0.25, hits: 0]]
+    kept = balls
+    for each unused round in range[from: 1, to: count]
+        for each i in range[from: 1, to: balls.len]
+            for each j in range[from: i + 1, before: balls.len + 1]
+                gap = balls[pos: j].x - balls[pos: i].x
+                balls[pos: i].v = balls[pos: i].v + gap * 0.125 - balls[pos: j].v * 0.5
+                balls[pos: j].v = balls[pos: j].v - gap * 0.125 * balls[pos: i].v
+                balls[pos: j].hits = balls[pos: j].hits + balls[pos: i].hits + 1
+                balls[pos: 1].hits = balls[offset: 0].hits + 1
+            end
+            balls[pos: i].x = balls[pos: i].x + balls[pos: i].v * 0.5
+        end
+    end
+    mut total = kept[pos: 1].v
+    for each ball in balls
+        total = total + ball.x * 0.5 + ball.v + be.Float(ball.hits)
+    end
+    return total
+end
+";
+    let doors = Doors::new();
+    let limits = Limits { steps: 10_000_000, memory: 1 << 20 };
+    let mut usual = Script::load("balls.seal", source, &doors, limits)?;
+    let mut plain = Script::load_plainly("balls.seal", source, &doors, limits)?;
+    for count in [1i64, 2, 3, 5, 12] {
+        // A run that stops, as on a number too big for a `Float`, must stop the same way both ways.
+        let with_shortcuts = usual.call::<f64>("settle", (count,)).map_err(|error| error.to_string());
+        let plainly = plain.call::<f64>("settle", (count,)).map_err(|error| error.to_string());
+        assert_eq!(with_shortcuts, plainly, "after {count} rounds");
+        assert!(with_shortcuts.is_ok(), "after {count} rounds: {with_shortcuts:?}");
+    }
+    assert_eq!(usual.memory_in_use(), plain.memory_in_use());
+    Ok(())
+}

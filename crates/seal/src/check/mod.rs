@@ -1520,6 +1520,8 @@ impl<'a> Checker<'a> {
             (way.part, described, changeable, Some(way))
         };
         let name = described.as_str();
+        let open = self.variable_type(variable);
+        self.work_out_from_step(open, &step);
         let variable_type = self.program.types.resolve(self.variable_type(variable));
         let kind = self.program.types.get(variable_type).clone();
         let statement = match step {
@@ -1624,6 +1626,60 @@ impl<'a> Checker<'a> {
         StatementKind::Inside { path: way, change: Box::new(Statement { kind: change, place }) }
     }
 
+    /// trace: D5. With a value's type not worked out yet, a step into it can say what it must be: a field only one
+    /// record has makes it that record, and a `key:` makes it a `Dict`. A place, `pos:` or `offset:`, doesn't say
+    /// whether it's a list or an array, so that's left alone.
+    fn work_out_from_step(&mut self, type_id: TypeId, step: &Step) {
+        if !matches!(self.program.types.get(type_id), Type::Variable(_)) {
+            return;
+        }
+        match step {
+            Step::Field(field) => {
+                let mut with_field = (0u32..)
+                    .zip(&self.program.types.records)
+                    .filter(|(_, record)| record.fields.iter().any(|(known, _)| *known == field.text))
+                    .map(|(index, _)| index);
+                if let (Some(only), None) = (with_field.next(), with_field.next()) {
+                    let record = self.program.types.intern(Type::Record(only));
+                    self.program.types.unify(type_id, record);
+                }
+            }
+            Step::Reach(entries) => {
+                if let [entry] = entries
+                    && entry.label.as_ref().is_some_and(|label| label.text == "key")
+                {
+                    let (key, value) = (self.program.types.fresh(), self.program.types.fresh());
+                    let dict = self.program.types.dict(key, value);
+                    self.program.types.unify(type_id, dict);
+                }
+            }
+        }
+    }
+
+    /// trace: D5. With a `match`'s value not worked out yet, its cases say what it must be: `some` and `none` make
+    /// it a `Maybe`, and cases only one `one_of` has make it that `one_of`.
+    fn work_out_from_cases(&mut self, type_id: TypeId, cases: &[syntax::MatchCase]) {
+        if !matches!(self.program.types.get(type_id), Type::Variable(_)) || cases.is_empty() {
+            return;
+        }
+        if cases.iter().all(|case| case.name.text == "some" || case.name.text == "none") {
+            let inner = self.program.types.fresh();
+            let maybe = self.program.types.maybe(inner);
+            self.program.types.unify(type_id, maybe);
+            return;
+        }
+        let mut with_cases = (0u32..)
+            .zip(&self.program.types.one_ofs)
+            .filter(|(_, one_of)| {
+                cases.iter().all(|case| one_of.cases.iter().any(|known| known.name == case.name.text))
+            })
+            .map(|(index, _)| index);
+        if let (Some(only), None) = (with_cases.next(), with_cases.next()) {
+            let one_of = self.program.types.intern(Type::OneOf(only));
+            self.program.types.unify(type_id, one_of);
+        }
+    }
+
     /// A hidden name, for a value worked out ahead of a change or for the part being changed (D62).
     fn hidden(&mut self, type_id: TypeId, place: Place, mutable: bool) -> VariableId {
         self.new_variable(Variable {
@@ -1702,6 +1758,8 @@ impl<'a> Checker<'a> {
         let mut way = Inside { lets: Vec::new(), root, steps: Vec::new(), types: Vec::new(), part: root };
         let mut reached = self.program.types.resolve(self.variable_type(root));
         for (step, place) in written {
+            self.work_out_from_step(reached, &step);
+            reached = self.program.types.resolve(reached);
             let kind = self.program.types.get(reached).clone();
             let found = self.describe(reached);
             way.types.push(reached);
@@ -1994,6 +2052,7 @@ impl<'a> Checker<'a> {
     /// trace: D37, D38
     fn match_statement(&mut self, subject: &syntax::Expression, cases: &[syntax::MatchCase]) -> StatementKind {
         let checked = self.expression(subject, None);
+        self.work_out_from_cases(checked.type_id, cases);
         let subject_type = self.program.types.resolve(checked.type_id);
         let case_types: Vec<CaseType> = match self.program.types.get(subject_type).clone() {
             Type::OneOf(one_of) => {

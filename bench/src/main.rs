@@ -114,6 +114,15 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
         .map_err(|message| message.to_string())?;
     let limits = Limits { steps: 1_000_000, memory: 1024 * 1024 };
 
+    // Loading each script from a text of its own, so that nothing compiled is reused: a comment naming the guard
+    // makes every text different. Timed apart, and those scripts dropped, before the run that's measured.
+    let started = Instant::now();
+    for guard in 0..count {
+        let own_text = format!("// guard {guard}\n{source}");
+        Script::load(path, &own_text, &doors, limits).map_err(|error| error.to_string())?;
+    }
+    let loaded_fresh = started.elapsed().as_secs_f64();
+
     let resident_before = resident_bytes();
     let started = Instant::now();
     let mut scripts: Vec<(Script, TaskId)> = Vec::with_capacity(count);
@@ -155,6 +164,7 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     let mut out = String::new();
     let _ = writeln!(out, "result {}", walks.load(Ordering::Relaxed));
     let _ = writeln!(out, "load_each {:.9}", loaded / each);
+    let _ = writeln!(out, "load_fresh_each {:.9}", loaded_fresh / each);
     let _ = writeln!(out, "resume_each {:.9}", resumed / every);
     let _ = writeln!(out, "call_each {:.9}", called / every);
     let _ = writeln!(out, "memory_each {}", counted_memory / count.max(1));

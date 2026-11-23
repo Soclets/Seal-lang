@@ -707,6 +707,20 @@ impl Checker<'_> {
             let Some((way, _, changeable)) = self.way_in(receiver) else { return Self::error(place) };
             (way.part, changeable, Some(way))
         };
+        // trace: D5. With its type not worked out yet, the method says what the value must be: only a list has
+        // `.add` and a `.remove` at a place, and only a `Dict` a `.remove` by key.
+        if matches!(self.program.types.get(self.variable_type(variable)), Type::Variable(_)) {
+            let by_key = arguments.iter().any(|entry| label_of(entry).as_deref() == Some("key"));
+            let shape = if method.text == "remove" && by_key {
+                let (key, value) = (self.program.types.fresh(), self.program.types.fresh());
+                self.program.types.dict(key, value)
+            } else {
+                let item = self.program.types.fresh();
+                self.program.types.list(item)
+            };
+            let open = self.variable_type(variable);
+            self.program.types.unify(open, shape);
+        }
         let variable_type = self.program.types.resolve(self.variable_type(variable));
         let result = match (self.program.types.get(variable_type).clone(), method.text.as_str()) {
             (Type::List { item, .. }, "add") => {
