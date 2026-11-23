@@ -1,8 +1,9 @@
 proc doubled_level[level]
     if level > 10
         fail too_high
+    else
+        return level * 2
     end
-    return level * 2
 end
 
 a = doubled_level(3) ?? 0
