@@ -1,0 +1,91 @@
+record Enemy
+    name: Text
+    hp: Whole
+end
+
+one_of Event
+    idle
+    hurt[amount: Whole]
+    healed[amount: Whole, by: Text]
+end
+
+mut hp = 30
+show_msg("loaded")
+
+proc on_hit[amount]
+    hp = hp - amount
+    show_msg(fmt("hit for {amount}, {hp} left"))
+end
+
+proc hp_left[unit: Text] -> Text
+    return hp & unit
+end
+
+proc heal[amount, times]
+    labels [amount as by, times as times]
+    defaults [times: 1]
+    hp = hp + amount * times
+end
+
+proc handle[event: Event] -> Whole
+    match event
+        case idle
+        case hurt[amount]
+            hp = hp - amount
+        case healed[amount, by]
+            hp = hp + amount
+            show_msg(fmt("{by} healed {amount}"))
+    end
+    return hp
+end
+
+proc patrol[guard]
+    mut passes = 0
+    names = ["north", "south"]
+    while true
+        damage(guard, by: 1)
+        wait(seconds: 2)
+        passes = passes + 1
+        show_msg(fmt("pass {passes} of {names.len}"))
+    end
+end
+
+proc spin[start]
+    mut count = start
+    while true
+        count = count + 1
+    end
+end
+
+proc hoard[item: Text]
+    mut pile = [item]
+    while pile.len > 0
+        pile.add(item & item)
+    end
+end
+
+proc overflow[n]
+    return n * 9223372036854775807
+end
+
+proc strongest[id] -> Text
+    enemy = enemy_info(id)
+    return enemy.name
+end
+
+proc add_goblin[start_hp] -> Whole
+    return spawn(Enemy[name: "Goblin", hp: start_hp])
+end
+
+proc target[fallback] -> Whole
+    return nearest_enemy() ?? fallback
+end
+
+proc save_game[slot]
+    save(slot) otherwise
+        case disk_full
+            show_msg("the disk is full")
+        case no_slot
+            fail no_slot
+    end
+end

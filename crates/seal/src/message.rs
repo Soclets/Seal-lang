@@ -247,6 +247,10 @@ impl Message {
     }
 }
 
+impl std::error::Error for Message {}
+
+impl std::error::Error for Messages {}
+
 impl fmt::Display for Message {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.text())

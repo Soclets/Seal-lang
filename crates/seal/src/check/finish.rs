@@ -673,8 +673,10 @@ impl Checker<'_> {
             self.discharge(&pending);
         }
         self.deferred.clear();
-        // Anything still open now can never be worked out. A top-level name whose line hasn't been reached yet is
-        // still waiting for its value.
+        // Once every procedure has been checked, anything still open can never be worked out.
+        if !self.every_procedure_checked {
+            return;
+        }
         let open: Vec<(TypeId, Place, String)> = (0u32..)
             .zip(&self.program.variables)
             .filter(|(_, variable)| !self.program.types.is_settled(variable.type_id))

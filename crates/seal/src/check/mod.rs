@@ -110,6 +110,8 @@ pub(crate) struct Checker<'a> {
     written_failures: Vec<Option<Vec<syntax::Word>>>,
     /// The first place of each top-level name that isn't decided for use before it's made.
     reported_early_use: HashSet<VariableId>,
+    /// Set once the top level and every procedure have been checked.
+    every_procedure_checked: bool,
     /// How many slides are being checked as nested calls, which Unio D128's refusal of nested calls leaves alone.
     slide_depth: u32,
     /// The calls already judged as part of a chain (Unio D128), by their expressions' numbers.
@@ -144,6 +146,7 @@ pub fn check(script: &syntax::Script, doors: &[DoorSignature]) -> Result<Program
         top_level_position: 0,
         written_failures: Vec::new(),
         reported_early_use: HashSet::new(),
+        every_procedure_checked: false,
         slide_depth: 0,
         judged_chains: HashSet::new(),
     };
@@ -215,6 +218,7 @@ impl<'a> Checker<'a> {
         for index in 0..self.procedure_state.len() {
             self.ensure_checked(ProcedureId(u32::try_from(index).unwrap_or(u32::MAX)));
         }
+        self.every_procedure_checked = true;
         self.solve(true);
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);

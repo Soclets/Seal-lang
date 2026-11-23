@@ -27,7 +27,7 @@ Each ends with something running. `[x]` done, `[ ]` not yet.
   (D52), every refusal.
 - [x] **C1c. Running.** Bytecode compiler and register VM, with its optimizations from the start (see below). All 14
   tests pass (2026-11-23).
-- [ ] **C2. The host's side** (D48, D49, D51 to D54): `Doors`, `Script::load`, `call`, `resume`, `cancel`, `Limits`,
+- [x] **C2. The host's side** (D48, D49, D51 to D54): `Doors`, `Script::load`, `call`, `resume`, `cancel`, `Limits`,
   `#[derive(Seal)]`, an example host in `crates/seal/tests/`.
 - [ ] **C3. The fuzzer** (`fuzz/`): random valid and invalid scripts against loading and running, under the limits.
 - [ ] **C4. The Unio translator and the comparison with Ralph** (D19).
@@ -77,7 +77,32 @@ The VM, and where each optimization arrives (Building rule 5):
 
 Sent as they come up; answers get written here. Each is built as a "not designed yet" stop meanwhile.
 
-(Being collected; the first batch goes out with checkpoint C1.)
+First batch sent 2026-11-23 (delivered to "Unio & Seal Design Claude"); no answers yet. Each is a "not designed yet" stop:
+
+1. A procedure with no parameters.
+2. A parameter or a `for each` name that's never read (D2?). A case's value left unread is allowed (chapter 6's example).
+3. Changing a part of a part, as `bodies[pos: i].vx = 1.0` or `goblin.items.add(x)`.
+4. Comments, two blank lines in a row, spacing other than Unio's, indentation other than 4 spaces, tabs, `\r`, `\` in text.
+5. Comparing two texts; taking text apart.
+6. Running a procedure before a top-level name it uses is made; a pause, `return`, `fail` or `?` at the top level.
+7. A value-giving procedure that can reach its `end`; a line after `return`, `break` or `fail`.
+8. A `for each` over a top-level name whose body calls a procedure that changes it, or pauses while another task could.
+9. A value-giving call standing alone; a line that only works out a value.
+10. A `for each` or `case` name in a procedure spelt like a top-level name; a name spelt like a procedure, door or built-in.
+11. A type that holds itself; a record directly inside a record.
+12. The same plain key twice in a `Dict` literal; a list literal longer than its `len.max`; lists whose `len.max` differ.
+13. `?? ignore` or `?? crash` on a `Maybe`; `instead` not last in its case; `[all: v]` with a name `all` in reach.
+14. A host's record or `one_of` the script doesn't declare (built: the script must declare the same type).
+
+Disagreements reported: chapter 9's "Not decided: labels and defaults on doors" against D51, D55 and tests/README.md
+(built: labels on doors, no defaults); tests/d038_maybe's parameter sharing a top-level name against D56 (built the
+test's way).
+
+Proposals sent (D14 leaves them to the building session): a step is one jump taken or one call, plus one per 64 units of
+bulk work; memory in Seal's own sizes; no default limits; a limit's kind is `limit reached:`; the `seal` command's exit
+statuses follow Unio's; a Rust `HashMap`'s keys go in sorted.
+
+Also asked for a `.gitignore` with `target/` (not a file the building session may edit).
 
 ## Draft wordings
 
