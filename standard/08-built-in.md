@@ -1,0 +1,16 @@
+# 8. Built in
+
+Seal's built-ins are only what touches nothing outside the script, so they behave the same in every host (D11). Showing
+text, asking, files, time, sound and randomness aren't built in: they're doors, if the host opens them (chapter 9).
+
+| Built-in | What it does | Decided in |
+|---|---|---|
+| `fmt("…")` | fills in braces and gives a `Text` | D12 |
+| `be.Whole`, `be.Float`, `be.Text` and their narrowings | convert | D22, Unio D22, D178 |
+| `range[from:, to: or before:, step_by:]` | a run of whole numbers, for `for each` | D22, Unio D170, D172 |
+| `sqrt(x)` | a `Float`'s square root, stopping on a negative number | D22, Unio D185 |
+| lists' and arrays' methods and facts | `.add`, `.remove`, `.len` | D22, Unio D77 to D80 |
+
+Unio's standard, chapter 9, has `range` and `sqrt` in full.
+
+**Not decided:** every other built-in.
