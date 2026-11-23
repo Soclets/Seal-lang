@@ -55,3 +55,11 @@ kept, so nothing dangles, nothing leaks, and no cycles form (D15, Unio D130).
   shared (copy-on-write), and frees it the moment its last holder ends (D15).
 - **Something that's really one thing, shared with the host, is held by an ID** and changed through the host's doors,
   as in `damage(enemy_id, 10)` (D15, chapter 9).
+
+## The top level
+
+A script's top level runs once, top to bottom, when it's loaded (D4). Three things are refused there, at load time
+(D67):
+- **reaching a top-level name before the line that makes it,** directly or through a procedure it calls;
+- **pausing,** through a door or procedure that can pause;
+- **`return`, `fail` and `?`,** since nothing called the top level; a failure there is handled with `??` or `otherwise`.

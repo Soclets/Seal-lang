@@ -2013,3 +2013,32 @@ text, negligible for the short texts games use, and the VM can remember the boun
 **Tankun's words.** "Actually, wait. Since it's Seal, and not Unio (learn master). Should we default to egc?", then,
 asked "Should Seal's text default to graphemes for `.len`, `[pos:]`, `[offset:]` and `for each`, with `.len.ucp` and
 `.len.bytes` as narrowings?", the owner chose: "yea".
+
+## D67. At the top level, a name is used only after it's made, nothing pauses, and there's no `return`, `fail` or `?`
+
+2026-11-23.
+
+**Chosen.** A script's top level runs once, top to bottom, when it's loaded (D4), and three things are refused there,
+at load time:
+1. **Reaching a top-level name before the line that makes it,** directly or through a procedure the top level calls,
+   since loading hasn't made it yet. The host's calls come after loading, when every top-level name exists.
+2. **Pausing,** through a door or a procedure that can pause (D49, D52): the host waits for loading to finish (D48).
+3. **`return`, `fail` and `?`,** which hand something to a caller, and the top level has none. A failure there is
+   handled on the spot, with `??` or `otherwise`.
+
+```
+show_msg(greeting())                          // refused: greeting reads title, not made yet
+title = "Goblin Cave"
+level = load_level("cave") ?? default_level   // fine: handled here
+```
+
+**Weighed.**
+- Letting the top level pause, with loading coming back paused. Every host would have to handle a half-loaded script.
+- Leaving order to the running script, failing when a missing name is reached. Load time can see it, so it's caught
+  there, as Seal catches everything it can (D17).
+
+**Why this won.** It follows from what the top level is: code that runs once, at load, with nobody calling it and the
+host waiting for it. It belonged with D4; Seal's building session found the gap.
+
+**Tankun's words.** "?", "?", "Oopsies. I meant yes", after being asked "Should those three be refused at the top
+level?".
