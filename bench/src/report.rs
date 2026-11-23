@@ -667,17 +667,15 @@ impl Report {
     }
 }
 
-/// Luau's version: its command prints none, so it's read from where the installed program lives.
+/// Luau's version: its command prints none of its own, but says where the installed program lives, and that
+/// folder is named after the version.
 fn luau_version() -> String {
-    std::fs::canonicalize(LUAU)
-        .ok()
-        .and_then(|path| {
-            path.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).find(|part| {
-                part.split('.').count() == 3
-                    && part.chars().all(|character| character.is_ascii_digit() || character == '.')
-            })
+    version(LUAU, "--version")
+        .split(['/', ' '])
+        .find(|part| {
+            part.split('.').count() == 3 && part.chars().all(|character| character.is_ascii_digit() || character == '.')
         })
-        .unwrap_or_else(|| "?".to_owned())
+        .map_or_else(|| "?".to_owned(), str::to_owned)
 }
 
 fn version(program: &str, flag: &str) -> String {
