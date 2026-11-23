@@ -67,6 +67,10 @@ pub enum Kind {
     Grid,
     /// `List<Pack>`.
     Packs,
+    /// The script's record of records, `Crate` (D72).
+    Crate,
+    /// The script's `one_of` that holds itself, `Tree` (D72).
+    Tree,
 }
 
 impl Kind {
@@ -86,6 +90,8 @@ impl Kind {
             Kind::Pack => "Pack",
             Kind::Grid => "List<List<Whole>>",
             Kind::Packs => "List<Pack>",
+            Kind::Crate => "Crate",
+            Kind::Tree => "Tree",
         }
     }
 }
@@ -203,6 +209,8 @@ impl Generator {
                 Kind::Pack,
                 Kind::Grid,
                 Kind::Packs,
+                Kind::Crate,
+                Kind::Tree,
             ]
         } else {
             vec![Kind::Whole, Kind::Whole, Kind::Bool, Kind::Text]
@@ -520,6 +528,20 @@ impl Generator {
                     self.value(Kind::Dict, 1)
                 )
             }
+            Kind::Crate => {
+                format!("Crate[pack: {}, spot: {}]", self.value(Kind::Pack, 1), self.value(Kind::Spot, 1))
+            }
+            Kind::Tree => {
+                if level == 0 || self.random.chance(1, 3) {
+                    "Tree.leaf".to_owned()
+                } else {
+                    format!(
+                        "Tree.node[left: {}, right: {}]",
+                        self.value(Kind::Tree, level - 1),
+                        self.value(Kind::Tree, level - 1)
+                    )
+                }
+            }
             Kind::Grid | Kind::Packs => {
                 let inner = if kind == Kind::Grid { Kind::WholeList } else { Kind::Pack };
                 let count = self.random.below(3) + 1;
@@ -639,6 +661,8 @@ impl Generator {
             Kind::Pack => {
                 format!("show_msg(fmt(\"{name}: {{{name}.items.len}} {{{name}.tags.len}} {{{name}.stock.len}}\"))")
             }
+            Kind::Crate => format!("show_msg(fmt(\"{name}: {{{name}.pack.items.len}} {{{name}.spot.x}}\"))"),
+            Kind::Tree => format!("show_msg(\"{name}: \" & tree_size({name}))"),
             Kind::Record => format!("show_msg(fmt(\"{name}: {{{name}.name}} {{{name}.hp}}\"))"),
             Kind::Spot => format!("show_msg(fmt(\"{name}: {{{name}.x}} {{{name}.y}}\"))"),
             Kind::Event | Kind::Maybe => String::new(),
@@ -654,6 +678,20 @@ impl Generator {
                 format!("offset: {}", generator.random.below(3))
             }
         };
+        // A record inside a record, changed deep down (D72).
+        if self.random.chance(1, 4)
+            && let Some(held) = self.changeable_name(Kind::Crate)
+        {
+            let line = match self.random.below(5) {
+                0 => format!("{held}.spot.x = {}", self.value(Kind::Whole, 1)),
+                1 => format!("{held}.pack.items.add({})", self.value(Kind::Whole, 1)),
+                2 => format!("{held}.pack.stock[key: {}] = {}", self.value(Kind::Text, 0), self.value(Kind::Whole, 1)),
+                3 => format!("{held}.pack.tags[{}] = {}", place(self), self.value(Kind::Text, 1)),
+                _ => format!("{held}.pack = {}", self.value(Kind::Pack, 1)),
+            };
+            self.line(&line);
+            return;
+        }
         let pack = self.changeable_name(Kind::Pack);
         let grid = self.changeable_name(Kind::Grid);
         let packs = self.changeable_name(Kind::Packs);
@@ -1177,7 +1215,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
         }
         for _ in 0..self.random.below(4) {
             self.budget = 12;

@@ -399,6 +399,19 @@ impl Script {
         else {
             return Err(refusal(&self.name, format!("`{}` has no procedure named `{procedure}`", self.name)));
         };
+        // trace: D72. A type that holds itself can't cross between a host and a script yet.
+        if let Some(parameter) = found.parameters.iter().find(|parameter| parameter.crossing.holds_itself()) {
+            return Err(self.not_built(format!(
+                "passing a `{}`, a type that holds itself, from a host to a script (D72), which calling `{procedure}` needs, isn't",
+                parameter.written
+            )));
+        }
+        if found.result.holds_itself() {
+            return Err(self.not_built(format!(
+                "passing {}, a type that holds itself, from a script to its host (D72), which calling `{procedure}` needs, isn't",
+                describe(&found.result)
+            )));
+        }
         // The usual call gives every argument in order with no labels; anything else is matched up by label.
         let plain = arguments.len() == found.parameters.len()
             && arguments
@@ -453,6 +466,13 @@ impl Script {
             }
         }
         self.drive(Running { task, procedure: index }, None)
+    }
+
+    /// A refusal for something decided that isn't built yet.
+    fn not_built(&self, what: String) -> Error {
+        let mut message = Message::not_built_yet(Place::default(), what);
+        self.name.clone_into(&mut message.file);
+        Error::Refused(Messages::one(message))
     }
 
     /// Runs a task on, and deals with how it ends. `reuse` is the task's place when it was paused before.

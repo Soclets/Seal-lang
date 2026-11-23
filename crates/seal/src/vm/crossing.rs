@@ -35,6 +35,7 @@ pub fn describe(crossing: &Crossing) -> String {
         Crossing::Dict(..) => "a `Dict`".to_owned(),
         Crossing::Maybe { .. } => "a `Maybe`".to_owned(),
         Crossing::Record { name, .. } | Crossing::OneOf { name, .. } => format!("a `{name}`"),
+        Crossing::Itself { name } => format!("a {name}"),
     }
 }
 
@@ -191,6 +192,8 @@ fn release_all(slots: &[u64], references: bool, heap: &mut Heap, layouts: &[Layo
 /// Fails when a handle doesn't lead where its type says, which is a bug in Seal.
 pub fn to_value(slot: u64, crossing: &Crossing, heap: &Heap, layouts: &[Layout]) -> Result<Value, HeapError> {
     Ok(match crossing {
+        // A call whose types hold themselves is turned away before anything crosses (D72).
+        Crossing::Itself { .. } => return Err(HeapError::Broken("a value of a type that holds itself, at a door")),
         Crossing::Nothing => Value::Nothing,
         Crossing::Whole => Value::Whole(slot.cast_signed()),
         Crossing::Float => Value::Float(f64::from_bits(slot)),

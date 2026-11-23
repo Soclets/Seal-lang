@@ -74,6 +74,8 @@ struct Compiler<'p> {
     problem: Option<Message>,
     /// The procedures whose bodies are being written out in place of calls to them, outermost first.
     inlining: Vec<u32>,
+    /// The records and `one_of`s being described for crossing to the host, outermost first (D72).
+    crossing_open: Vec<Type>,
     /// The procedure being compiled, when it's not the top level.
     current: Option<u32>,
 }
@@ -101,6 +103,7 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
         place: Place::default(),
         problem: None,
         inlining: Vec::new(),
+        crossing_open: Vec::new(),
         current: None,
     };
     for (index, variable) in (0u32..).zip(&program.variables) {
@@ -293,6 +296,21 @@ impl<'p> Compiler<'p> {
 
     /// How a value of a type crosses between the script and its host.
     fn crossing(&mut self, type_id: TypeId) -> Crossing {
+        // A type that holds itself (D72) is met again while it's being described: it's marked there, not gone into.
+        let kind = self.kind(type_id).clone();
+        if matches!(kind, Type::Record(_) | Type::OneOf(_)) {
+            if self.crossing_open.contains(&kind) {
+                return Crossing::Itself { name: self.program.types.describe(type_id) };
+            }
+            self.crossing_open.push(kind.clone());
+            let crossing = self.crossing_of(type_id);
+            self.crossing_open.pop();
+            return crossing;
+        }
+        self.crossing_of(type_id)
+    }
+
+    fn crossing_of(&mut self, type_id: TypeId) -> Crossing {
         match self.kind(type_id).clone() {
             Type::Whole => Crossing::Whole,
             Type::Float => Crossing::Float,

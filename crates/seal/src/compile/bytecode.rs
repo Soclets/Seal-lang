@@ -727,9 +727,24 @@ pub enum Crossing {
     Text,
     List(Box<Crossing>),
     Dict(Box<Crossing>, Box<Crossing>),
-    Maybe { inner: Box<Crossing>, layout: u16 },
-    Record { name: String, layout: u16, fields: Vec<(String, Crossing)> },
-    OneOf { name: String, cases: Vec<CrossingCase> },
+    Maybe {
+        inner: Box<Crossing>,
+        layout: u16,
+    },
+    Record {
+        name: String,
+        layout: u16,
+        fields: Vec<(String, Crossing)>,
+    },
+    OneOf {
+        name: String,
+        cases: Vec<CrossingCase>,
+    },
+    /// A type met again inside itself, as `Tree` inside `Tree` (D72). Passing such a value between a host and a
+    /// script isn't built yet, so nothing is ever read through this.
+    Itself {
+        name: String,
+    },
 }
 
 /// One case of a `one_of` at a door.
@@ -741,6 +756,21 @@ pub struct CrossingCase {
 }
 
 impl Crossing {
+    /// Whether the type holds itself somewhere inside (D72).
+    #[must_use]
+    pub fn holds_itself(&self) -> bool {
+        match self {
+            Crossing::Itself { .. } => true,
+            Crossing::Nothing | Crossing::Whole | Crossing::Float | Crossing::Bool | Crossing::Text => false,
+            Crossing::List(inner) | Crossing::Maybe { inner, .. } => inner.holds_itself(),
+            Crossing::Dict(key, value) => key.holds_itself() || value.holds_itself(),
+            Crossing::Record { fields, .. } => fields.iter().any(|(_, field)| field.holds_itself()),
+            Crossing::OneOf { cases, .. } => {
+                cases.iter().any(|case| case.fields.iter().any(|(_, field)| field.holds_itself()))
+            }
+        }
+    }
+
     /// Whether a slot of this kind holds a heap value.
     #[must_use]
     pub fn is_reference(&self) -> bool {

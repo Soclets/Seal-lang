@@ -295,12 +295,8 @@ impl<'a> Checker<'a> {
             }
         }
         for (index, record) in records {
+            // trace: D72. A record can hold a record: it's one bigger value.
             let fields = self.declare_fields(&record.fields);
-            for (field, declaration) in fields.iter().zip(&record.fields) {
-                if matches!(self.program.types.get(field.1), Type::Record(_)) {
-                    self.not_designed(declaration.written_type.place, "a record inside a record");
-                }
-            }
             if let Some(slot) = self.program.types.records.get_mut(index as usize) {
                 slot.fields = fields;
             }
@@ -346,79 +342,95 @@ impl<'a> Checker<'a> {
         fields
     }
 
-    /// Whether a value of type `from` can hold a value of the declared type `target` inside it.
-    fn type_reaches(&self, from: TypeId, target: &Type, seen: &mut HashSet<TypeId>) -> bool {
-        let from = self.program.types.resolve(from);
-        if !seen.insert(from) {
-            return false;
-        }
-        let kind = self.program.types.get(from).clone();
-        if kind == *target {
-            return true;
-        }
-        match kind {
-            Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => {
-                self.type_reaches(item, target, seen)
-            }
-            Type::Dict { key, value } => self.type_reaches(key, target, seen) || self.type_reaches(value, target, seen),
-            Type::Record(record) => {
-                let fields: Vec<TypeId> = self
-                    .program
-                    .types
-                    .records
-                    .get(record as usize)
-                    .map(|record| record.fields.iter().map(|field| field.1).collect())
-                    .unwrap_or_default();
-                fields.into_iter().any(|field| self.type_reaches(field, target, seen))
-            }
-            Type::OneOf(one_of) => {
-                let fields: Vec<TypeId> = self
-                    .program
-                    .types
-                    .one_ofs
-                    .get(one_of as usize)
-                    .map(|one_of| {
-                        one_of.cases.iter().flat_map(|case| case.fields.iter().map(|field| field.1)).collect()
-                    })
-                    .unwrap_or_default();
-                fields.into_iter().any(|field| self.type_reaches(field, target, seen))
-            }
-            _ => false,
+    /// Whether a value of a type can end, given which records and `one_of`s are known to: a `List`, a `Dict` and a
+    /// `Maybe` can be empty, and a plain value holds nothing more (D72).
+    fn type_can_end(&self, type_id: TypeId, records: &[bool], one_ofs: &[bool]) -> bool {
+        match self.program.types.get(self.program.types.resolve(type_id)) {
+            Type::Record(record) => records.get(*record as usize).copied().unwrap_or(true),
+            Type::OneOf(one_of) => one_ofs.get(*one_of as usize).copied().unwrap_or(true),
+            Type::Array { item, length } => *length == 0 || self.type_can_end(*item, records, one_ofs),
+            _ => true,
         }
     }
 
+    /// trace: D72. A type can hold itself where a value can end: through a `one_of` case beside one that ends, or
+    /// through a `List`, a `Dict` or a `Maybe`. A type whose every value would go on for ever is refused.
     fn refuse_types_holding_themselves(&mut self, script: &syntax::Script) {
+        let mut records = vec![false; self.program.types.records.len()];
+        let mut one_ofs = vec![false; self.program.types.one_ofs.len()];
+        // What can end is found from the ground up: a type can end once everything it must hold can.
+        loop {
+            let mut changed = false;
+            for (index, record) in self.program.types.records.iter().enumerate() {
+                let ends = record.fields.iter().all(|(_, field)| self.type_can_end(*field, &records, &one_ofs));
+                if ends && records.get(index) == Some(&false) {
+                    if let Some(slot) = records.get_mut(index) {
+                        *slot = true;
+                    }
+                    changed = true;
+                }
+            }
+            for (index, one_of) in self.program.types.one_ofs.iter().enumerate() {
+                let ends = one_of
+                    .cases
+                    .iter()
+                    .any(|case| case.fields.iter().all(|(_, field)| self.type_can_end(*field, &records, &one_ofs)));
+                if ends && one_ofs.get(index) == Some(&false) {
+                    if let Some(slot) = one_ofs.get_mut(index) {
+                        *slot = true;
+                    }
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let why = "a type can hold itself only where a value can end: in a `one_of` beside a case that ends, or in a `List`, a `Dict` or a `Maybe`, as `next: Maybe<Node>`.";
         for item in &script.items {
-            let (name, target, fields): (&syntax::Word, Type, Vec<TypeId>) = match item {
+            match item {
                 syntax::Item::Record(record) => {
                     let Some(&index) = self.record_names.get(&record.name.text) else { continue };
+                    if records.get(index as usize) != Some(&false) {
+                        continue;
+                    }
                     let fields = self
                         .program
                         .types
                         .records
                         .get(index as usize)
-                        .map(|record| record.fields.iter().map(|field| field.1).collect())
+                        .map(|record| record.fields.clone())
                         .unwrap_or_default();
-                    (&record.name, Type::Record(index), fields)
+                    let endless = fields
+                        .iter()
+                        .zip(&record.fields)
+                        .find(|((_, field), _)| !self.type_can_end(*field, &records, &one_ofs));
+                    if let Some(((field, field_type), declaration)) = endless {
+                        let found = self.describe(*field_type);
+                        self.refuse_why(
+                            declaration.written_type.place,
+                            format!(
+                                "`{}`'s field `{field}` holds {found}, with no way for a value to end",
+                                record.name.text
+                            ),
+                            why,
+                        );
+                    }
                 }
                 syntax::Item::OneOf(one_of) => {
                     let Some(&index) = self.one_of_names.get(&one_of.name.text) else { continue };
-                    let fields = self
-                        .program
-                        .types
-                        .one_ofs
-                        .get(index as usize)
-                        .map(|one_of| {
-                            one_of.cases.iter().flat_map(|case| case.fields.iter().map(|field| field.1)).collect()
-                        })
-                        .unwrap_or_default();
-                    (&one_of.name, Type::OneOf(index), fields)
+                    if one_ofs.get(index as usize) == Some(&false) {
+                        self.refuse_why(
+                            one_of.name.place,
+                            format!(
+                                "every case of `{}` holds more that can't end, so no value of it could end",
+                                one_of.name.text
+                            ),
+                            why,
+                        );
+                    }
                 }
-                _ => continue,
-            };
-            let holds_itself = fields.into_iter().any(|field| self.type_reaches(field, &target, &mut HashSet::new()));
-            if holds_itself {
-                self.not_designed(name.place, format!("a type that holds itself, as `{}` does,", name.text));
+                _ => {}
             }
         }
     }
@@ -2351,6 +2363,25 @@ pub(crate) mod tests {
         assert_eq!(
             whats("show_msg = \"hi\"\n").first().map(String::as_str),
             Some("refused: `show_msg` is already one of the host's doors, so nothing else can be named `show_msg`")
+        );
+    }
+
+    // trace: D72
+    #[test]
+    fn d72_records_in_records_and_types_that_hold_themselves() {
+        let tree = "one_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n";
+        assert!(whats(tree).is_empty(), "{:?}", whats(tree));
+        let nested =
+            "record Stats\n    hp: Whole\nend\n\nrecord Enemy\n    stats: Stats\n    friends: List<Enemy>\nend\n";
+        assert!(whats(nested).is_empty(), "{:?}", whats(nested));
+        assert_eq!(
+            whats("record Node\n    value: Whole\n    next: Node\nend\n"),
+            vec!["refused: `Node`'s field `next` holds `Node`, with no way for a value to end"]
+        );
+        assert!(whats("record Node\n    value: Whole\n    next: Maybe<Node>\nend\n").is_empty());
+        assert_eq!(
+            whats("one_of Loop\n    again[more: Loop]\nend\n"),
+            vec!["refused: every case of `Loop` holds more that can't end, so no value of it could end"]
         );
     }
 
