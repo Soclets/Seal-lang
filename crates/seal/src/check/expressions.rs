@@ -65,6 +65,27 @@ impl Checker<'_> {
                     }
                     return Self::error(place);
                 }
+                // trace: D65, D66. `.len.egc`, `.len.ucp` and `.len.bytes` say which unit a text's length counts.
+                if let Kind::Member { receiver: text, name: fact } = &receiver.kind
+                    && fact.text == "len"
+                    && matches!(name.text.as_str(), "egc" | "ucp" | "bytes")
+                {
+                    let text = self.expression(text, Some(TEXT));
+                    if !self.program.types.unify(text.type_id, TEXT) {
+                        let found = self.describe(text.type_id);
+                        self.refuse_why(
+                            name.place,
+                            format!("`.len.{}` is a text's length, but this is {found}", name.text),
+                            "only a text's length comes in graphemes, code points and bytes.",
+                        );
+                        return Self::error(place);
+                    }
+                    return Expression {
+                        kind: ExpressionKind::Member { receiver: Box::new(text), name: format!("len.{}", name.text) },
+                        type_id: WHOLE,
+                        place,
+                    };
+                }
                 let receiver = self.expression(receiver, None);
                 let result = self.program.types.fresh();
                 self.require(

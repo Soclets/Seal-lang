@@ -655,6 +655,41 @@ impl Checker<'_> {
                 place,
             };
         }
+        // trace: D65. `text.split(by: t)` keeps empty pieces; `text.split.no_empty(by: t)` drops them.
+        let split_of = match &receiver.kind {
+            syntax::ExpressionKind::Member { receiver: text, name }
+                if name.text == "split" && method.text == "no_empty" =>
+            {
+                Some((&**text, false))
+            }
+            _ if method.text == "split" => Some((receiver, true)),
+            _ => None,
+        };
+        if let Some((text, keep_empty)) = split_of {
+            let name = if keep_empty { ".split" } else { ".split.no_empty" };
+            let text = self.expression(text, Some(TEXT));
+            if !self.program.types.unify(text.type_id, TEXT) {
+                let found = self.describe(text.type_id);
+                self.refuse(method.place, format!("`{name}` splits a text, but this is {found}"));
+                return Self::error(place);
+            }
+            let [entry] = arguments else {
+                self.refuse(place, format!("`{name}` takes `by:` and the text to split at"));
+                return Self::error(place);
+            };
+            if label_of(entry).as_deref() != Some("by") {
+                self.refuse(entry.value.place, format!("`{name}` takes `by:` and the text to split at"));
+                return Self::error(place);
+            }
+            let by = self.expression(&entry.value, Some(TEXT));
+            self.expect(&by, TEXT, "the text to split at");
+            let type_id = self.program.types.list(TEXT);
+            return Expression {
+                kind: ExpressionKind::Split { text: Box::new(text), by: Box::new(by), keep_empty },
+                type_id,
+                place,
+            };
+        }
         if !matches!(method.text.as_str(), "add" | "remove") {
             let checked = self.expression(receiver, None);
             if !self.program.types.is_error(checked.type_id) {

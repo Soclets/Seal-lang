@@ -12,6 +12,7 @@ use crate::compile::bytecode::{
 };
 use crate::host::Value;
 use crate::number::{float_to_text, float_to_whole, text_to_whole};
+use crate::text::{grapheme_at, grapheme_count, graphemes};
 
 /// What a stack slot costs against the memory cap: the slot itself, and its share of the record of calls.
 const STACK_SLOT_COST: usize = 2 * SLOT_COST;
@@ -48,6 +49,8 @@ pub enum Stop {
     OutOfMemory { needed: usize, in_use: usize, cap: usize },
     /// `?? crash` met a failure (Unio D152).
     Crashed { failure: u32 },
+    /// The script reached something no decision covers, which only shows while running.
+    NotDesigned(String),
     /// A door gave something its host didn't declare: a mistake in the host's code.
     HostMistake(String),
     /// Seal itself went wrong.
@@ -164,6 +167,45 @@ fn bad_position(label: &str, index: i64, length: usize, pc: usize) -> Stopped {
         "an item is reached at a place the list has.",
         pc,
     )
+}
+
+#[cold]
+fn bad_text_position(label: &str, index: i64, length: usize, pc: usize) -> Stopped {
+    // trace: D66, Unio D46
+    let range = match (label, length) {
+        (_, 0) => "the text is empty".to_owned(),
+        ("pos", _) => format!("the text has {length} characters, at `pos:` 1 to {length}"),
+        _ => format!("the text has {length} characters, at `offset:` 0 to {}", length - 1),
+    };
+    check_failed(
+        "there's no character at this place",
+        format!("`{label}: {index}`, and {range}"),
+        "a text is reached at a place it has, counting what a person sees as one character.",
+        pc,
+    )
+}
+
+/// Makes a list of new texts, counted against the memory cap before any of it is made (D14).
+fn text_list(heap: &mut Heap, pieces: &[String], work: usize, layouts: &[Layout]) -> Result<u64, HeapError> {
+    heap.work = heap.work.saturating_add(work as u64).saturating_add(pieces.len() as u64);
+    let size = pieces.len().saturating_mul(SLOT_COST);
+    heap.charge(size)?;
+    heap.refund(size);
+    let mut items = Vec::new();
+    items.reserve_exact(pieces.len());
+    for piece in pieces {
+        match heap.new_text(piece, piece.len()) {
+            Ok(handle) => items.push(handle),
+            Err(error) => {
+                // What was made so far is given back, so a script stopped at its cap holds nothing stray.
+                for handle in items {
+                    heap.release(handle, layouts);
+                }
+                return Err(error);
+            }
+        }
+    }
+    heap.allocate(Object::List { items, references: true }, size)
 }
 
 /// The place in a list a script's `pos:` or `offset:` means, when the list has it.
@@ -1161,6 +1203,58 @@ pub fn run(
                     heap.release(old, layouts);
                 }
                 count_work!();
+            }
+            // trace: D65, D66
+            Instruction::TextLength { to, from, unit } => {
+                let text = heap_try!(heap.text(get!(from)));
+                let (length, work) = match unit {
+                    0 => (grapheme_count(text), text.len()),
+                    1 => (text.chars().count(), text.len()),
+                    _ => (text.len(), 0),
+                };
+                heap.work = heap.work.saturating_add(work as u64);
+                count_work!();
+                set!(to, length as u64);
+            }
+            Instruction::GraphemeAtPosition { to, text, index } | Instruction::GraphemeAtOffset { to, text, index } => {
+                let zero_based = matches!(instruction, Instruction::GraphemeAtOffset { .. });
+                let index = whole!(index);
+                let written = heap_try!(heap.text(get!(text)));
+                let offset = if zero_based { Some(index) } else { index.checked_sub(1) };
+                let found = offset
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .and_then(|offset| grapheme_at(written, offset));
+                let Some(found) = found else {
+                    let length = grapheme_count(written);
+                    return Err(bad_text_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+                };
+                let (grapheme, work) = (found.to_owned(), written.len());
+                heap.work = heap.work.saturating_add(work as u64);
+                count_work!();
+                let handle = heap_try!(heap.new_text(&grapheme, grapheme.len()));
+                set!(to, handle);
+            }
+            Instruction::Graphemes { to, from } => {
+                let written = heap_try!(heap.text(get!(from)));
+                let pieces: Vec<String> = graphemes(written).map(str::to_owned).collect();
+                let work = written.len();
+                let handle = heap_try!(text_list(heap, &pieces, work, layouts));
+                count_work!();
+                set!(to, handle);
+            }
+            Instruction::SplitText { to, text, by } | Instruction::SplitTextNoEmpty { to, text, by } => {
+                let keep_empty = matches!(instruction, Instruction::SplitText { .. });
+                let written = heap_try!(heap.text(get!(text)));
+                let by = heap_try!(heap.text(get!(by)));
+                if by.is_empty() {
+                    return Err((Stop::NotDesigned("splitting a text by an empty text".to_owned()), pc));
+                }
+                let pieces: Vec<String> =
+                    written.split(by).filter(|piece| keep_empty || !piece.is_empty()).map(str::to_owned).collect();
+                let work = written.len();
+                let handle = heap_try!(text_list(heap, &pieces, work, layouts));
+                count_work!();
+                set!(to, handle);
             }
             Instruction::Length { to, from } => {
                 let length = match heap.get(get!(from)) {

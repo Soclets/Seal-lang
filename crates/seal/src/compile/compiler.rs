@@ -1015,7 +1015,13 @@ impl<'p> Compiler<'p> {
         let is_dict = matches!(self.kind(source.type_id), Type::Dict { .. });
         // The source and how far through it the loop is, side by side.
         let base = self.allocate_many(2);
-        if self.value_into(source, base) {
+        if matches!(self.kind(source.type_id), Type::Text) {
+            // trace: D66. A text is gone through by graphemes: they're listed once, and the loop goes through the list.
+            let text = self.value(source);
+            self.place = source.place;
+            self.emit(Instruction::Graphemes { to: base, from: text });
+            self.hold(base);
+        } else if self.value_into(source, base) {
             self.hold(base);
         }
         self.emit(Instruction::LoadSmall { to: base + 1, value: 0 });
@@ -1300,10 +1306,44 @@ impl<'p> Compiler<'p> {
                 if matches!(self.kind(receiver_type), Type::Record(_)) {
                     let field = self.field_index(receiver_type, name);
                     self.emit(Instruction::GetField { to, record: from, field });
+                } else if matches!(self.kind(receiver_type), Type::Text) {
+                    // trace: D65, D66
+                    let unit = match name.as_str() {
+                        "len.ucp" => 1,
+                        "len.bytes" => 2,
+                        _ => 0,
+                    };
+                    self.emit(Instruction::TextLength { to, from, unit });
                 } else {
                     self.emit(Instruction::Length { to, from });
                 }
                 false
+            }
+            // trace: D66. A text's grapheme at a place is a new text.
+            ExpressionKind::Item { receiver, index, zero_based }
+                if matches!(self.kind(receiver.type_id), Type::Text) =>
+            {
+                let index = self.value(index);
+                let text = self.reading(receiver);
+                self.place = expression.place;
+                self.emit(if *zero_based {
+                    Instruction::GraphemeAtOffset { to, text, index }
+                } else {
+                    Instruction::GraphemeAtPosition { to, text, index }
+                });
+                true
+            }
+            // trace: D65
+            ExpressionKind::Split { text, by, keep_empty } => {
+                let by = self.value(by);
+                let text = self.reading(text);
+                self.place = expression.place;
+                self.emit(if *keep_empty {
+                    Instruction::SplitText { to, text, by }
+                } else {
+                    Instruction::SplitTextNoEmpty { to, text, by }
+                });
+                true
             }
             ExpressionKind::Item { receiver, index, zero_based } => {
                 let index = self.value(index);
@@ -2082,6 +2122,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Item { receiver: first, index: second, .. }
         | ExpressionKind::Lookup { dict: first, key: second }
         | ExpressionKind::Has { dict: first, key: second }
+        | ExpressionKind::Split { text: first, by: second, .. }
         | ExpressionKind::Binary { left: first, right: second, .. }
         | ExpressionKind::MaybeOr { maybe: first, fallback: second } => uses(first) || uses(second),
         ExpressionKind::Call { arguments: items, .. }
@@ -2197,6 +2238,7 @@ fn mentions(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Item { receiver: first, index: second, .. }
         | ExpressionKind::Lookup { dict: first, key: second }
         | ExpressionKind::Has { dict: first, key: second }
+        | ExpressionKind::Split { text: first, by: second, .. }
         | ExpressionKind::Binary { left: first, right: second, .. }
         | ExpressionKind::MaybeOr { maybe: first, fallback: second } => {
             look(first);

@@ -261,6 +261,12 @@ impl Generator {
     }
 
     fn text_literal(&mut self) -> String {
+        // Seal's own dialect now and then writes text beyond plain English characters, where a grapheme is more
+        // than a byte (D66), and a quote or a backslash made literal (D63).
+        if self.seal() && self.random.chance(1, 6) {
+            let text = self.random.pick(&["héllo", "👍🏽 ok", "e\u{301}a", "日本", "a \\\"b\\\" c", "back\\\\slash"]);
+            return format!("\"{}\"", text.copied().unwrap_or("x"));
+        }
         format!("\"{}\"", self.random.pick(&TEXTS).copied().unwrap_or("x"))
     }
 
@@ -299,6 +305,14 @@ impl Generator {
                             self.operand(Kind::Whole, level - 1)
                         )
                     }
+                    // A text's length, in graphemes, code points or bytes (D65, D66).
+                    4 if self.seal() && self.random.chance(1, 3) => match self.read_name(Kind::Text) {
+                        Some(text) => {
+                            let unit = *self.random.pick(&["", "", ".egc", ".ucp", ".bytes"]).unwrap_or(&"");
+                            format!("{text}.len{unit}")
+                        }
+                        None => self.whole_literal(),
+                    },
                     4 => match self.read_name(Kind::WholeList) {
                         Some(list) => format!("{list}.len"),
                         None => self.whole_literal(),
@@ -435,6 +449,16 @@ impl Generator {
                 let count = self.random.below(4) + 1;
                 let items: Vec<String> = (0..count).map(|_| self.value(Kind::Whole, level.saturating_sub(1))).collect();
                 format!("[{}]", items.join(", "))
+            }
+            // A text split into its pieces (D65).
+            Kind::TextList if self.seal() && self.random.chance(1, 4) => {
+                let text = match self.read_name(Kind::Text) {
+                    Some(text) => text,
+                    None => "\"a b  c\"".to_owned(),
+                };
+                let method = if self.random.chance(1, 2) { "split" } else { "split.no_empty" };
+                let by = *self.random.pick(&[" ", ",", "a"]).unwrap_or(&" ");
+                format!("{text}.{method}(by: \"{by}\")")
             }
             Kind::TextList => {
                 let count = self.random.below(3) + 1;
@@ -742,6 +766,22 @@ impl Generator {
                 } else {
                     self.line(&format!("for each {item} in {range}"));
                     self.loop_body(&[(item, Kind::Whole)]);
+                }
+            }
+            // Going through a text, one grapheme at a time (D66).
+            14 if nested && self.seal() && self.random.chance(1, 5) => {
+                if let Some(text) = self.read_name(Kind::Text) {
+                    let item = self.fresh();
+                    self.freeze(&text, true);
+                    if self.random.chance(1, 2) {
+                        let position = self.fresh();
+                        self.line(&format!("for each {item} at pos {position} in {text}"));
+                        self.loop_body(&[(item, Kind::Text), (position, Kind::Whole)]);
+                    } else {
+                        self.line(&format!("for each {item} in {text}"));
+                        self.loop_body(&[(item, Kind::Text)]);
+                    }
+                    self.freeze(&text, false);
                 }
             }
             14 if nested && self.seal() => {

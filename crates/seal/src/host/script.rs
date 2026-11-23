@@ -304,6 +304,7 @@ impl Script {
                 Message::new(MessageKind::Failed, place, format!("this failed with `{name}`"))
                     .with_why("`?? crash` stops the script when the call before it fails.")
             }
+            Stop::NotDesigned(what) => Message::not_designed_yet(place, what),
             Stop::HostMistake(detail) => {
                 let mut message =
                     Message::new(MessageKind::Internal, place, format!("the host's own code went wrong: {detail}"));

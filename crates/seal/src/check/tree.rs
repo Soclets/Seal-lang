@@ -258,6 +258,12 @@ pub enum ExpressionKind {
         dict: Box<Expression>,
         key: Box<Expression>,
     },
+    /// `text.split(by: t)`, and `text.split.no_empty(by: t)`, which drops the empty pieces (D65).
+    Split {
+        text: Box<Expression>,
+        by: Box<Expression>,
+        keep_empty: bool,
+    },
     /// A call to one of the script's procedures, its arguments in the parameters' order.
     Call {
         procedure: ProcedureId,

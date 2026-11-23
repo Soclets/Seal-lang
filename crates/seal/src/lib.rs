@@ -13,6 +13,7 @@ pub mod message;
 pub mod number;
 pub mod signature;
 pub mod syntax;
+pub mod text;
 pub mod vm;
 
 pub use host::{

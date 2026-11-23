@@ -94,6 +94,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         ExpressionKind::Item { receiver: first, index: second, .. }
         | ExpressionKind::Lookup { dict: first, key: second }
         | ExpressionKind::Has { dict: first, key: second }
+        | ExpressionKind::Split { text: first, by: second, .. }
         | ExpressionKind::Binary { left: first, right: second, .. }
         | ExpressionKind::MaybeOr { maybe: first, fallback: second } => {
             plain(first);
@@ -463,7 +464,10 @@ impl Checker<'_> {
                         .get(*record as usize)
                         .and_then(|record| record.fields.iter().find(|(field, _)| field == name))
                         .map(|(_, field_type)| *field_type),
-                    Type::List { .. } | Type::Array { .. } | Type::Dict { .. } if name == "len" => Some(WHOLE),
+                    // trace: D65, D66. A text's `.len` counts graphemes; `.len.ucp` and `.len.bytes` are narrowings.
+                    Type::List { .. } | Type::Array { .. } | Type::Dict { .. } | Type::Text if name == "len" => {
+                        Some(WHOLE)
+                    }
                     _ => None,
                 };
                 if let Some(member) = member {
@@ -471,7 +475,7 @@ impl Checker<'_> {
                 } else {
                     let what = match kind {
                         Type::Record(_) => format!("{found} has no field `{name}`"),
-                        Type::List { .. } | Type::Array { .. } | Type::Dict { .. } => {
+                        Type::List { .. } | Type::Array { .. } | Type::Dict { .. } | Type::Text => {
                             format!("{found} has no fact `.{name}`")
                         }
                         _ => format!("{found} has no fields or facts, so there's no `.{name}`"),
@@ -483,6 +487,10 @@ impl Checker<'_> {
             Requirement::Indexable { item } => match kind {
                 Type::List { item: found_item, .. } | Type::Array { item: found_item, .. } => {
                     self.program.types.unify(*item, found_item);
+                }
+                // trace: D66. A text is reached by graphemes, each one a `Text`.
+                Type::Text => {
+                    self.program.types.unify(*item, TEXT);
                 }
                 Type::Dict { .. } => {
                     self.refuse(place, "a `Dict`'s value is reached with `key:`");
@@ -500,9 +508,9 @@ impl Checker<'_> {
                 Type::Dict { value, .. } => {
                     self.program.types.unify(*item, value);
                 }
+                // trace: D66. `for each` goes through a text by graphemes.
                 Type::Text => {
-                    self.not_designed(place, "going through text with `for each`");
-                    self.program.types.settle_as_error(*item);
+                    self.program.types.unify(*item, TEXT);
                 }
                 _ => {
                     self.refuse(place, format!("{purpose}, but this is {found}"));

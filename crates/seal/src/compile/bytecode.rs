@@ -214,6 +214,40 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// A text's length: `unit` 0 counts graphemes, 1 Unicode code points, 2 UTF-8 bytes (D65, D66).
+    TextLength {
+        to: Register,
+        from: Register,
+        unit: u8,
+    },
+    /// The grapheme of a text at a place, as a new text (D66).
+    GraphemeAtPosition {
+        to: Register,
+        text: Register,
+        index: Register,
+    },
+    GraphemeAtOffset {
+        to: Register,
+        text: Register,
+        index: Register,
+    },
+    /// A text's graphemes as a new list of texts, for `for each` to go through (D66).
+    Graphemes {
+        to: Register,
+        from: Register,
+    },
+    /// A text split at every `by`, as a new list of texts, keeping the empty pieces (D65).
+    SplitText {
+        to: Register,
+        text: Register,
+        by: Register,
+    },
+    /// The same, dropping the empty pieces (D65).
+    SplitTextNoEmpty {
+        to: Register,
+        text: Register,
+        by: Register,
+    },
     /// Whether two texts hold the same characters in the same order (D64).
     EqualText {
         to: Register,

@@ -228,6 +228,9 @@ impl Translator<'_> {
                     Some((_, PositionKind::Key)) => return not_shared("going through a `Dict`"),
                     None => String::new(),
                 };
+                if matches!(self.program.types.get(source.type_id), Type::Text) {
+                    return not_shared("going through a text");
+                }
                 let text = format!("for each {}{at} in {}:", self.name(*item), self.value(source)?);
                 self.line(&text);
                 self.body(body)?;
@@ -371,8 +374,16 @@ impl Translator<'_> {
                 if name != "len" {
                     return not_shared("a record");
                 }
+                // Unio's text names its length's unit and is reached by code points; Seal's counts graphemes (D66).
+                if matches!(self.program.types.get(receiver.type_id), Type::Text) {
+                    return not_shared("a text's length");
+                }
                 format!("{}.len", self.operand(receiver)?)
             }
+            ExpressionKind::Item { receiver, .. } if matches!(self.program.types.get(receiver.type_id), Type::Text) => {
+                return not_shared("reaching into a text");
+            }
+            ExpressionKind::Split { .. } => return not_shared("splitting a text"),
             ExpressionKind::Item { receiver, index, zero_based } => {
                 format!(
                     "{}[{}: {}]",
