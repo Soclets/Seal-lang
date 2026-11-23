@@ -15,6 +15,10 @@ examples in Seal's syntax (README).
 - **A number with a point is a `Float`, and one without is a `Whole`** (Unio D180), so a worked-out type is never in
   doubt for a literal: `speed = 2.0` makes a `Float`.
 - **`Whole` and `Float` don't mix quietly:** `be.Float(lives) * speed` (Unio D162).
+- **A text's length names its unit:** `.len.egc` (what a person sees as one character), `.len.ucp` (Unicode code
+  points) or `.len.bytes` (UTF-8); a bare `.len` on text is refused. Each Seal version pins one Unicode version (D65).
+- **Text is reached by code points:** `[pos:]`, `[offset:]` and `for each` each give a one-code-point `Text`;
+  `.split(by: t)` gives a `List<Text>`, keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
 - **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
   `<` and `>` on text aren't decided (D64).
 - **Text is written in double quotes, and `&` joins text** (D16, Unio D21, D28). A `Whole` or a `Bool` joined with `&`

@@ -1931,3 +1931,48 @@ comparing text open (its chapter 5); Seal's building session needed it for the w
 
 **Tankun's words.** Asked "Should `==` and `!=` compare two texts exactly, character by character, with no
 normalising, and `<` and `>` on text left for later?", the owner chose: "??".
+
+## D65. Text's length says its unit, `.len.egc`, `.len.ucp` or `.len.bytes`; text is reached by code points
+
+2026-11-23.
+
+**Chosen.**
+- **A text's length always names its unit,** and a bare `.len` on text is refused, with the three as the fix:
+  - `.len.egc`, extended grapheme clusters, what a person sees as one character: 👍🏽 is 1;
+  - `.len.ucp`, Unicode code points: 👍🏽 is 2;
+  - `.len.bytes`, its UTF-8 bytes: 👍🏽 is 8.
+  The docs teach `egc` as short for extended grapheme cluster, Unicode's own abbreviation, and `ucp` as short for
+  Unicode code point, as Unio's D2 has short forms taught.
+- **Each Seal version pins one Unicode version,** so where a grapheme ends never changes within a version (D50); moving to
+  a newer Unicode is a listed change in a new Seal version.
+- **`[pos:]`, `[offset:]` and `for each` reach a text by code points,** each giving a `Text` of one code point.
+- **`.split(by: t)` splits a text into a `List<Text>`,** keeping empty pieces, so `"a  b"` gives `["a", "", "b"]`;
+  `.split.no_empty(by: t)` drops them.
+- Lists keep their bare `.len`, since an item is never ambiguous.
+
+```
+words = line.split.no_empty(by: " ")
+if name.len.egc > 12
+    show_msg("That name is too long")
+end
+```
+
+**Weighed.**
+- A bare `.len` counting characters by default. Counting bytes as characters, or the other way round, is the classic
+  text bug in C and Go.
+- `.len.chars`. "Char" means a byte in C, a UTF-16 unit in Java and JavaScript, and a code point in Rust.
+- `.len.code_points`, Unicode's term spelt out. Precise but long; `ucp` keeps the precision, with the `u` saying it's
+  Unicode's.
+- `cp`, for code point: an abbreviation with an unfortunate other meaning.
+- `ugc` or `ugp` for graphemes: in games, UGC means user-generated content; `egc` is Unicode's own abbreviation.
+- Graphemes left out for now, as the design claude first proposed, since Unicode's tables change between versions.
+  Games need them, as for a name limit that counts what the player sees, and pinning one Unicode version per Seal
+  version keeps D50.
+
+**Why this won.** Every length says exactly what it counts, in short words that stay accurate, and a script can count
+what players see without ever cutting an emoji in half.
+
+**Tankun's words.** "Mf, where's narrowings", "Can we shorten the other two? Not bytes", "Where's codepoints", "The fuck?
+What unit is chars", "`.bytes`, `ucp`, `ugp`? Not bare `cp` for obvious reasons.", "Why no graphemes?", then, asked
+"Should text's length come in all three, `.len.egc`, `.len.ucp` and `.len.bytes`, with each Seal version pinning one
+Unicode version, a bare `.len` refused, and the rest working in code points?", the owner chose: "yea".

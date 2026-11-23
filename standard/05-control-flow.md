@@ -56,4 +56,6 @@ As in Unio (D22, Unio D171 to D174):
 
 `range` is in chapter 8. Unio's standard, chapter 5, has the rules in full.
 
-**Not decided:** going through text; leaving an outer loop; other loops.
+`for each` goes through a text by code points (D65).
+
+**Not decided:** leaving an outer loop; other loops.
