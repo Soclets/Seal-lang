@@ -383,6 +383,10 @@ impl Translator<'_> {
             ExpressionKind::Negate(value) => format!("-{}", self.operand(value)?),
             ExpressionKind::Not(value) => format!("not {}", self.operand(value)?),
             ExpressionKind::Binary { operator, left, right } => {
+                // Unio leaves comparing two texts open (its chapter 5); Seal's D64 decides it for Seal alone.
+                if matches!(self.program.types.get(left.type_id), Type::Text) {
+                    return not_shared("comparing two texts");
+                }
                 format!("{} {} {}", self.operand(left)?, operator.text(), self.operand(right)?)
             }
             ExpressionKind::Join(parts) => {

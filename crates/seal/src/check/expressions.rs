@@ -324,7 +324,7 @@ impl Checker<'_> {
                     BinaryOperator::Equal | BinaryOperator::NotEqual => {
                         (Requirement::Comparable, format!("{quoted} compares two values"))
                     }
-                    _ if operator.is_comparison() => (Requirement::Number, format!("{quoted} compares two numbers")),
+                    _ if operator.is_comparison() => (Requirement::Ordered, format!("{quoted} compares two numbers")),
                     _ => (Requirement::Number, format!("{quoted} works on two numbers")),
                 };
                 self.require(left.type_id, requirement, left.place, &purpose);

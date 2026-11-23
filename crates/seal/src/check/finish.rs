@@ -410,9 +410,15 @@ impl Checker<'_> {
                     self.refuse(place, format!("{purpose}, but this is {found}"));
                 }
             }
+            Requirement::Ordered => match kind {
+                Type::Whole | Type::Float => {}
+                // trace: D64
+                Type::Text => self.not_designed(place, "putting two texts in order, as `<` and `>` would,"),
+                _ => self.refuse(place, format!("{purpose}, but this is {found}")),
+            },
             Requirement::Comparable => match kind {
-                Type::Whole | Type::Float | Type::Bool => {}
-                Type::Text => self.not_designed(place, "comparing two pieces of text"),
+                // trace: D64. Two texts are equal when they hold the same characters in the same order.
+                Type::Whole | Type::Float | Type::Bool | Type::Text => {}
                 _ => self.not_designed(place, format!("comparing two values of the type {found}")),
             },
             Requirement::Joinable => match kind {
@@ -539,10 +545,10 @@ impl Checker<'_> {
     /// The types that would satisfy a requirement, when they can be listed.
     fn candidates(&mut self, requirement: &Requirement) -> Option<Vec<TypeId>> {
         match requirement {
-            Requirement::Number => Some(vec![WHOLE, FLOAT]),
-            Requirement::Comparable | Requirement::Textable => Some(vec![WHOLE, FLOAT, BOOL]),
+            Requirement::Number | Requirement::Ordered => Some(vec![WHOLE, FLOAT]),
+            Requirement::Comparable | Requirement::Showable => Some(vec![WHOLE, FLOAT, BOOL, TEXT]),
+            Requirement::Textable => Some(vec![WHOLE, FLOAT, BOOL]),
             Requirement::Joinable => Some(vec![TEXT, WHOLE, BOOL]),
-            Requirement::Showable => Some(vec![WHOLE, FLOAT, BOOL, TEXT]),
             Requirement::Member { name, .. } => {
                 if name == "len" {
                     return None;

@@ -1098,7 +1098,10 @@ impl<'p> Compiler<'p> {
                     jumps
                 }
             }
-            ExpressionKind::Binary { operator, left, right } if operator.is_comparison() => {
+            // Two texts are compared while both are still held, so they take the plain way below (D64).
+            ExpressionKind::Binary { operator, left, right }
+                if operator.is_comparison() && !matches!(self.kind(left.type_id), Type::Text) =>
+            {
                 let held_mark = self.function.held.len();
                 let register_mark = self.function.next;
                 let instruction = self.comparison_jump(*operator, left, right, jump_when);
@@ -1980,9 +1983,19 @@ impl<'p> Compiler<'p> {
             self.emit(instruction);
             return;
         }
+        let is_text = matches!(self.kind(left.type_id), Type::Text);
         let left = self.value(left);
         let right = self.value(right);
         self.place = whole.place;
+        // trace: D64
+        if is_text {
+            match operator {
+                BinaryOperator::Equal => self.emit(Instruction::EqualText { to, left, right }),
+                BinaryOperator::NotEqual => self.emit(Instruction::NotEqualText { to, left, right }),
+                _ => return self.internal("an operator that doesn't work on text"),
+            };
+            return;
+        }
         let instruction = match (operator, is_float) {
             (BinaryOperator::Add, false) => Instruction::AddWhole { to, left, right },
             (BinaryOperator::Subtract, false) => Instruction::SubtractWhole { to, left, right },

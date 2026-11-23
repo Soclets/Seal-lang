@@ -214,6 +214,17 @@ pub enum Instruction {
         left: Register,
         right: Register,
     },
+    /// Whether two texts hold the same characters in the same order (D64).
+    EqualText {
+        to: Register,
+        left: Register,
+        right: Register,
+    },
+    NotEqualText {
+        to: Register,
+        left: Register,
+        right: Register,
+    },
     EqualFloat {
         to: Register,
         left: Register,

@@ -344,7 +344,16 @@ impl Generator {
                 if simple {
                     return if self.random.chance(1, 2) { "true".to_owned() } else { "false".to_owned() };
                 }
-                match self.random.below(7) {
+                match self.random.below(8) {
+                    // Two texts compared exactly (D64); Unio leaves comparing text open, so only Seal's dialect has it.
+                    7 if self.seal() => {
+                        let operator = if self.random.chance(1, 2) { "==" } else { "!=" };
+                        format!(
+                            "{} {operator} {}",
+                            self.operand(Kind::Text, level - 1),
+                            self.operand(Kind::Text, level - 1)
+                        )
+                    }
                     0..=2 => {
                         let operator =
                             *self.random.pick(&["==", "!=", "<", ">", "at_least", "at_most"]).unwrap_or(&"<");

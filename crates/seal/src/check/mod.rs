@@ -36,7 +36,9 @@ enum ProcedureState {
 enum Requirement {
     /// `Whole` or `Float`: maths and ordering.
     Number,
-    /// `Whole`, `Float` or `Bool`: `==` and `!=`.
+    /// `Whole` or `Float`: `<`, `>`, `<=` and `>=`. Ordering two texts isn't decided (D64).
+    Ordered,
+    /// `Whole`, `Float`, `Bool` or `Text`: `==` and `!=` (D64).
     Comparable,
     /// What `&` joins: `Text`, `Whole` or `Bool` (D29).
     Joinable,
@@ -1962,6 +1964,37 @@ pub(crate) mod tests {
                 .map(|message| format!("{}: {}", message.kind.word(), message.what.clone().unwrap_or_default()))
                 .collect(),
         }
+    }
+
+    // trace: D60, D61
+    #[test]
+    fn d61_unread_parameters_and_loop_names_take_unused() {
+        assert_eq!(whats("proc tick[amount]\n    show_msg(\"x\")\nend\n"), vec!["refused: `amount` is never used"]);
+        assert!(whats("proc tick[unused amount]\n    show_msg(\"x\")\nend\n").is_empty());
+        assert!(whats("proc tick\n    show_msg(\"x\")\nend\ntick()\n").is_empty());
+        assert_eq!(
+            whats("for each round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n"),
+            vec!["refused: `round` is never used"]
+        );
+        assert!(whats("for each unused round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n").is_empty());
+        let event =
+            "one_of Event\n    healed[amount: Whole, by: Text]\nend\nevent = Event.healed[amount: 1, by: \"Mia\"]\n";
+        assert!(whats(&format!("{event}match event\n    case healed[by]\n        show_msg(by)\nend\n")).is_empty());
+        assert_eq!(
+            whats(&format!("{event}match event\n    case healed[amount, by]\n        show_msg(by)\nend\n")),
+            vec!["refused: `amount` is never used"]
+        );
+    }
+
+    // trace: D64
+    #[test]
+    fn d64_two_texts_compare_with_equals_and_nothing_else() {
+        assert!(whats("answer = \"yes\"\nif answer == \"yes\"\n    show_msg(answer)\nend\n").is_empty());
+        assert!(whats("answer = \"yes\"\nif answer != \"\"\n    show_msg(answer)\nend\n").is_empty());
+        assert_eq!(
+            whats("answer = \"yes\"\nif answer < \"zebra\"\n    show_msg(answer)\nend\n"),
+            vec!["NotDesignedYet: putting two texts in order, as `<` and `>` would, isn't decided yet"]
+        );
     }
 
     #[test]

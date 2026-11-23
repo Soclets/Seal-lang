@@ -681,6 +681,16 @@ pub fn run(
             Instruction::NotEqualWhole { to, left, right } => set!(to, u64::from(get!(left) != get!(right))),
             Instruction::LessWhole { to, left, right } => set!(to, u64::from(whole!(left) < whole!(right))),
             Instruction::AtMostWhole { to, left, right } => set!(to, u64::from(whole!(left) <= whole!(right))),
+            Instruction::EqualText { to, left, right } | Instruction::NotEqualText { to, left, right } => {
+                let first = heap_try!(heap.text(get!(left)));
+                let second = heap_try!(heap.text(get!(right)));
+                // Texts of different lengths differ at once; the same length is compared byte by byte, which is work.
+                let (same, work) =
+                    if first.len() == second.len() { (first == second, first.len()) } else { (false, 0) };
+                heap.work = heap.work.saturating_add(work as u64);
+                count_work!();
+                set!(to, u64::from(same == matches!(instruction, Instruction::EqualText { .. })));
+            }
             Instruction::EqualFloat { to, left, right } => set!(to, u64::from(float!(left) == float!(right))),
             Instruction::NotEqualFloat { to, left, right } => set!(to, u64::from(float!(left) != float!(right))),
             Instruction::LessFloat { to, left, right } => set!(to, u64::from(float!(left) < float!(right))),
