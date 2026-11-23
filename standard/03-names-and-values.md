@@ -26,7 +26,11 @@ tires = tries + 1          // refused: `tires` is never used
 unused saved = save(game) ?? 0
 ```
 
-**Not decided:** where a name made inside a block ends; making a name again that's already in use; shorthand like `+=`.
+- **A name made inside a block ends where the block ends,** and a loop's body is a fresh block each pass. Names from
+  outside are visible inside, and while a name exists it can't be made again: `name = value` changes it (D56, Unio
+  D93, D94).
+
+**Not decided:** shorthand like `+=`.
 
 ## Spelling
 

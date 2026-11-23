@@ -1648,3 +1648,32 @@ choose (D11).
 **Tankun's words.** "What the fuck is `seconds: 2`, isn't it non-rich `wait(2 secs)`?" (quoted in D51), "Cyborg units?
 💀", then, asked "Should Seal leave units out, with hosts saying units through their doors' labels?", the owner chose:
 "yea. Shouldn't it be `secs:`?"
+
+## D56. A name made inside a block ends where the block ends, and a loop's body is fresh each pass
+
+2026-11-23.
+
+**Chosen.** As in Unio (Unio D93, D94):
+- **A name made inside a block ends where the block ends.** A loop's body is a fresh block on every pass, so a name made
+  in it is made again each pass, and doesn't exist after the loop.
+- **Names from outside a block are visible inside it,** so `tries = tries + 1` inside a loop changes the outer
+  `mut tries` (D2).
+- **While a name exists, it can't be made again;** `name = value` changes it instead, which needs `mut` (D2).
+
+```
+mut tries = 0
+while tries < 7 and not won
+    guess = be.Whole(ask("Your guess: ")) ?? 0     // a fresh guess each pass
+    tries = tries + 1                              // changes the outer tries
+end
+```
+
+**Weighed.**
+- A name living on after its block, as in Python. The second pass's `guess = …` would be a change to a name not made
+  with `mut`, refused, and Tankun's own guessing game would break.
+
+**Why this won.** It's Unio's rule, and it's what the guessing game assumes: a value made for one pass belongs to that
+pass. Found while writing Seal's first tests.
+
+**Tankun's words.** Asked "Should a name made inside a block end where the block ends, with a loop's body a fresh block
+each pass, as in Unio's D93?", the owner chose: "yea".
