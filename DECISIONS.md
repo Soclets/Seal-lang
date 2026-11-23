@@ -933,5 +933,6 @@ end
 **Why this won.** One shape for going through anything, and it reads aloud as a sentence: "for each count, at key item,
 in stock".
 
-**Tankun's words.** Tankun's reaction to the loop line (has code), then, asked "Should `for each` go through a `Dict`'s
+**Tankun's words.** "`for each count at key item in stock`
+Holy shit, that's an entire sentence", then, asked "Should `for each` go through a `Dict`'s
 values, with `at key name` giving each key, in the order they were added?", the owner chose: "yea".
