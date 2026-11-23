@@ -600,3 +600,36 @@ end
 
 **Tankun's words.** Asked "Should a Seal procedure's first line be `proc name[params]`, with optional types and an
 optional `returns`?", the owner chose: "yea".
+
+## D22. Seven groups of Unio's features come into Seal as they are, in Seal's syntax
+
+2026-11-23.
+
+**Chosen.** These come into Seal as Unio has them, changed only by what Seal's own decisions change (no `$`, `;` or
+`:`, and a plain `end`):
+1. **Comparisons and logic:** `==`, `!=`, `<`, `>`, `at_least`, `at_most`, `and`, `or`, `not` (Unio D17, D34).
+2. **Loops:** `while`, `break`, `for each … in` with `at pos` and `at offset`, `range[from:, to: or before:,
+   step_by:]`, and no changing what a `for each` goes through (Unio D19, D32, D170 to D174).
+3. **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and
+   `[all: value]` (Unio D75 to D80, D167 to D169).
+4. **Failures:** `?`, `??` with a value, `ignore` or `crash`, and `otherwise` with `case`, `instead` and a case that
+   just ends after a call that gives back nothing (Unio D23, D40, D186).
+5. **Conversions:** `be.Whole`, `be.Float`, `be.Text`, with `be.Whole.floor` and the rest (Unio D22, D153, D178).
+6. **Calls:** labels, as in `heal(50, by: 10)`, and slides `|>` for chains of three or more (Unio D24, D128).
+7. **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (Unio D27, D70, D71, D185).
+
+```
+for each name at pos i in names
+    show_msg(fmt("{i}. {name}"))
+end
+```
+
+A later Unio decision changing one of these is brought to Tankun for Seal too; it doesn't change Seal by itself (D1).
+
+**Weighed.**
+- A question for each feature. Slower, for features that already fit Seal unchanged.
+
+**Why this won.** They're designed, tested and run in Ralph, and nothing in Seal's purpose asks for them to differ.
+
+**Tankun's words.** Asked "Should Seal adopt these seven groups from Unio, with Seal's syntax changes applied?", the
+owner chose: "Yea. How the fuck does Luau shorten Workspace, should we have that?"
