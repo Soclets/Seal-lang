@@ -181,3 +181,26 @@ How a procedure's first line is written, with or without `:`, isn't decided yet;
 
 **Tankun's words.** Asked "Should a procedure's result type be optional too, worked out from its `return`s, with
 `returns` allowed for writing it?", the owner chose: "yea".
+
+## D7. Names have no `$`, and Seal's language server colours each kind of name from the start
+
+2026-11-23.
+
+**Chosen.**
+- **Seal's names have no `$`,** unlike Unio's (Unio D11): `mut tries = 0`, and `{tries}` in `.fmt` text.
+- **A name can't be a keyword:** `mut if = 3` is refused.
+- **Seal's language server speaks LSP** (the Language Server Protocol, which any editor or host can plug into) and,
+  from the start, gives variables, procedures, narrowings and methods their own colours, so `score.add(1)`, a method on
+  a value, and `show_msg.fmt(…)`, a narrowing of a procedure, look different in an editor.
+
+**Weighed.**
+- `$` on every name, as Unio has it. It tells a method from a narrowing on the page, with no editor; Seal scripts are
+  short and nearly always written in an editor, often one the host provides, as Roblox Studio is for Luau.
+
+**Why this won.** Seal isn't standalone: its scripts live in a host's project and are written in an editor, where the
+language server tells the kinds of name apart, so `$` costs more to write than it gives.
+
+**Tankun's words.** "IDEs do help clarify, right? Like a narrowing vs a method", "Here's the thing, Seal unlike Unio,
+is not standalone. Which usually makes it IDE'd, right?", then, asked "Should Seal names have no `$`, with Seal's
+language server speaking LSP and colouring variables, procedures, narrowings and methods apart from the start?", the
+owner chose: "yea".
