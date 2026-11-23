@@ -66,13 +66,22 @@ show_msg(be.Text(n))
 
 Unio's standard, chapter 4, has the rules for slides in full.
 
-A procedure declares its labels on a `labels` line, the first line of its body (D41, Unio D25):
+A procedure declares its labels on a `labels` line, the first line of its body, with its list in `[ ]` (D41, D42,
+Unio D25). A `defaults` line may follow it, giving a value for a labelled argument a call leaves out, written as the call
+would write it (D42):
 
 ```
 proc heal[target, amount, times]
-    labels amount as by, times as times
+    labels [amount as by, times as times]
+    defaults [times: 1]
     hp = hp + amount * times
 end
+
+heal(goblin, by: 10)              // means heal(goblin, by: 10, times: 1)
 ```
+
+- **Only labelled parameters can have a default** (D42).
+- **A default is a plain value,** never a calculation or a call (D42).
+- **The host's calls can leave defaulted arguments out too** (D42).
 
 **Not decided:** a value-giving call standing alone (Unio D120, D161).

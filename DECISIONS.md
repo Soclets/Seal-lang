@@ -1173,5 +1173,46 @@ heal(goblin, by: 10, times: 2)
 
 **Why this won.** The parameter list stays just the names, with types where wanted, and labels keep Unio's form.
 
+(Changed by D42: the list goes in `[ ]`.)
+
 **Tankun's words.** "Fuck no", then, asked "Should Seal declare labels with Unio's `labels` line at the top of the
 body?", the owner chose: "yea".
+
+## D42. `labels [ ]` and `defaults [ ]`, with a default written as the call would write it
+
+2026-11-23.
+
+**Chosen.**
+- **`labels` puts its list in `[ ]`,** as `labels [amount as by, times as times]`, changing D41's bracket-free line. A
+  long list can then be split over lines inside the `[` (D8).
+- **`defaults [ ]` comes right after `labels`,** as in Cyborg (Cyborg's standard, 5.4), giving a value for a labelled
+  argument a call leaves out.
+- **A default is written as the call would write it,** the label, `:` and the value: `defaults [times: 1]`, so
+  `heal(goblin, by: 10)` means exactly `heal(goblin, by: 10, times: 1)`. With `amount as by`, it's `defaults [by: 10]`.
+- **Only labelled parameters can have one,** since leaving out an unlabelled argument would make the rest ambiguous.
+- **A default is a plain value,** worked out at load time, never a calculation or a call, as D12 keeps braces free of
+  hidden work.
+- **The host's calls can leave defaulted arguments out too.**
+
+```
+proc heal[target, amount, times]
+    labels [amount as by, times as times]
+    defaults [times: 1]
+    hp = hp + amount * times
+end
+
+heal(goblin, by: 10)
+```
+
+**Weighed.**
+- `labels` with no brackets, as Unio's D25 and D41 have it. Such a line can't be split, with no `;` or `\` in Seal.
+- `defaults [times = 1]`, as Cyborg writes it. In Seal `=` makes or changes a name (D2), which a default doesn't, as
+  D27 refused `=` for building records.
+
+**Why this won.** It fits Unio's D165, since the lists describe the parameters, already in `[ ]`, and a default reads
+as the very piece of the call it stands for. Tankun asked for the brackets.
+
+**Tankun's words.** "Wait a minute, can we use `[]` there now?", "That still fits the brackets rule, right?", "Is `=`
+in `defaults` corect?", then, asked "Should `labels` and `defaults` put their lists in `[ ]`, with `defaults` written as
+the call would write it, `[times: 1]`, after `labels`, for labelled parameters only, with plain values?", the owner
+chose: "yea".
