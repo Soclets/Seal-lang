@@ -2502,5 +2502,6 @@ names: List[len.max: 3] = ["A", "B"]      // Text, from the items
 **Why this won.** It's D30's own reason taken one step further: write what only you know, and let the value say the
 rest.
 
-**Tankun's words.** has code (quoted with D81), then, asked "Should a written type be able to leave out its item type
-when the value shows it, as `board: Array[len: 64] = [all: 0]`?", the owner chose: "yea"
+**Tankun's words.** The idea came with Tankun's sketch for D81 (`board: List = [all: 0] // <Whole> infer`). Asked
+"Should a written type be able to leave out its item type when the value shows it, as `board: Array[len: 64] = [all:
+0]`?", the owner chose: "yea"
