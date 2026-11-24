@@ -69,7 +69,8 @@ goblin.hp = goblin.hp - 5
 - **A field is read with `.field`,** and changed only through a `mut` name. A record is a value: `b = a` gives `b` its
   own copy (D15, D27).
 - **A change can reach through any depth of fields and positions** of a `mut` name, as `bodies[pos: 1].vx = 2.0`, with
-  a method allowed at the end, as `goblin.items.add("Gem")`; a `Dict` key partway along isn't decided (D62).
+  a method allowed at the end, as `goblin.items.add("Gem")`; a `Dict` key partway along is refused, since a
+  missing key would have nowhere to be dealt with: the value is taken out, changed and put back (D62, D90).
 - **At the doors a record is a Rust struct** (D27).
 
 - **A record can hold a record,** and a type can hold itself where a value can end, through a `one_of` case, a

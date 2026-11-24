@@ -2689,3 +2689,30 @@ other mistake.
 **Tankun's words.** "Why not comptime?", "What the fuck", "What the fuck?", then, asked what they meant by load time,
 Tankun answered: "Like, bro. We aren't fucking Cyborg**PL**, and we're not fucking Lua either.
 What I'm saying is fucking refusing at compile time is possible, do it"
+
+## D90. A `Dict` key partway along a change is refused
+
+2026-11-24.
+
+**Chosen.** A change can't go through a `Dict` key on its way, since a missing key is a failure (D32) and a change has
+nowhere to deal with it: `??` and `otherwise` belong to calls. The value is taken out, changed and put back:
+
+```
+shops[key: "north"].stock.add("Key")      // refused
+
+mut north = shops[key: "north"] ?? crash
+north.stock.add("Key")
+shops[key: "north"] = north
+```
+
+- **A key at the very end of a change stays allowed,** as `shops[key: "north"] = north`, which sets or adds it (D32).
+- The refusal's fix is the three lines; its wording comes with a later batch.
+
+**Weighed.**
+- Allowing it, with a missing key a failed check that stops the script. A lookup that's expected to fail sometimes
+  would then stop scripts silently, nowhere in sight.
+
+**Why this won.** Every way a lookup can fail stays visible on the line where it's dealt with.
+
+**Tankun's words.** "?" (to the question), then, asked "Should a lookup in the middle of a change like that be
+refused?", the owner chose: "??" (yes)
