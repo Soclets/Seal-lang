@@ -3002,3 +3002,22 @@ show_msg("{speeds}")       // [~0.1, 0.5]
 
 **Tankun's words.** "Just like how floats say `~`?", then, asked "Should lists, records, `Dict`s and `one_of`s show in
 braces exactly as they'd be written in Seal?", the owner chose: "??" (yes)
+
+## D101. `be.Bool` reads `"true"` or `"false"`; other new conversions are refused
+
+2026-11-24.
+
+**Chosen.**
+- **`be.Bool(text)` gives `true` for `"true"` and `false` for `"false"`,** as a `Bool` shows (Unio D153), and fails
+  with `not_a_bool` on any other text, handled as `be.Whole`'s failure is: `music_on = be.Bool(line) ?? true`.
+- **Every other conversion not already decided is refused,** as text into a list or a record, or a `Whole` into a
+  `Bool`.
+
+**Weighed.**
+- Reading `"yes"`, `"1"` and the like as `true`. A guess about what the text meant.
+- Reading any value back from the text D100 shows. Possible later as one feature for every type, if a game needs it.
+
+**Why this won.** A save file can hold a setting as `true` or `false`, and nothing is guessed.
+
+**Tankun's words.** Asked "Should Seal add `be.Bool` from text, and refuse every other new conversion?", the owner
+chose: "??" (yes)

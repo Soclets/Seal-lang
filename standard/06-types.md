@@ -195,3 +195,7 @@ show_msg("Speed: {speed, places: 2}")       // Speed: 0.30
 
 `be.Whole`, `be.Float` and `be.Text`, with `be.Whole.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` for a
 `Float`, as in Unio (D22, Unio D22, D153, D178). Unio's standard, chapter 7, has them in full.
+
+- **`be.Bool` reads `"true"` or `"false"`,** as a `Bool` shows, and fails with `not_a_bool` on any other text (D101).
+- **`be.Text` takes any value,** shown as it's written (D100).
+- **Any other conversion is refused,** as text into a list, or a `Whole` into a `Bool` (D101).
