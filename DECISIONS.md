@@ -2944,3 +2944,32 @@ D42's, `otherwise level_failed.start_over` on one line.
 **Tankun's words.** "yea. What about `?!` replacing `otherwise` for non-block ver?" (quoted whole in D97), has code,
 "or just `??`?", then, asked "Should `??` take a handler on one line, with `otherwise` only for the block?", the owner
 chose: "yea"
+
+## D99. A `range` is a `List<Whole>`
+
+2026-11-24.
+
+**Chosen.** `range[…]` gives a `List<Whole>`, so it can go anywhere a list can: stored in a name, passed to a
+procedure, read with `.len` or `[pos: …]`, or gone through with `for each`.
+
+```
+rounds = range[from: 1, to: 3]        // [1, 2, 3]
+for each i in range[from: 0, before: bag.len]
+```
+
+- **Going through a range with `for each` builds no list:** Seal counts as it goes. A script can't tell, so it's not a
+  rule, only speed.
+- **A range kept in a name is a real list,** and counts against the script's memory cap like any other (D14).
+- A short, fixed run reads better written out, as `[1, 2, 3]`; a range is for long runs, steps, and runs that depend on
+  values.
+
+**Weighed.**
+- A range only inside `for each`, as the building session stops on now. Storing or passing one would be refused for no
+  reason a learner could see.
+- A `Range` type of its own, as in Python and Rust. Another type, with its own answers to what `.add`, `[pos: …]` and
+  passing it as a list do.
+
+**Why this won.** Nothing new to learn: a range is a list you didn't have to write out.
+
+**Tankun's words.** "why?", "Why not just make it a list?", "Why not just write it normally?", then, asked "Should a
+`range` just be a `List<Whole>`, usable anywhere a list is?", the owner chose: "yea"
