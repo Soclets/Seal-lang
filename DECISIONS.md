@@ -2226,3 +2226,39 @@ with the failure Seal already has for a full list. Tankun pointed out it could b
 asked "Should a list move into any limit at least as big freely, and into a smaller limit with `full` as a failure
 handled with `??` or `otherwise`, while a repeated `Dict` key and an over-long list literal are refused?", the owner
 chose: "??".
+
+## D74. `record` stays the word for a record
+
+2026-11-24.
+
+**Chosen.** D27 stands: a record's type is declared with `record`, and each value made from it is a record.
+
+```
+record Student
+    name: Text
+    class: Text
+    number: Whole
+    year: Whole
+end
+
+fern = Student[name: "Fern Wattana", class: "M.3/2",
+    number: 17, year: 2026]
+```
+
+A record is one stored entry with named parts, as in English a student's school record or a patient's file: the
+`record Student` line is the blank form, and each `Student[…]` one filled-in form.
+
+**Weighed.**
+- `blueprint`, since the declaration is a template, as Tankun felt. Unreal Engine's Blueprints already mean visual
+  scripting in game making, where NginSeal is aimed, and it's long for a word typed often.
+- `type`, the design session's alternative. `Whole` is a type too, as Tankun pointed out, so it doesn't say what kind
+  of type, and `one_of` makes types as well.
+- `struct`, Rust's and C's word, which Tankun guessed it was.
+
+**Why this won.** `record` says what each value is, a group of named fields, in the word business languages have used
+for it since COBOL, and nothing else in game making uses it.
+
+**Tankun's words.** "Okay, so why is it called a record? Seems more like a blueprint", "Honestly? Ahhh, I feel
+blueprint, man. But idk if I should change it", "`type`? You profound fuck, `Whole` is also a type", "Okay, okay.
+Explain to me how English record works", "Bro thinks I know more Thai than English.", "Show me a student record, not
+real", then, asked "Should Seal keep `record`?", the owner chose: "Ahhhh, keep that shi"
