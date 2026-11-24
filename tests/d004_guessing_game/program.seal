@@ -9,10 +9,10 @@ while tries < 7 and not won
     elif guess > secret
         show_msg("Too high")
     else
-        show_msg(fmt("Correct! You got it in {tries} tries"))
+        show_msg("Correct! You got it in {tries} tries")
         won = true
     end
 end
 if not won
-    show_msg(fmt("Out of tries! It was {secret}."))
+    show_msg("Out of tries! It was {secret}.")
 end

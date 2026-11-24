@@ -91,7 +91,7 @@ potions = stock[key: "potion"] ?? 0
 
 ```
 for each count at key item in stock
-    show_msg(fmt("{item}: {count}"))
+    show_msg("{item}: {count}")
 end
 ```
 
@@ -126,7 +126,7 @@ match last
     case hurt[amount]
         hp = hp - amount
     case healed[by]
-        show_msg(fmt("{by} healed you"))
+        show_msg("{by} healed you")
     case idle
 end
 ```
@@ -152,20 +152,21 @@ end
 id = nearest_enemy() ?? 0
 ```
 
-## `fmt`
+## Filling in text
 
-`fmt("…")` fills in the names in its braces and gives back a `Text` (D12):
+Every text fills in what's in its braces, wherever it's written (D75, Unio D200):
 
 ```
-mut msg = fmt("Hello, {player}")
-show_msg(fmt("Correct! You got it in {tries} tries"))
+mut msg = "Hello, {player}"
+show_msg("Correct! You got it in {tries} tries")
 ```
 
 - **Braces hold a name, which may be followed by its fields and facts,** as `{goblin.name}` and `{names.len}`, never
   a calculation or a call; a name, field or fact that doesn't exist is refused at load time (D12, D28, Unio D29).
-- **Text is plain unless it goes through `fmt`:** `show_msg("{tries}")` shows `{tries}` (D12).
+- **A brace to show as it is is written `\{`,** as in `"Type \{help}"`, which shows `Type {help}` (D63, D75, Unio
+  D30).
 
-**Not decided:** a literal brace inside `fmt` text; `places:` in braces (Unio D175).
+**Not decided:** `places:` in braces (Unio D175).
 
 ## Converting
 

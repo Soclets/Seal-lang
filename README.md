@@ -31,7 +31,7 @@ show_msg("loaded")
 
 proc on_hit[amount]
     hp = hp - amount
-    show_msg(fmt("hit for {amount}, {hp} left"))
+    show_msg("hit for {amount}, {hp} left")
 end
 ```
 

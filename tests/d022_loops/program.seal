@@ -1,7 +1,7 @@
 for each round in range[from: 1, to: 3]
-    show_msg(fmt("Round {round}"))
+    show_msg("Round {round}")
 end
 names = ["Fern", "Plern"]
 for each name at pos i in names
-    show_msg(fmt("{i}. {name}"))
+    show_msg("{i}. {name}")
 end

@@ -1,7 +1,7 @@
 proc countdown[start]
     mut n = start
     while n > 0
-        show_msg(fmt("{n}"))
+        show_msg("{n}")
         wait(seconds: 1)
         n = n - 1
     end

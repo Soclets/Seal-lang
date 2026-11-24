@@ -11,9 +11,9 @@ results = [3, 12, 7]
 found = first_above(results, 10)
 match found
     case some[value]
-        show_msg(fmt("found {value}"))
+        show_msg("found {value}")
     case none
         show_msg("none found")
 end
 high = first_above(results, 20) ?? 0
-show_msg(fmt("high: {high}"))
+show_msg("high: {high}")

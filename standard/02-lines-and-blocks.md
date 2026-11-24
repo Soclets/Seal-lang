@@ -3,7 +3,7 @@
 ```
 mut tries = 0
 while tries < 3
-    show_msg(fmt("Try {tries}"))
+    show_msg("Try {tries}")
     tries = tries + 1
 end
 ```

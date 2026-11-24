@@ -39,10 +39,10 @@ between two `Float`s are refused in a `while` condition (Unio D184).
 
 ```
 for each name at pos i in names
-    show_msg(fmt("{i}. {name}"))
+    show_msg("{i}. {name}")
 end
 for each round in range[from: 1, to: 3]
-    show_msg(fmt("Round {round}!"))
+    show_msg("Round {round}!")
 end
 ```
 

@@ -354,6 +354,8 @@ Cyborg's.
 `fmt` like Cyborg's (has code), then, asked "Should Seal fill text with a built-in `fmt("…")` that gives a `Text`,
 with braces holding only names, checked at load time?", the owner chose: "yea".
 
+(Replaced by D75: every text fills its braces, and `fmt` goes.)
+
 ## D13. A host can give its doors narrowings, working exactly like Seal's own
 
 2026-11-23.
@@ -2262,3 +2264,34 @@ for it since COBOL, and nothing else in game making uses it.
 blueprint, man. But idk if I should change it", "`type`? You profound fuck, `Whole` is also a type", "Okay, okay.
 Explain to me how English record works", "Bro thinks I know more Thai than English.", "Show me a student record, not
 real", then, asked "Should Seal keep `record`?", the owner chose: "Ahhhh, keep that shi"
+
+## D75. Every text fills in its braces, with `\{` for a brace as it is; `fmt` goes
+
+2026-11-24.
+
+**Chosen.** Text fills in what's in its braces wherever it's written, replacing D12's `fmt("…")`, as Unio's D200 does:
+
+```
+show_msg("Hi {player.name}, {lives} lives left")
+greeting = "Round {round}!"
+show_msg("Type \{help} for commands")
+```
+
+- **A brace to show as it is is written `\{`,** as D63 already has it, so the last line shows `Type {help} for
+  commands`.
+- **Braces keep what D12 and D28 allow:** a name, followed by its fields and facts, as in `{player.name}` and
+  `{bag.len}`; a name, field or fact that doesn't exist is refused at load time.
+- **`fmt` goes,** from the built-ins too.
+
+**Weighed.**
+- `fmt("…")` (D12). Text not meant to fill needs no `\`, but there are two kinds of text, and `show_msg("{tries}")`
+  showing `{tries}` is a trap, which Unio's D200 removed for the same reason.
+
+**Why this won.** One kind of text, filled the same way in a call or a name, matching Unio's text, which Tankun wanted
+Seal's formatting to follow.
+
+**Tankun's words.** "Mf, you know. Let me design some Seal instead Ngin rn. First of all, I'll make its formatting
+follow Unio, and maybe add named `end`s, because I'm not used to bare", "yea`" (meaning text formatting), "`{player.name}`
+Let me guess that's a struct? Just trying to learn programming rn, haha. Yes, I don't fucking know how to program
+<skull emoji>", "What's it fir?", then, after D74, asked "Should every Seal text fill its braces, with `\{` for a brace
+as it is, replacing `fmt(...)`?", the owner chose: "yea"

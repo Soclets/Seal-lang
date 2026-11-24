@@ -1,1 +1,1 @@
-fmt braces hold a name followed by a fact, and text outside fmt stays plain. D12, D28.
+Braces in text hold a name followed by a fact, and \{ shows a brace as it is. D12, D28, D63, D75.

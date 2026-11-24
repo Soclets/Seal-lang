@@ -8,4 +8,4 @@ end
 
 heal(by: 5)
 heal(by: 2, times: 3)
-show_msg(fmt("HP: {hp}"))
+show_msg("HP: {hp}")

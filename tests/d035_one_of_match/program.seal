@@ -12,10 +12,10 @@ proc handle[event: Event]
             show_msg("nothing happens")
         case hurt[amount]
             hp = hp - amount
-            show_msg(fmt("hurt for {amount}, {hp} left"))
+            show_msg("hurt for {amount}, {hp} left")
         case healed[amount, by]
             hp = hp + amount
-            show_msg(fmt("{by} healed {amount}, {hp} left"))
+            show_msg("{by} healed {amount}, {hp} left")
     end
 end
 

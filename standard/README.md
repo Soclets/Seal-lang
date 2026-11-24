@@ -28,7 +28,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `end if`, `end while`, `end proc name`, `end otherwise` | `end` | D20 |
 | `else if` | `elif` | D10 |
 | `proc name[$a: Whole] returns Whole:` | `proc name[a: Whole] -> Whole`, types and `->` optional | D5, D6, D21, D45 |
-| `show_msg.fmt("{$x}")` | `fmt("{x}")`, given to whatever the host's door is | D12 |
+| `show_msg("{x}")` | `"{x}"`: every text fills its braces in both | D75 |
 | `show_msg`, `ask`, `random` | doors, if the host opens them, under the names it chooses | D11 |
 | `.unio` | `.seal` | D25 |
 
@@ -39,7 +39,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 3. [Names and values](03-names-and-values.md): making and changing names, `mut`, `unused`, names' spelling, values
 4. [Procedures](04-procedures.md): definitions, families, worked-out types, calls, labels, defaults and slides
 5. [Control flow](05-control-flow.md): `if`, `elif`, comparisons, logic, `while`, `for each` and `break`
-6. [Types](06-types.md): `Whole`, `Float`, `Bool`, `Text`, lists and arrays, records, dictionaries, options and `match`, `Maybe`, `fmt`, converting
+6. [Types](06-types.md): `Whole`, `Float`, `Bool`, `Text`, lists and arrays, records, dictionaries, options and `match`, `Maybe`, filling in text, converting
 7. [Failures](07-failures.md): `?`, `??` and `otherwise`
 8. [Built in](08-built-in.md): what Seal provides itself
 9. [Hosts](09-hosts.md): loading, doors, narrowings on doors, IDs and limits

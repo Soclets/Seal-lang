@@ -2,7 +2,7 @@
 
 ## Checks
 
-- **At load time:** types, names, unused names, `fmt` braces, doors and narrowings, and every refusal. A script with
+- **At load time:** types, names, unused names, braces in text, doors and narrowings, and every refusal. A script with
   any of these doesn't load (D17).
 - **While running:** `Whole` overflow, a bad list position, division by zero, a `Float` becoming infinite or NaN, and
   the limits. A failed check stops the script at its exact line (D14, D17, D18).

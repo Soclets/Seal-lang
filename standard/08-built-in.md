@@ -5,7 +5,6 @@ text, asking, files, time, sound and randomness aren't built in: they're doors, 
 
 | Built-in | What it does | Decided in |
 |---|---|---|
-| `fmt("…")` | fills in braces and gives a `Text` | D12 |
 | `be.Whole`, `be.Float`, `be.Text` and their narrowings | convert | D22, Unio D22, D178 |
 | `range[from:, to: or before:, step_by:]` | a run of whole numbers, for `for each` | D22, Unio D170, D172 |
 | `sqrt(x)` | a `Float`'s square root, stopping on a negative number | D22, Unio D185 |
