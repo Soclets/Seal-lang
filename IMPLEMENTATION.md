@@ -21,6 +21,12 @@ From Unio's rules:
   one message, unless one answer unblocks work that's waiting on it (owner, 2026-11-23).
 - Ask one question at a time, in plain chat text. No question popups, buttons or pre-made answers, including in any
   end-of-turn summary box.
+- End a question on the one option you recommend, as in "X?", with any alternatives in the explanation above it, never
+  "X? Or Y?": Tankun often answers "yea", which can only say yes to one thing (owner, 2026-11-20).
+- A message that's only `?` means "What?": explain the last thing again, more plainly. Only `??` means yes, and only
+  `???` means no. A `?` inside a longer message is an ordinary question mark (owner, 2026-11-23).
+- In code shown to Tankun, a comment goes on its own line above the code it explains, never at the end of a line, where
+  it wraps in a narrow window and reads as another line of code (owner, 2026-11-24).
 - Explain plainly, but keep the real technical words and explain them, as in "a VM (virtual machine, a program that
   runs instructions made up for it)". A tiny code example usually beats a paragraph.
 - A remark or a question from Tankun isn't a yes. When an answer is unclear, check which was meant before logging.
@@ -28,6 +34,9 @@ From Unio's rules:
   don't invent problems: if an idea is fine, say so.
 - Before proposing anything, search DECISIONS.md for what's already decided, here and in Unio's where Seal takes
   Unio's rules (D15, D16), and build on it.
+- Before saying there's no rule or no way for something, check what Tankun's other projects do: Unio's and Cyborg's
+  `IMPLEMENTATION.md` and `.claude/settings.json` (`/Users/ts/Plainly v2/`, `/Users/ts/Cyborg - maybe this time it's
+  fr/`). What worked in one was usually chosen for a reason (owner, 2026-11-20).
 - When you got something wrong, say so plainly and fix it.
 - Swearing is fine.
 
@@ -114,13 +123,16 @@ From Unio's rules:
 
 ## Prompting
 
-From Unio's rules. Before prompting a subagent or a new session, a session downloads, as Markdown, the current prompting
-guide for that model, and any other guide it points to for what it doesn't cover itself, whether it says "read" or
-"see"; if the model has no guide of its own, the general prompting best practices. It reads each file itself, in full,
-and again after every compaction; never through a fetch tool's summary (owner, 2026-11-23). Delete the downloaded guide once you've read it. Prompts for other sessions are written in `design/` as one
-copiable block, checked against the guide before they're handed over, including how a long-running session keeps going
-and when it stops. A prompt that's already been pasted is never the fix: changes go to that session as a message. A
-subagent's prompt includes this file's rules, since the hook doesn't reach a subagent.
+From Unio's rules. Before writing a prompt for a subagent or a new session, or editing one in `design/`, even only to
+update decision numbers (owner, 2026-11-24), a session downloads, as Markdown, the current prompting guide for that
+model, and any other guide it points to for what it doesn't cover itself, whether it says "read" or "see"; if the model
+has no guide of its own, the general prompting best practices. It reads each file itself, in full, and again after every
+compaction; never through a fetch tool's summary (owner, 2026-11-23). Delete the downloaded guide once you've read it.
+Prompts for other sessions are written in `design/` as one copiable block, checked against the guide before they're
+handed over, including how a long-running session keeps going and when it stops. Tankun pastes each prompt into its
+session; a session never sends one, since a message from another session doesn't carry Tankun's say-so (owner,
+2026-11-24). A prompt that's already been pasted is never the fix: changes go to that session as a message. A subagent's
+prompt includes this file's rules, since the hook doesn't reach a subagent.
 
 ## Git
 
