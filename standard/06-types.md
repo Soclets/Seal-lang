@@ -152,6 +152,9 @@ end match
 id = nearest_enemy() ?? 0
 ```
 
+`?? crash` on a `Maybe` stops the script with a failed check when it's `none`, as for a failure (D54, D79). `?? ignore`
+on a `Maybe` is refused, since the name would be left with nothing in it, with `??` and a value as the fix (D79).
+
 ## Filling in text
 
 Every text fills in what's in its braces, wherever it's written (D75, Unio D200):

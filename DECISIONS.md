@@ -2392,3 +2392,26 @@ their own editor has a look forced on them.
 
 **Tankun's words.** Asked "Should Seal recommend Unio's colours and font, used in its docs and offered as an optional
 editor theme, without forcing either?", the owner chose: "yea"
+
+## D79. `?? crash` works on a `Maybe`; `?? ignore` on one is refused
+
+2026-11-24.
+
+**Chosen.**
+- **`?? crash` on a `Maybe`** stops the script with a failed check when it's `none`, as `?? crash` does for a failure
+  (D54): `id = nearest_enemy() ?? crash` says there must be one.
+- **`?? ignore` on a `Maybe` is refused,** with `??` and a value as the fix, since the name would be left with nothing
+  in it, which is the `nil` D38 rules out. `?? ignore` stays for calls that can fail and give back no value, as
+  `save(game) ?? ignore`.
+
+The wordings come with a later batch.
+
+**Weighed.**
+- Refusing both on a `Maybe`, leaving `??` with a value and `match`. `?? crash` says plainly "this can't be missing
+  here", which a learner otherwise writes as a `match` with a stop in one case.
+
+**Why this won.** Each keeps its meaning from failures, and a name never holds nothing.
+
+**Tankun's words.** "Wait, what the fuck happens if you make a List wit no mut?", "Wait, wait. No value? Like fucking
+NULL?", "What would `ignore` do?", then, asked "Should `?? crash` work on a `Maybe` and `?? ignore` be refused?", the
+owner chose: "yea"
