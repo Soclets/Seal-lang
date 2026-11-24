@@ -2973,3 +2973,32 @@ for each i in range[from: 0, before: bag.len]
 
 **Tankun's words.** "why?", "Why not just make it a list?", "Why not just write it normally?", then, asked "Should a
 `range` just be a `List<Whole>`, usable anywhere a list is?", the owner chose: "yea"
+
+## D100. Every value shows as it's written in Seal
+
+2026-11-24.
+
+**Chosen.** A list, array, record, `Dict` or `one_of` in braces, or through `be.Text`, shows exactly as it would be
+written in a script, as a `Float` already does with its `~` (Unio D155):
+
+```
+show_msg("{bag}")          // ["Gem", "Key"]
+show_msg("{orc}")          // Enemy[name: "Orc", hp: 50]
+show_msg("{stock}")        // ["sword": 1, "potion": 3]
+show_msg("{event}")        // Event.hurt[amount: 5]
+show_msg("{speeds}")       // [~0.1, 0.5]
+```
+
+- **Text inside shows its quotes,** so items can't run together.
+- **A host's types show the same way,** by their Seal names.
+- Text for a player, as "Gem, Key", is built by the script itself.
+
+**Weighed.**
+- Refusing them in braces, as the building session stops on now. Checking what a value holds while making a game is
+  the most common reason to show one.
+- A format of their own, as Python's or Rust's debug printing. Something new to learn, which can't be pasted back.
+
+**Why this won.** One rule for every value: what's shown is how it's written.
+
+**Tankun's words.** "Just like how floats say `~`?", then, asked "Should lists, records, `Dict`s and `one_of`s show in
+braces exactly as they'd be written in Seal?", the owner chose: "??" (yes)

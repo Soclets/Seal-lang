@@ -177,6 +177,9 @@ show_msg("Correct! You got it in {tries} tries")
 
 - **Braces hold a name, which may be followed by its fields and facts,** as `{goblin.name}` and `{names.len}`, never
   a calculation or a call; a name, field or fact that doesn't exist is refused at load time (D12, D28, Unio D29).
+- **Every value shows as it's written in Seal,** a list, record, `Dict` or `one_of` included, with text inside in its
+  quotes and a `Float` with its `~` when it isn't exact: `"{bag}"` with `["Gem", "Key"]` shows `["Gem", "Key"]`, and
+  `be.Text` gives the same (D100, Unio D155).
 - **Empty braces, as `"{}"`, are refused,** with `"\{}"` as the fix (D93).
 - **A brace to show as it is is written `\{`,** as in `"Type \{help}"`, which shows `Type {help}` (D63, D75, Unio
   D30).
