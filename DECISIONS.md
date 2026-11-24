@@ -2738,3 +2738,25 @@ through D63, and a block comment ends at its own `end comment name` (D76).
 **Why this won.** Comments follow the same rules as everything else on a line.
 
 **Tankun's words.** Asked "Do all four work that way?", the owner chose: "yea"
+
+## D92. In text, `\` goes only before `"`, `\` or `{`, and a tab character is refused
+
+2026-11-24.
+
+**Chosen.**
+- **A `\` before any character but `"`, `\` or `{` is refused while loading,** as `"Line 1\nLine 2"`, with a `why:`
+  saying `\n` isn't a new line in Seal, so a habit from another language doesn't turn into a stray `n`.
+- **A tab character inside text is refused,** as tabs are everywhere else in a script (D63), since it can't be told
+  from spaces.
+
+How a new line or a tab is written inside text isn't decided, in Seal or Unio. The wordings come with a later batch.
+
+**Weighed.**
+- Showing the character after `\` as it is, so `\n` prints `n`, as Unio D30's rule reads on its own. A silent
+  surprise for anyone used to C, Python or JavaScript.
+
+**Why this won.** A script that can't mean what it looks like it means is refused, with the reason given, rather than
+run.
+
+**Tankun's words.** Asked "Should `\` before anything but `"`, `\` or `{`, and a tab inside text, both be refused?",
+the owner chose: "yea"

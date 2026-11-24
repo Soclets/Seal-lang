@@ -77,7 +77,11 @@ and anything else, a tab included, is refused, with the corrected line as the fi
 - **`comment name` on its own line starts a block comment,** closed by `end comment name`, as in Unio; everything
   between is ignored. `comment` is a keyword, so it can't be a name (D63, D76, D91, Unio D74).
 - **One blank line in a row is fine; two or more are refused** (D63, Unio D97).
-- **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144).
+- **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144):
+  `\"`, `\\` and `\{`. A `\` before any other character, as in `"\n"`, is refused, and so is a tab character inside
+  text, since it can't be told from spaces (D92).
+
+**Not decided:** how a new line or a tab is written inside text.
 
 ## Files
 
