@@ -2479,3 +2479,28 @@ written down. It's the split Tankun sketched for Keel: names inferred, procedure
 
 **Tankun's words.** has code, then, asked "Should Seal procedures write their parameters' types and their result
 type, replacing D5's and D6's inference for procedures?", the owner chose: "yea"
+
+## D82. A written type may leave out the parts its value shows
+
+2026-11-24.
+
+**Chosen.** D30's rule, written only where the value can't say it, applies to each part of a type, not only the whole:
+
+```
+board: Array[len: 64] = [all: 0]          // Whole, from the 0
+names: List[len.max: 3] = ["A", "B"]      // Text, from the items
+```
+
+- **What the value doesn't show must be written:** `bag: List[len.max: 10] = []` is refused, since `[]` shows no item
+  type, with the full type as the fix.
+- **Writing the full type stays allowed,** as `Array<Whole>[len: 64]` (D30).
+
+**Weighed.**
+- The full type whenever any of it is written (D30 as it stood). A length that only the writer knows would bring the
+  item type with it, though the value already says it.
+
+**Why this won.** It's D30's own reason taken one step further: write what only you know, and let the value say the
+rest.
+
+**Tankun's words.** has code (quoted with D81), then, asked "Should a written type be able to leave out its item type
+when the value shows it, as `board: Array[len: 64] = [all: 0]`?", the owner chose: "yea"

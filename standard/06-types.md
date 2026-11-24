@@ -39,6 +39,10 @@ board: Array<Whole>[len: 64] = [all: 0]
 A name's type can be written after it, as `name: Type = value`. It's optional, and required only when the value can't
 say the type, as with an empty list: `mut bag = []` is refused (D30).
 
+A written type can leave out what the value shows and write only the rest, such as a length the value can't give:
+`board: Array[len: 64] = [all: 0]` takes `Whole` from the `0`. What the value doesn't show must still be written, as
+the item type of an empty list: `bag: List[len.max: 10] = []` is refused (D82).
+
 A type with more than one blank to fill in labels each one, as `Dict<key: Text, value: Whole>`; one with a single
 blank, as `List<Text>`, doesn't (D31).
 

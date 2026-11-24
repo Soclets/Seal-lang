@@ -12,7 +12,8 @@ where `name` is the name and `value` its value. `mut`, `unused` and `=` are writ
 
 - **`name = value` makes `name` when no name `name` exists yet,** and its type is worked out from the value (D2).
 - **The type can be written, as `name: Type = value`,** and must be when the value can't say it, as `mut bag:
-  List<Text> = []` (D30).
+  List<Text> = []` (D30). A written type may leave out the parts the value shows, as `board: Array[len: 64] = [all:
+  0]` (D82).
 - **When `name` already exists, `name = value` changes it,** which is allowed only if it was made with `mut` (D2).
 - **A name that's made and never read is refused,** saying plainly that it's never used, with no guess at what was
   meant: a typo such as `tires = tries + 1` is caught this way (D2, Unio D54).
