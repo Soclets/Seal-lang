@@ -2369,3 +2369,26 @@ show_msg("Score: {score}")
 
 **Tankun's words.** Asked "Should Seal drop `&`, so text is joined only with braces, as in Unio?", the owner chose:
 "yea"
+
+## D78. Seal recommends Unio's colours and font, and forces neither
+
+2026-11-24.
+
+**Chosen.**
+- **Seal's docs show code in Unio's colours and font:** D194's colours, with D197's rule for narrowings, and Atkinson
+  Hyperlegible Mono with no ligatures (Unio D198).
+- **Seal's editor extension offers Unio's colours as a theme** and suggests it once, when it's installed, without
+  switching to it. The editor's own theme stays the default.
+- **The language server only says what kind each piece of code is** (D7), which any theme colours; with Unio's theme
+  picked, those kinds get Unio's colours.
+- **A host shows Seal's messages however it likes:** Seal's library colours nothing.
+
+**Weighed.**
+- Unio's colours and font as the fixed choice, as Unio does for its own command and docs (Unio D193). Seal runs inside
+  other people's programs and editors, which choose their own look.
+
+**Why this won.** Seal and Unio look alike wherever Seal shows its own code, and nobody embedding Seal or writing it in
+their own editor has a look forced on them.
+
+**Tankun's words.** Asked "Should Seal recommend Unio's colours and font, used in its docs and offered as an optional
+editor theme, without forcing either?", the owner chose: "yea"

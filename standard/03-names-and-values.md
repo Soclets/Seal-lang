@@ -42,6 +42,10 @@ capitalised, as `Whole` and `List`, so a capital always means a type (D24).
 
 - **There's no `$`** (D7).
 - **A name can't be a keyword:** `mut if = 3` is refused (D7).
+- **Colours and font are recommended, never forced:** Seal's docs show code in Unio's colours and font (Unio D194,
+  D197, D198), and Seal's editor extension offers Unio's colours as a theme, suggested once when it's installed. The
+  language server only says what kind each piece of code is, for any theme, and a host shows Seal's messages however
+  it likes (D7, D78).
 - **A name can't be made where its spelling already means something,** a top-level name, another name in use, a
   procedure, a door or a built-in, whether as a name, a parameter, a `for each` name or a `case` value: there's no
   shadowing (D71).
