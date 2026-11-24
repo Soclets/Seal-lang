@@ -21,9 +21,9 @@ examples in Seal's syntax (README).
 - **`.split(by: t)` gives a `List<Text>`,** keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
 - **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
   `<` and `>` on text aren't decided (D64).
-- **Text is written in double quotes, and `&` joins text** (D16, Unio D21, D28). A `Whole` or a `Bool` joined with `&`
-  becomes text by itself, as in `show_msg("Score: " & score)`; a `Float`, a list or a record is refused, with
-  `be.Text(…)` as the fix for a `Float` (D29).
+- **Text is written in double quotes, and joined only by filling it in with braces,** as in `"{first} {last}"` (D16,
+  D75, D77, Unio D21, D201). Seal has no operator for joining text: `&` is refused, and so is `+` on text, each with
+  the braces form as the fix.
 - **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (D22, Unio D27, D70, D71, D185). Floats
   are checked after every operation (D18).
 - **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and

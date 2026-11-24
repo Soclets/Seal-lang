@@ -1,0 +1,1 @@
+Text is joined by filling in braces, with a Whole and a Bool becoming text by themselves. D12, D28, D75, D77.

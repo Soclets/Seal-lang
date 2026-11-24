@@ -835,6 +835,8 @@ themselves.
 **Tankun's words.** "I think `&` should auto-convert where good", then, asked "Should `&` in Seal turn a `Whole` or a
 `Bool` into text by itself, while a `Float`, a list or a record is still refused?", the owner chose: "yea".
 
+(Replaced by D77: `&` goes, and text is joined only with braces.)
+
 ## D30. A name's type is written `name: Type = value`, required only when the value can't say it
 
 2026-11-23.
@@ -2342,3 +2344,28 @@ messages.
 follow Unio, and maybe add named `end`s, because I'm not used to bare" (quoted whole in D75), "One word: IDE", "And
 btw, that is illegal Seal?", "IDEs could fucking auto insert end", then, asked "Should Seal close blocks with Unio's
 named `end`s, replacing D20's plain `end`?", the owner chose: "yea"
+
+## D77. Text is joined only with braces; `&` goes
+
+2026-11-24.
+
+**Chosen.** Seal has no operator for joining text, replacing D29's `&`, as Unio's D201 does. Text is joined by filling
+it in (D75):
+
+```
+show_msg("A {kind} appears")
+show_msg("Score: {score}")
+```
+
+- **A `Whole` and a `Bool` in braces become text by themselves,** as they did with D29's `&`.
+- **`&` and `+` on text are refused,** each with the braces form as the fix; their wording comes with a later batch.
+- D29's test becomes `d077_braces_join`.
+
+**Weighed.**
+- Keeping `&`, which turns a `Whole` or a `Bool` into text by itself (D29). With braces filling everywhere (D75), it's
+  a second way to build the same text, and braces already hold everything it could join, fields and facts included.
+
+**Why this won.** One way to build text, the one that looks like what it shows, matching Unio.
+
+**Tankun's words.** Asked "Should Seal drop `&`, so text is joined only with braces, as in Unio?", the owner chose:
+"yea"
