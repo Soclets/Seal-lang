@@ -2911,3 +2911,36 @@ what's the idea, and why", "What about proc fams?", "Should we remove `proc` ins
 outside of fam?", "It's obviously a proc, though. Since it's inside that, yk", then, asked "Should family members have
 no keyword, with procedures by full name, handlers by short name, and the rest from Unio's handlers?", the owner
 chose: "yea. What about `?!` replacing `otherwise` for non-block ver?"
+
+(Changed by D98: on one line a handler follows `??`, and `otherwise` is only a block.)
+
+## D98. On one line, a handler follows `??`; `otherwise` is only a block
+
+2026-11-24.
+
+**Chosen.** `??` deals with a failure on one line with a value, `ignore`, `crash`, or now a handler, and `otherwise`
+only ever opens a block of cases:
+
+```
+level = load_level(name) ?? 1
+level = load_level(name) ?? level_failed.start_over
+level = load_level(name) ?? level_failed.*give_up
+level = load_level(name) otherwise
+    include level_failed.start_over
+end otherwise
+```
+
+Seal always knows a handler from a value, since one spelling means one thing (D71). This replaces D97's, and Unio
+D42's, `otherwise level_failed.start_over` on one line.
+
+**Weighed.**
+- `otherwise` and the handler's name on one line, as Unio has it. A word doing two jobs, a one-line form and a block.
+- `?!`, a new symbol for a handler on one line, as Tankun first asked and the design session then recommended: a third
+  failure mark to learn beside `?` and `??`.
+- `!!`, which Kotlin uses for the opposite, crashing when there's nothing there.
+
+**Why this won.** `??` already means "deal with it on one line", and already takes things that aren't values.
+
+**Tankun's words.** "yea. What about `?!` replacing `otherwise` for non-block ver?" (quoted whole in D97), has code,
+"or just `??`?", then, asked "Should `??` take a handler on one line, with `otherwise` only for the block?", the owner
+chose: "yea"
