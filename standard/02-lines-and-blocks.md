@@ -68,10 +68,14 @@ and anything else, a tab included, is refused, with the corrected line as the fi
   `->`, `!`, `==` and `!=` included, and none inside brackets; a mistake is refused with the corrected line as the fix
   (D63, Unio D98, D100). The one exception is a parameter group's type, which has a space on each side of its `:`, as
   `[hp, amount : Whole]` (D88).
-- **`//` comments to the end of the line,** and **`///`** is a doc comment on the lines right before a declaration
-  (D63, Unio D74).
-- **`comment name` on its own line starts a block comment,** closed by `end comment name`, as
-  in Unio; everything between is ignored (D63, D76, Unio D74).
+- **`//` comments to the end of the line,** with one space before it after code, as `x = 1 // hi`; `x = 1// hi` is
+  refused, with the spaced line as the fix (D63, D91, Unio D74).
+- **A comment on a line of its own is indented like the line after it,** inside an open bracket too (D63, D91, Unio
+  D145).
+- **`///` is a doc comment** on the lines right before a declaration: a procedure, a family, a record, a `one_of`, a
+  field, a case or a top-level name (D63, D91, Unio D74).
+- **`comment name` on its own line starts a block comment,** closed by `end comment name`, as in Unio; everything
+  between is ignored. `comment` is a keyword, so it can't be a name (D63, D76, D91, Unio D74).
 - **One blank line in a row is fine; two or more are refused** (D63, Unio D97).
 - **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144).
 

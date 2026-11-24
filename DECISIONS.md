@@ -2716,3 +2716,25 @@ shops[key: "north"] = north
 
 **Tankun's words.** "?" (to the question), then, asked "Should a lookup in the middle of a change like that be
 refused?", the owner chose: "??" (yes)
+
+## D91. Comments: a space before `//`, comments inside brackets, `///` on any declaration, `comment` a keyword
+
+2026-11-24.
+
+**Chosen.**
+- **A `//` after code has one space before it,** as `x = 1 // hi`; `x = 1// hi` is refused, with the spaced line as
+  the fix.
+- **A comment line inside an open bracket is allowed,** indented like the line after it, as any comment line is (Unio
+  D145, through D63).
+- **`///` documents any declaration:** a procedure, a family, a record, a `one_of`, a field, a case or a top-level
+  name. The language server shows it on hover.
+- **`comment` is a keyword,** as in Unio's keyword table, so it can't be a name.
+
+Two of the building session's questions were already answered: a comment line's indentation follows Unio D145
+through D63, and a block comment ends at its own `end comment name` (D76).
+
+**Weighed.** Nothing else was weighed: each follows what Unio does, or what Seal's spacing rules already say.
+
+**Why this won.** Comments follow the same rules as everything else on a line.
+
+**Tankun's words.** Asked "Do all four work that way?", the owner chose: "yea"
