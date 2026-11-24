@@ -40,7 +40,8 @@ unused saved = save(game) ?? 0
 
 A name is lowercase English letters `a` to `z`, digits, and `_` between words, starting with a letter: `player2`,
 `hp_max`, `get_service`. No capitals, and `_` never at the start or end, nor two in a row (D24, Unio D99). Types are
-capitalised, as `Whole` and `List`, so a capital always means a type (D24).
+capitalised, as `Whole` and `List`, so a capital always means a type (D24). A type's name has no `_`, and letters
+beyond plain English, as in `café`, are refused in any name for now (D93).
 
 - **There's no `$`** (D7).
 - **A name can't be a keyword:** `mut if = 3` is refused (D7).
@@ -52,7 +53,7 @@ capitalised, as `Whole` and `List`, so a capital always means a type (D24).
   it likes (D7, D78).
 - **A name can't be made where its spelling already means something,** a top-level name, another name in use, a
   procedure, a door or a built-in, whether as a name, a parameter, a `for each` name or a `case` value: there's no
-  shadowing (D71).
+  shadowing (D71). A procedure can't take a built-in's or a door's name either (D93).
 - **The host's doors and their narrowings follow the same spelling,** checked when the host opens them (D24).
 
 **Not decided:** letters beyond English; Seal's full list of keywords.
@@ -74,3 +75,5 @@ A script's top level runs once, top to bottom, when it's loaded (D4). Three thin
 - **reaching a top-level name before the line that makes it,** directly or through a procedure it calls;
 - **pausing,** through a door or procedure that can pause;
 - **`return`, `fail` and `?`,** since nothing called the top level; a failure there is handled with `??` or `otherwise`.
+
+`record`, `one_of`, `proc` and `fam` are declared at the top level only; inside a block they're refused (D93).

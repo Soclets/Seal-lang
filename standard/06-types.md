@@ -12,6 +12,7 @@ examples in Seal's syntax (README).
 | `List<T>` | a list of `T`s, with an optional most it may hold, `len.max` (Unio D167) | `Vec` |
 | `Array<T>[len: n]` | exactly `n` `T`s (Unio D167) | `Vec` |
 
+- **A number never starts with a leading zero,** as `007`; `0` itself and `0.5` are fine (D93).
 - **A number with a point is a `Float`, and one without is a `Whole`** (Unio D180), so a worked-out type is never in
   doubt for a literal: `speed = 2.0` makes a `Float`.
 - **`Whole` and `Float` don't mix quietly:** `be.Float(lives) * speed` (Unio D162).
@@ -120,8 +121,8 @@ end one_of Event
 mut last = Event.hurt[amount: 5]
 ```
 
-- **`one_of` declares a type whose value is exactly one of its cases,** listed one per line, closed with `end`
-  (D35, D36).
+- **`one_of` declares a type whose value is exactly one of its cases,** listed one per line, closed with `end
+  one_of` and its name; one with no cases is refused, since no value of it could exist (D35, D36, D76, D93).
 - **A case may carry values, named in `[ ]`,** built as a record is (D27, D35).
 - **A case is written as a narrowing of its type,** as `Event.hurt[amount: 5]` and `State.idle`; one the type doesn't
   have is refused at load time (D35, Unio D41).
@@ -173,6 +174,7 @@ show_msg("Correct! You got it in {tries} tries")
 
 - **Braces hold a name, which may be followed by its fields and facts,** as `{goblin.name}` and `{names.len}`, never
   a calculation or a call; a name, field or fact that doesn't exist is refused at load time (D12, D28, Unio D29).
+- **Empty braces, as `"{}"`, are refused,** with `"\{}"` as the fix (D93).
 - **A brace to show as it is is written `\{`,** as in `"Type \{help}"`, which shows `Type {help}` (D63, D75, Unio
   D30).
 

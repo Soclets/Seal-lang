@@ -2760,3 +2760,23 @@ run.
 
 **Tankun's words.** Asked "Should `\` before anything but `"`, `\` or `{`, and a tab inside text, both be refused?",
 the owner chose: "yea"
+
+## D93. Seven refusals: empty braces, built-in names, nested declarations, `_` in types, leading zeros, other letters, blank lines in brackets, empty `one_of`s
+
+2026-11-24.
+
+**Chosen.** Each is refused while loading, with its wording in a later batch:
+- **Empty braces in text,** as `"{}"`, with `"\{}"` as the fix to show them.
+- **A procedure named after a built-in or a door,** since one spelling means one thing (D71).
+- **A `record`, `one_of`, `proc` or `fam` inside a block:** they're declared at a script's top level only.
+- **A `_` in a type's name,** since types are `CamelCase` (D24), and **a number with a leading zero,** as `007`.
+- **Letters beyond plain English in a name,** as `café`, for now, as Unio's names are (Unio D99).
+- **A blank line inside an open bracket,** so a statement spread over lines stays in one piece (D8).
+- **A `one_of` with no cases,** since no value of it could exist.
+
+**Weighed.** Nothing else was weighed: each follows a rule Seal or Unio already has, and the building session had
+stopped on each as not designed yet.
+
+**Why this won.** What Seal can't mean, it refuses with a fix.
+
+**Tankun's words.** Asked "Should all seven be refused?", the owner chose: "yea"

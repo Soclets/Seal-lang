@@ -11,7 +11,8 @@ end while
 ## Lines
 
 - **The end of a line ends its statement.** There's no `;` (D8).
-- **Inside an open `(` or `[`, a line break carries on** until the bracket closes (D8):
+- **Inside an open `(` or `[`, a line break carries on** until the bracket closes, with no blank line inside (D8,
+  D93):
 
 ```
 spawn_enemy(kind: "goblin", x: 10, y: 20,
