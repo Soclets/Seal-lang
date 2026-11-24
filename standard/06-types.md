@@ -19,6 +19,8 @@ examples in Seal's syntax (README).
   `[offset:]` and `for each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
   UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).
 - **`.split(by: t)` gives a `List<Text>`,** keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
+- **Splitting by empty text is refused while loading** wherever the empty text can be seen, as `split(by: "")`; one
+  that only turns out empty while running is a failed check, as dividing by zero is (D89).
 - **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
   `<` and `>` on text aren't decided (D64).
 - **Text is written in double quotes, and joined only by filling it in with braces,** as in `"{first} {last}"` (D16,

@@ -2664,3 +2664,28 @@ glance which `:` covers a group.
 said they could mix", has code, "Why no space? It's not the same thing", then, asked "Should Seal let parameters share
 a type as a group, `[hp, amount, times : Whole]`, with a space on both sides of the group's `:`?", the owner chose:
 "yea"
+
+## D89. Splitting by empty text is refused while loading wherever it can be seen
+
+2026-11-24.
+
+**Chosen.**
+- **`split(by: "")` is refused while loading,** and so is any separator the checker can see is empty, with `for each`
+  over the text as the fix, since that gives its letters (D66).
+- **A separator that only turns out empty while running is a failed check,** as dividing by zero is (D18, D54, Unio
+  D46): nothing is guessed for it.
+
+Its wording comes with a later batch.
+
+**Weighed.**
+- Giving each letter, as JavaScript does. A silent answer to what's most likely a mistake.
+- `by:` taking only text written in the call, so every case is caught while loading. A special rule for one argument.
+- A type for text that can't be empty, so the checker proves it. Machinery Seal isn't built for: it's neither CyborgPL
+  nor Lua, as Tankun put it.
+
+**Why this won.** Refusing at load time wherever it's possible, and stopping where it isn't, is how Seal treats every
+other mistake.
+
+**Tankun's words.** "Why not comptime?", "What the fuck", "What the fuck?", then, asked what they meant by load time,
+Tankun answered: "Like, bro. We aren't fucking Cyborg**PL**, and we're not fucking Lua either.
+What I'm saying is fucking refusing at compile time is possible, do it"
