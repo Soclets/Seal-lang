@@ -46,19 +46,22 @@ A script gives its procedures narrowings in a family, a word and its kinds decla
 
 ```
 fam.proc spawn
-    proc spawn[kind: Text]
+    spawn[kind: Text]
         ...
-    end proc spawn
-    proc spawn.boss[kind: Text]
+    end spawn
+    spawn.boss[kind: Text]
         ...
-    end proc spawn.boss
+    end spawn.boss
 end fam.proc spawn
 ```
 
 where each `...` stands for that procedure's body.
 
+- **Members are written without `proc`,** since the family's first line says what they are, each by its full name,
+  since it's called on its own anywhere (D97).
 - **Each member is the word itself, or reads as "a Y kind of X"** for its name `X.Y`; anything else is refused (D43).
-- **`fam.handler`,** for a failure's handlers, comes once Seal has handlers (D43).
+- **A narrowed procedure is declared only inside its word's family** (D43, Unio D41).
+- **`fam.handler`** holds a failure's handlers (chapter 7, D97).
 
 ## Types
 

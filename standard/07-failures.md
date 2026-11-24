@@ -47,4 +47,37 @@ proc load_level[name: Text] -> Level ! [not_found, broken]
 end proc load_level
 ```
 
-**Not decided:** handler families, which come with handlers (D43).
+## Handlers
+
+A handler is a named, reusable set of `case`s, declared in a `fam.handler` named after what fails, as Unio's are (D97,
+Unio D41 to D44):
+
+```
+fam.handler level_failed
+    start_over
+        case not_found
+            instead 1
+        case broken
+            instead 1
+    end start_over
+    start_at[level: Whole]
+        case not_found
+            instead level
+        case broken
+            instead level
+    end start_at
+end fam.handler level_failed
+
+a = load_level("forest") otherwise level_failed.start_over
+b = load_level("cave") otherwise level_failed.start_at(level: 3)
+```
+
+- **A member is written by its short name,** with no `handler`, since a handler is only ever used after `otherwise`;
+  it's used by its full name, as `level_failed.start_over` (D97).
+- **It's used as if its cases were written at the call,** so it must cover every failure still possible there (Unio
+  D40, D42).
+- **A handler that can `return` or `break` is marked `*` where it's used,** as `otherwise level_failed.*give_up`; the
+  mark is required on one that can jump and refused on one that can't (Unio D42).
+- **`include level_failed.start_over`** inside an `otherwise` block brings in its cases beside the block's own; together
+  they cover every failure, none twice (Unio D43).
+- **A handler can take parameters,** written as a procedure's are, and is given arguments where it's used (Unio D44).

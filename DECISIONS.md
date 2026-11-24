@@ -1270,6 +1270,8 @@ the same for a host's doors and their narrowings, declared together (D13).
 **Tankun's words.** "Why no `fam`?", "You do know `fam` houses handlers too, right?", then, asked "Should Seal take
 Unio's families, `fam.proc` now and `fam.handler` once Seal has handlers?", the owner chose: "yea".
 
+(Changed by D97: family members are written without `proc`, and `fam.handler` arrives.)
+
 ## D44. `fail name` fails on purpose, and a procedure's failures are worked out from its body
 
 2026-11-23.
@@ -2843,3 +2845,69 @@ decided when sorting is, as something that says how it orders.
 
 **Tankun's words.** Asked "Should `<` and `>` on text stay refused for now?", the owner chose: "yea. When the fuck is
 handler"
+
+## D97. Handlers, as Unio's, with family members written without a keyword
+
+2026-11-24.
+
+**Chosen.** Seal has Unio's handlers (Unio D41 to D44), and inside any family, members are written without a keyword,
+since the family's first line says what they are:
+
+```
+fam.proc spawn
+    spawn[kind: Text]
+        show_msg("A {kind} appears")
+    end spawn
+    spawn.boss[kind: Text]
+        show_msg("The boss {kind} appears!")
+    end spawn.boss
+end fam.proc spawn
+
+fam.handler level_failed
+    start_over
+        case not_found
+            instead 1
+        case broken
+            instead 1
+    end start_over
+end fam.handler level_failed
+
+level = load_level(name) otherwise level_failed.start_over
+```
+
+- **A procedure member is written by its full name,** as `spawn.boss`, since it's called on its own anywhere; a
+  narrowed procedure is declared only inside its word's family (D43, Unio D41). This replaces D43's `proc` inside a
+  family.
+- **A handler member is written by its short name,** as `start_over`, since a handler is only ever used after
+  `otherwise`, by its full name `level_failed.start_over`.
+- **A member's closer is `end` and its name,** as `end spawn.boss` and `end start_over` (D76).
+- **From Unio:** a handler is used as if its cases were written at the call and must cover every failure left there
+  (Unio D40, D42); one that can `return` or `break` is marked `*` where it's used, as `level_failed.*give_up` (Unio
+  D42); `include` brings a handler's cases into an `otherwise` block (Unio D43); and a handler can take parameters
+  (Unio D44).
+
+**Weighed.**
+- Every member in full with its keyword, as `handler level_failed.start_over`, as Unio has it and the design session
+  argued for. Tankun: "Do you really have to write `handler` again?"; the family's first line already says it.
+- Handler members as `.start_over`, a short name with a dot, or as `handler start_over`, both proposed and taken back
+  by the design session, which changed its answer several times when Tankun only asked whether it was sure. Cyborg's
+  design session, asked by Tankun for an outside read, pointed out Cyborg's rule: full names, no repeated keyword
+  (Cyborg D46, D47).
+- The same naming in both families. Tankun, through Cyborg's design session: a short procedure member, as
+  `boss[kind: Text]`, looks like another procedure, while a handler is never used on its own, so the two kinds of
+  member are used differently and needn't match.
+- Keeping `proc` inside procedure families, so every procedure starts with `proc`. A narrowed procedure only ever
+  exists inside its family, as Tankun pointed out ("It's obviously a proc, though"), so there's no alone version for it
+  to match.
+
+**Why this won.** No word is repeated that the family's first line already says, each member is written the way it's
+used, and handlers arrive as Unio designed them.
+
+**Tankun's words.** "yea. When the fuck is handler" (quoted whole in D96), "Do you really have to write `handler`
+again?", "What the fuck is readable on its own do?", has code, "Would the err only show one line?", "Why `.`
+there?'[==]", "How?", "You sure?", "You sure?", "You sure?", "`start_at[level: Whole]`
+How to reach into a list exactly like that, in Seal", "Ask Cyborg Design Claude about how fucked you are", "?", "So,
+what's the idea, and why", "What about proc fams?", "Should we remove `proc` inside proc fam/", "Can you make `.boss`
+outside of fam?", "It's obviously a proc, though. Since it's inside that, yk", then, asked "Should family members have
+no keyword, with procedures by full name, handlers by short name, and the rest from Unio's handlers?", the owner
+chose: "yea. What about `?!` replacing `otherwise` for non-block ver?"

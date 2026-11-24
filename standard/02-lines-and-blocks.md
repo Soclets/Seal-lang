@@ -49,7 +49,8 @@ where `opening line` is the block's first line, `body` its statements, and `what
 | `proc heal[…]` | `end proc heal` |
 | `record Enemy` | `end record Enemy` |
 | `one_of Event` | `end one_of Event` |
-| `fam.proc spawn` | `end fam.proc spawn` |
+| `fam.proc spawn`, `fam.handler level_failed` | `end fam.proc spawn`, `end fam.handler level_failed` |
+| a family member, as `spawn.boss[…]` or `start_over` | `end spawn.boss`, `end start_over` |
 
 - **A closer at the wrong depth, or naming another block, is refused** (D20, D76).
 - **A missing closer is reported naming the block it should close,** as in "the `while` on line 3 has no `end
