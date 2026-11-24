@@ -178,7 +178,12 @@ show_msg("Correct! You got it in {tries} tries")
 - **A brace to show as it is is written `\{`,** as in `"Type \{help}"`, which shows `Type {help}` (D63, D75, Unio
   D30).
 
-**Not decided:** `places:` in braces (Unio D175).
+A `Float` in braces can take `places:` after a comma, showing exactly that many digits after the point, rounded to the
+nearest with a tie going away from zero, and with no `~`, as Unio's chapter 7 has it (D94, Unio D175, D176, D178):
+
+```
+show_msg("Speed: {speed, places: 2}")       // Speed: 0.30
+```
 
 ## Converting
 

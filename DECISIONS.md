@@ -2780,3 +2780,23 @@ stopped on each as not designed yet.
 **Why this won.** What Seal can't mean, it refuses with a fix.
 
 **Tankun's words.** Asked "Should all seven be refused?", the owner chose: "yea"
+
+## D94. `places:` in braces, as Unio has it
+
+2026-11-24.
+
+**Chosen.** A `Float` in braces can take `places:` after a comma, exactly as Unio's D175 has it, with D176's rule for
+values rounding to zero and D178's ties going away from zero:
+
+```
+show_msg("Speed: {speed, places: 2}")       // Speed: 0.30
+```
+
+It always shows that many digits, shows no `~`, since the text is exactly the rounding asked for, and `places:` on
+anything but a `Float` is refused.
+
+**Weighed.** Nothing else was weighed: Seal takes Unio's floats (D16, D22), and this was the part left open.
+
+**Why this won.** A game shows a speed, a timer or a percentage without seventeen digits.
+
+**Tankun's words.** Asked "Should Seal take Unio's `places:` in braces as it is?", the owner chose: "yea"
