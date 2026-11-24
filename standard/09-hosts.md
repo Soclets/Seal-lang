@@ -23,6 +23,8 @@ calls Seal is the building session's to propose.
 - **Values cross the doors as copies,** and the host's own objects arrive as IDs (D15).
 - **Seal has no units;** a door says its unit through its labels, as in `wait(seconds: 2)` (D55).
 
+- **A host can open types too,** its own records and `one_of`s, made with `#[derive(Seal)]` (D48). A script uses them
+  by name without declaring them, as it uses a door, and declaring a type of the same name is refused (D71, D85).
 - **A door can fail,** with failures the host declares, handled like any other (D44).
 
 - **A door can have labels,** chosen by its host, as `wait(seconds: 2)` (D55).

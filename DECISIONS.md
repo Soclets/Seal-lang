@@ -2550,3 +2550,29 @@ proc load_level[name: Text] -> Level ! [not_found, broken]
 
 **Tankun's words.** Asked "Should a procedure that can fail write `! [ … ]` in its header, replacing D44's worked-out
 failures?", the owner chose: "yea"
+
+## D85. A host's types are used without declaring them, as doors are
+
+2026-11-24.
+
+**Chosen.** A host opens its own records and `one_of`s for a script, made with `#[derive(Seal)]` (D48), the way it
+opens doors (D11). A script uses them by name with nothing declared:
+
+```
+// Vec2 is the host's: no record Vec2 here
+player_pos = Vec2[x: 40.0, y: 80.0]
+```
+
+- **A script declaring a type with a host type's name is refused,** since one spelling means one thing (D71).
+- **The language server shows a host type's fields and cases,** as it shows a door's parameters.
+- A host type's names follow Seal's spelling, checked when the host opens it, as for doors (D24).
+
+**Weighed.**
+- The script declaring a matching copy, checked against the host's when it loads, as the building session built
+  meanwhile, since no decision covered it. Every script for a host, such as every NginSeal game, would start by
+  repeating the host's types, and a slip in the copy would read as an error in the host.
+
+**Why this won.** Everything a script gets from its host arrives the same way, opened by the host and used by name.
+
+**Tankun's words.** "What the fuck? Why would you decl in Seal", then, asked "So, should host types be usable without
+declaring them, the way doors are?", the owner chose: "yea"
