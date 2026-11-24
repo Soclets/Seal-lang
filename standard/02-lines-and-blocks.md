@@ -66,7 +66,8 @@ and anything else, a tab included, is refused, with the corrected line as the fi
 
 - **Spacing is fixed,** as Unio's table has it (Unio's standard, chapter 2), with one space on each side of operators,
   `->`, `!`, `==` and `!=` included, and none inside brackets; a mistake is refused with the corrected line as the fix
-  (D63, Unio D98, D100).
+  (D63, Unio D98, D100). The one exception is a parameter group's type, which has a space on each side of its `:`, as
+  `[hp, amount : Whole]` (D88).
 - **`//` comments to the end of the line,** and **`///`** is a doc comment on the lines right before a declaration
   (D63, Unio D74).
 - **`comment name` on its own line starts a block comment,** closed by `end comment name`, as

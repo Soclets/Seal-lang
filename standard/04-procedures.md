@@ -23,6 +23,10 @@ end proc average
 ```
 
 - **Each parameter is its name, `:` and its type,** as `points: Whole`; a parameter with no type is refused (D21, D81).
+- **Parameters that share a type can be grouped,** their names listed and the type written once after them, with a
+  space on each side of that `:` since it covers the whole group: `[hp, amount, times : Whole, source: Text]`. A
+  group's `:` without the spaces, and a single name's with them, are refused, with the respaced header as the fix
+  (D88).
 - **`-> Type` is written whenever the procedure gives back a value,** and left off when it gives back none (D81).
 - **`! [failures]` is written whenever the procedure can fail,** listing exactly what its body can fail with (D44, D45,
   D84).

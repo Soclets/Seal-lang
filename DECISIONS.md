@@ -2629,3 +2629,38 @@ matter.
 unorder", "Is it really a narrowing?", then, asked "Should Seal take Cyborg's rule, with labels in declared order
 unless the maker writes `labels.any_order`, and a case's values in declared order?", the owner chose: "yea. Should we
 add optional `Whole, hp, amount, times`?"
+
+## D88. Parameters sharing a type can be grouped, with ` : ` before the group's type
+
+2026-11-24.
+
+**Chosen.** Parameters next to each other that share a type can list their names and write the type once after them,
+as Go does, with a space on each side of that `:`, since it covers the whole group:
+
+```
+proc heal[hp, amount, times : Whole]
+proc hit[hp, amount : Whole, by: Text]
+proc greet[name: Text]
+```
+
+- **Each group takes the type after it,** so a parameter of another type is one more group at the end, with nothing
+  rewritten.
+- **A group's `:` without the spaces, and a single name's `:` with them, are refused,** with the respaced header as
+  the fix, as spacing always is (D63). It's spacing's one exception: a different spacing for a different meaning, as a
+  negating `-` has no space after it (Unio D27).
+- **Writing each type stays allowed,** as `[hp: Whole, amount: Whole]` (D21, D81).
+
+**Weighed.**
+- Each parameter writing its own type only, as Unio's D126 chose. Long headers once D81 made types required.
+- The type once in front, as `[Whole hp, amount, times]`, Unio's D61, which D126 replaced: a parameter of another type
+  means rewriting the header into the other form.
+- The group's type with the usual `: `, as `[hp, amount, times: Whole]`. As Tankun pointed out, a group's type isn't
+  the same thing as one name's, and that reads as the type of `times` alone.
+
+**Why this won.** Shorter headers where types repeat, a header that grows by adding a group, and spacing that shows at a
+glance which `:` covers a group.
+
+**Tankun's words.** "yea. Should we add optional `Whole, hp, amount, times`?" (quoted whole in D87), "Who the fuck
+said they could mix", has code, "Why no space? It's not the same thing", then, asked "Should Seal let parameters share
+a type as a group, `[hp, amount, times : Whole]`, with a space on both sides of the group's `:`?", the owner chose:
+"yea"
