@@ -24,7 +24,8 @@ end proc average
 
 - **Each parameter is its name, `:` and its type,** as `points: Whole`; a parameter with no type is refused (D21, D81).
 - **`-> Type` is written whenever the procedure gives back a value,** and left off when it gives back none (D81).
-- **`! [failures]` is optional,** worked out from the body when left off (D44, D45).
+- **`! [failures]` is written whenever the procedure can fail,** listing exactly what its body can fail with (D44, D45,
+  D84).
 - **The line has no `:`** (D9).
 
 Seal has no contracts, `requires` or `ensures`, for now (D39).

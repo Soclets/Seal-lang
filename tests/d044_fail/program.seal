@@ -1,4 +1,4 @@
-proc doubled_level[level: Whole] -> Whole
+proc doubled_level[level: Whole] -> Whole ! [too_high]
     if level > 10
         fail too_high
     else

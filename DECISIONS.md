@@ -1308,6 +1308,8 @@ written only where wanted.
 failures worked out from its body, optionally written as `fails [ … ]` on the first line?", the owner chose: "yea.
 Should Seal have `->` instead of `returns`?"
 
+(Changed by D84: a procedure that can fail writes `! [ … ]` in its header.)
+
 ## D45. `-> Type` for the result and `! [ … ]` for failures, in place of `returns` and `fails`
 
 2026-11-23.
@@ -2522,3 +2524,29 @@ wording comes with a later batch.
 in brackets can't also be a name.
 
 **Tankun's words.** Asked "Should `all` be refused as a name in Seal?", the owner chose: "yea"
+
+## D84. A procedure that can fail writes `! [ … ]` in its header
+
+2026-11-24.
+
+**Chosen.** A procedure that can fail lists its failures with `! [ … ]` on its first line, after `-> Type` if it has
+one, replacing D44's failures worked out from the body:
+
+```
+proc load_level[name: Text] -> Level ! [not_found, broken]
+```
+
+- **The list must match the body exactly:** every `fail`, and every failure passed up with `?`. A missing or extra
+  failure is refused, with the right list as the fix, so it can be copied.
+- **A procedure that can't fail writes no `!`.**
+- `fail name` stays as D44 has it.
+
+**Weighed.**
+- Failures worked out from the body, written only if wanted (D44). Shorter headers, but a change deep in a body, such
+  as a new `?`, could quietly add a failure every caller then has to deal with.
+
+**Why this won.** D81's reason: the header is what the host calls, and a host gets each failure back as an error
+(D48), so what can come back is written there. It's also how Unio writes it.
+
+**Tankun's words.** Asked "Should a procedure that can fail write `! [ … ]` in its header, replacing D44's worked-out
+failures?", the owner chose: "yea"

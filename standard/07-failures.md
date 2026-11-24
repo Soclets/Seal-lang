@@ -32,12 +32,13 @@ Each `case` runs until the next `case`, as in Unio (D37).
 
 ## Failing on purpose
 
-`fail name` fails on purpose, and a procedure's failures are worked out from its body: every `fail`, and every failure
-passed up with `?` (D44). They may be written on the first line as `! [not_found, broken]`, after `-> Type` if
-that's written, and must then match the body (D44, D45). A door can fail too, with failures its host declares (D44).
+`fail name` fails on purpose (D44). A procedure that can fail lists its failures on its first line, as `! [not_found,
+broken]`, after `-> Type` if it has one: every `fail` in its body, and every failure it passes up with `?`. A list
+that doesn't match the body is refused, with the right list as the fix (D44, D45, D84). A door can fail too, with
+failures its host declares (D44).
 
 ```
-proc load_level[name: Text] -> Level
+proc load_level[name: Text] -> Level ! [not_found, broken]
     if not level_exists(name)
         fail not_found
     else
