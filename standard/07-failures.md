@@ -21,6 +21,8 @@ end otherwise
 - **`??`** handles it on one line, with a value, `ignore` or `crash` (Unio D23, D121).
 - **`otherwise`** handles each failure in its own `case`, ending in `instead`, `return`, `break` or failing on
   purpose, or simply ending when the call gives back nothing (Unio D40, D186).
+- **`instead` is the last line of its case:** a line after it can never run, so it's refused, as one after `return`
+  or `break` is (D80, Unio D57).
 
 In a script, `?? crash` stops the script, not the host, which is told (D14, chapter 10).
 

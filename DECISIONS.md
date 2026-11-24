@@ -2415,3 +2415,30 @@ The wordings come with a later batch.
 **Tankun's words.** "Wait, what the fuck happens if you make a List wit no mut?", "Wait, wait. No value? Like fucking
 NULL?", "What would `ignore` do?", then, asked "Should `?? crash` work on a `Maybe` and `?? ignore` be refused?", the
 owner chose: "yea"
+
+## D80. `instead` is the last line of its case
+
+2026-11-24.
+
+**Chosen.** Once `instead` runs, the call has its value and the script carries on after `end otherwise`, so a line
+after `instead` in the same case is refused, as a line after `return` or `break` is (Unio D57). Anything else the case
+does goes before it:
+
+```
+level = load_level(name) otherwise
+    case not_found
+        show_msg("Starting at 1")
+        instead 1
+end otherwise
+```
+
+The wording comes with a later batch.
+
+**Weighed.**
+- Allowing lines after it, run before carrying on. `instead` would then mean "remember this value" rather than "use
+  this value now", and the order of the lines would no longer be the order things happen.
+
+**Why this won.** A line that can never run is a mistake, and Seal already refuses it after every other way of leaving
+a block.
+
+**Tankun's words.** Asked "Should `instead` have to be the last line of its case?", the owner chose: "yea"
