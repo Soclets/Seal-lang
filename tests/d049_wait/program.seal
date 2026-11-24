@@ -1,4 +1,4 @@
-proc countdown[start]
+proc countdown[start: Whole]
     mut n = start
     while n > 0
         show_msg("{n}")

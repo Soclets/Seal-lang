@@ -1,6 +1,6 @@
 mut hp = 10
 
-proc heal[amount, times]
+proc heal[amount: Whole, times: Whole]
     labels [amount as by, times as times]
     defaults [times: 1]
     hp = hp + amount * times

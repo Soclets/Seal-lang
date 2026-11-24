@@ -8,7 +8,7 @@ calls Seal is the building session's to propose.
 - **Loading a script checks it and runs its top level once,** setting things up (D4, D17). A refused script doesn't
   load, and the host gets the messages (D17, D26).
 - **The host then calls the script's procedures by name,** whenever its own events happen, as a game engine calls an
-  enemy's `on_hit` (D4). The call is checked against the procedure's types, written or worked out (D5, D6).
+  enemy's `on_hit` (D4). The call is checked against the types in the procedure's header (D81).
 - **A script with no procedures is a program,** run once from top to bottom (D4).
 
 ## Doors

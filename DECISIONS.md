@@ -149,6 +149,8 @@ mean?", then, asked "Should a procedure's parameter types be optional, worked ou
 required when the body can't decide?", the owner chose: "Ah, yes. But "and asks you to write it: proc add[a: Whole, b:
 Whole]", you said it doesn't know".
 
+(Replaced by D81: a procedure's header writes its types.)
+
 ## D6. A procedure's result type may be left out too, worked out from its `return`s
 
 2026-11-23.
@@ -184,6 +186,8 @@ by D9, D20 and D21.)
 
 **Tankun's words.** Asked "Should a procedure's result type be optional too, worked out from its `return`s, with
 `returns` allowed for writing it?", the owner chose: "yea".
+
+(Replaced by D81: a procedure's header writes its types.)
 
 ## D7. Names have no `$`, and Seal's language server colours each kind of name from the start
 
@@ -2442,3 +2446,36 @@ The wording comes with a later batch.
 a block.
 
 **Tankun's words.** Asked "Should `instead` have to be the last line of its case?", the owner chose: "yea"
+
+## D81. A procedure's header writes its types
+
+2026-11-24.
+
+**Chosen.** Every parameter writes its type, and a procedure that gives back a value writes `-> Type`, replacing D5's
+and D6's types worked out from the body:
+
+```
+proc greet[name: Text] -> Text
+    return "Hello, {name}"
+end proc greet
+
+proc on_hit[amount: Whole]
+    hp = hp - amount
+end proc on_hit
+```
+
+- **A parameter with no type is refused,** and so is a procedure that gives back a value without `-> Type`.
+- **The body is checked against the header,** so a mistake is reported where it is, and the host's calls are checked
+  against the header at load time (D48).
+- **Names made inside a body, and at the top level, still take their type from their value** (D2, D30).
+- **`! [failures]` stays optional,** worked out from the body (D44); whether to require it is its own question.
+
+**Weighed.**
+- Types worked out from the procedure's own body (D5, D6). Shorter headers, but a mistake in the body can change a
+  procedure's type, and what the host is calling isn't written anywhere.
+
+**Why this won.** A procedure is what the host calls (D4), so its header is Seal's interface, and an interface is
+written down. It's the split Tankun sketched for Keel: names inferred, procedures typed.
+
+**Tankun's words.** has code, then, asked "Should Seal procedures write their parameters' types and their result
+type, replacing D5's and D6's inference for procedures?", the owner chose: "yea"

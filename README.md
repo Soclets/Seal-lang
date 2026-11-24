@@ -29,7 +29,7 @@ Four parts work today:
 mut hp = 30
 show_msg("loaded")
 
-proc on_hit[amount]
+proc on_hit[amount: Whole]
     hp = hp - amount
     show_msg("hit for {amount}, {hp} left")
 end proc on_hit

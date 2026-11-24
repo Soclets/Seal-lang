@@ -37,11 +37,12 @@ passed up with `?` (D44). They may be written on the first line as `! [not_found
 that's written, and must then match the body (D44, D45). A door can fail too, with failures its host declares (D44).
 
 ```
-proc load_level[name]
+proc load_level[name: Text] -> Level
     if not level_exists(name)
         fail not_found
+    else
+        return read_level(name)?
     end if
-    return read_level(name)?
 end proc load_level
 ```
 

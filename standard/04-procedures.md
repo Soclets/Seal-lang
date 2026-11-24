@@ -13,7 +13,7 @@ where `name` is the procedure's name, `parameters` its parameters separated by c
 as they are (D20, D21, D45).
 
 ```
-proc on_hit[points]
+proc on_hit[points: Whole]
     score = score + points
 end proc on_hit
 
@@ -22,8 +22,9 @@ proc average[a: Float, b: Float] -> Float
 end proc average
 ```
 
-- **Each parameter is its name, with its type optional,** as `points` or `a: Float` (D5, D21).
-- **`-> Type` and `! [failures]` are optional,** worked out from the body when left off (D6, D44, D45).
+- **Each parameter is its name, `:` and its type,** as `points: Whole`; a parameter with no type is refused (D21, D81).
+- **`-> Type` is written whenever the procedure gives back a value,** and left off when it gives back none (D81).
+- **`! [failures]` is optional,** worked out from the body when left off (D44, D45).
 - **The line has no `:`** (D9).
 
 Seal has no contracts, `requires` or `ensures`, for now (D39).
@@ -40,10 +41,10 @@ A script gives its procedures narrowings in a family, a word and its kinds decla
 
 ```
 fam.proc spawn
-    proc spawn[kind]
+    proc spawn[kind: Text]
         ...
     end proc spawn
-    proc spawn.boss[kind]
+    proc spawn.boss[kind: Text]
         ...
     end proc spawn.boss
 end fam.proc spawn
@@ -54,19 +55,12 @@ where each `...` stands for that procedure's body.
 - **Each member is the word itself, or reads as "a Y kind of X"** for its name `X.Y`; anything else is refused (D43).
 - **`fam.handler`,** for a failure's handlers, comes once Seal has handlers (D43).
 
-## Worked-out types
+## Types
 
-Types left out are worked out when the script loads, from the procedure's own body, never from its callers. The result
-is fully static, exactly as if the types were written (D5, D6).
-
-- **A parameter's type comes from how the body uses it:** in `score = score + points`, `score` is a `Whole`, so
-  `points` is a `Whole` (D5).
-- **When the body can't decide, the procedure is refused,** and the message names the types that would fit and asks
-  which, suggesting none: `a + b` alone fits both `Whole` and `Float` (D5).
-- **The result type comes from the `return`s,** which must all agree; a procedure with no `return` of a value gives no
-  result (D6).
-- **Writing a type is always allowed** (D5, D6).
-- **The host's calls are checked against these types** at load time (D5, D6, chapter 9).
+A procedure's header always says its types: each parameter's, and its result's when it gives one back (D81). The body
+is checked against the header, so a mistake is reported in the procedure that has it, and the host's calls are checked
+against the header at load time (chapter 9). Names made inside a body still have their types worked out from their
+values (D2, D30).
 
 ## `return`
 
@@ -100,13 +94,14 @@ Unio D25). A `defaults` line may follow it, giving a value for a labelled argume
 would write it (D42):
 
 ```
-proc heal[target, amount, times]
+proc heal[hp: Whole, amount: Whole, times: Whole] -> Whole
     labels [amount as by, times as times]
     defaults [times: 1]
-    hp = hp + amount * times
+    return hp + amount * times
 end proc heal
 
-heal(goblin, by: 10)              // means heal(goblin, by: 10, times: 1)
+// means heal(hp, by: 10, times: 1)
+hp = heal(hp, by: 10)
 ```
 
 - **Only labelled parameters can have a default** (D42).
