@@ -2594,3 +2594,38 @@ declaring them, the way doors are?", the owner chose: "yea"
 **Why this won.** Each follows a rule already decided, for the same reason.
 
 **Tankun's words.** Asked "Should both work that way?", the owner chose: "yea"
+
+## D87. Labelled arguments and a case's values go in their declared order, unless `labels.any_order`
+
+2026-11-24.
+
+**Chosen.**
+- **A call writes its arguments in the order the procedure declares them,** leaving out any with a default (D42).
+  Another order is refused, with the reordered call as the fix, which the language server can apply.
+- **`labels.any_order [ … ]`,** written by the procedure's maker in place of `labels`, lets its labelled arguments go
+  in any order. It's a narrowing: an any-order kind of `labels` line. This is Cyborg's rule (its standard, 5.4).
+- **A case takes out its values in their declared order,** skipping any it doesn't read (D61).
+
+```
+proc heal[hp: Whole, amount: Whole, times: Whole] -> Whole
+    labels.any_order [amount as by, times as times]
+    return hp + amount * times
+end proc heal
+
+hp = heal(hp, times: 2, by: 10)    // allowed, only for heal
+```
+
+**Weighed.**
+- Any order everywhere, as Python and Kotlin allow named arguments. The names keep it unambiguous, but calls to one
+  procedure would read differently from place to place.
+- Declared order only, as the design session first proposed. Tankun pointed to Cyborg, which lets a maker opt out.
+- A case's values in any order, as the design session first proposed, comparing them to labels at a call, which it
+  wrongly said already went in any order: neither Seal nor Unio had decided label order.
+
+**Why this won.** One way by default, so every call reads alike, and freedom where the maker says order doesn't
+matter.
+
+**Tankun's words.** "Wait, labels at a call are ordered?", "Cyborg just defaults to ordered, and allow maker to
+unorder", "Is it really a narrowing?", then, asked "Should Seal take Cyborg's rule, with labels in declared order
+unless the maker writes `labels.any_order`, and a case's values in declared order?", the owner chose: "yea. Should we
+add optional `Whole, hp, amount, times`?"

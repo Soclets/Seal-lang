@@ -137,8 +137,8 @@ end match
 
 - **Every case must be covered;** there's no catch-all (D37).
 - **A case's values come out by name,** read-only, for that case's body, and a case takes out only the values it
-  reads (D37, D61).
-- **A case runs until the next `case`,** and one `end` closes the `match` (D37).
+  reads, in their declared order (D37, D61, D87).
+- **A case runs until the next `case`,** and `end match` closes the `match` (D37, D76).
 
 ## `Maybe`
 
