@@ -43,6 +43,8 @@ capitalised, as `Whole` and `List`, so a capital always means a type (D24).
 
 - **There's no `$`** (D7).
 - **A name can't be a keyword:** `mut if = 3` is refused (D7).
+- **A name can't be `all`,** since `[all: 5]` would read both as a list of 5s and as a `Dict` keyed by the name (D83,
+  Unio D207).
 - **Colours and font are recommended, never forced:** Seal's docs show code in Unio's colours and font (Unio D194,
   D197, D198), and Seal's editor extension offers Unio's colours as a theme, suggested once when it's installed. The
   language server only says what kind each piece of code is, for any theme, and a host shows Seal's messages however

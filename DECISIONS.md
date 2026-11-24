@@ -2505,3 +2505,20 @@ rest.
 **Tankun's words.** The idea came with Tankun's sketch for D81 (`board: List = [all: 0] // <Whole> infer`). Asked
 "Should a written type be able to leave out its item type when the value shows it, as `board: Array[len: 64] = [all:
 0]`?", the owner chose: "yea"
+
+## D83. A name can't be `all`
+
+2026-11-24.
+
+**Chosen.** `all = 5` is refused, as is a parameter, a `for each` name or a `case` value named `all`, so `[all: value]`
+always means a list or array whose every item starts as `value` (D22, Unio D169), never a `Dict` keyed by a name. Its
+wording comes with a later batch.
+
+**Weighed.**
+- Reading `[all: …]` as the list form unless a name `all` is in reach, as the building session stops on now. The same
+  text would then mean a list in one script and a `Dict` in another.
+
+**Why this won.** It's the case Unio settled the same morning for `range` (Unio D207): a word with a meaning of its own
+in brackets can't also be a name.
+
+**Tankun's words.** Asked "Should `all` be refused as a name in Seal?", the owner chose: "yea"
