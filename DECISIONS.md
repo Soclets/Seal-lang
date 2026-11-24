@@ -2826,3 +2826,20 @@ if hand == ["A", "K"]
 
 **Tankun's words.** Asked "Should `==` and `!=` work on records, lists, `Dict`s and `one_of`s, comparing their
 contents?", the owner chose: "yea"
+
+## D96. `<` and `>` on text are refused, for now
+
+2026-11-24.
+
+**Chosen.** `<`, `>`, and the other orderings, on two texts are refused while loading. How text is put in order is
+decided when sorting is, as something that says how it orders.
+
+**Weighed.**
+- Ordering by character codes, as Lua and Python do. `"Zebra" < "apple"`, and `"é"` after `"z"`.
+- Alphabetical order by Unicode's rules. It differs between languages, and needs large tables and a locale, much to
+  carry in an embedded language.
+
+**Why this won.** An operator would quietly pick one of several orders, none of them right everywhere.
+
+**Tankun's words.** Asked "Should `<` and `>` on text stay refused for now?", the owner chose: "yea. When the fuck is
+handler"

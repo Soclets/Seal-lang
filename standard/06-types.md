@@ -23,7 +23,7 @@ examples in Seal's syntax (README).
 - **Splitting by empty text is refused while loading** wherever the empty text can be seen, as `split(by: "")`; one
   that only turns out empty while running is a failed check, as dividing by zero is (D89).
 - **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
-  `<` and `>` on text aren't decided (D64).
+  `<` and `>` on text are refused for now, since text has no one right order (D64, D96).
 - **`==` and `!=` compare bigger values by their contents** (D95): records field by field; lists and arrays by length
   and their items in order; `Dict`s by their keys, each with an equal value, whatever order they were added in; and
   `one_of`s by their case and its values.
