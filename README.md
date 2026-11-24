@@ -32,7 +32,7 @@ show_msg("loaded")
 proc on_hit[amount]
     hp = hp - amount
     show_msg("hit for {amount}, {hp} left")
-end
+end proc on_hit
 ```
 
 The top level runs once, when the script is loaded. After that the host calls the script's procedures, here

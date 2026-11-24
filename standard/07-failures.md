@@ -10,11 +10,11 @@ load_level(name) ?? crash
 best = load_best() otherwise
     case not_found
         instead 0
-end
+end otherwise
 bag.add("Gem") otherwise
     case full
         show_msg("Your bag is full!")
-end
+end otherwise
 ```
 
 - **`?`** passes the failure up (Unio D23).
@@ -38,9 +38,9 @@ that's written, and must then match the body (D44, D45). A door can fail too, wi
 proc load_level[name]
     if not level_exists(name)
         fail not_found
-    end
+    end if
     return read_level(name)?
-end
+end proc load_level
 ```
 
 **Not decided:** handler families, which come with handlers (D43).

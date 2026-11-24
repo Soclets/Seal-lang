@@ -581,6 +581,8 @@ enough, as in Lua and Luau, which most game scripters know. It changes Tankun's 
 name, but `proc` does", "What if we went just `end`?", then, asked "Should every block in Seal close with a plain
 `end`?", the owner chose: "yea".
 
+(Changed by D76: a block closes with `end` and what it closes.)
+
 ## D21. A procedure's first line is `proc name[params]`, with optional types and `returns`
 
 2026-11-23.
@@ -2295,3 +2297,48 @@ follow Unio, and maybe add named `end`s, because I'm not used to bare", "yea`" (
 Let me guess that's a struct? Just trying to learn programming rn, haha. Yes, I don't fucking know how to program
 <skull emoji>", "What's it fir?", then, after D74, asked "Should every Seal text fill its braces, with `\{` for a brace
 as it is, replacing `fmt(...)`?", the owner chose: "yea"
+
+## D76. Blocks close with `end` and what they close, as Unio's do
+
+2026-11-24.
+
+**Chosen.** A block closes with `end` followed by what it closes, replacing D20's plain `end`, in Unio's forms (Unio
+D8) and the same pattern for Seal's own blocks:
+
+```
+proc heal[hp: Whole] -> Whole
+    if hp < 10
+        return hp + 5
+    else
+        return hp
+    end if
+end proc heal
+```
+
+| Block | Closer |
+|---|---|
+| `if`, with its `elif` and `else` | `end if` |
+| `while` | `end while` |
+| `for each` | `end for` |
+| `match` | `end match` |
+| a call's `otherwise` | `end otherwise` |
+| `proc heal[…]` | `end proc heal` |
+| `record Enemy` | `end record Enemy` |
+| `one_of Event` | `end one_of Event` |
+| `fam.proc spawn` | `end fam.proc spawn` |
+| `comment old_scoring` | `end comment old_scoring` |
+
+A closer at the wrong depth or naming another block is refused, and the language server types the closer when a block
+is opened. D20's rules on depth and on naming the block a missing closer belongs to stand.
+
+**Weighed.**
+- A plain `end` (D20), as Lua, Ruby and Luau write it: shorter, and an editor shows which block each one closes.
+
+**Why this won.** Tankun is used to Unio's closers and writes both languages, and with the language server typing the
+closer, a longer one costs nothing to write while staying readable where there's no editor: chats, screenshots and
+messages.
+
+**Tankun's words.** "Mf, you know. Let me design some Seal instead Ngin rn. First of all, I'll make its formatting
+follow Unio, and maybe add named `end`s, because I'm not used to bare" (quoted whole in D75), "One word: IDE", "And
+btw, that is illegal Seal?", "IDEs could fucking auto insert end", then, asked "Should Seal close blocks with Unio's
+named `end`s, replacing D20's plain `end`?", the owner chose: "yea"

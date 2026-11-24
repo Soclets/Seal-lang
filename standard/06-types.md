@@ -52,7 +52,7 @@ record Enemy
     hp: Whole
     x: Float
     y: Float
-end
+end record Enemy
 
 mut goblin = Enemy[name: "Goblin", hp: 30, x: 0.0, y: 0.0]
 goblin.hp = goblin.hp - 5
@@ -92,7 +92,7 @@ potions = stock[key: "potion"] ?? 0
 ```
 for each count at key item in stock
     show_msg("{item}: {count}")
-end
+end for
 ```
 
 - **`.remove(key: k)`** takes a key out, failing with `missing` if it isn't there; **`.has(key: k)`** gives a `Bool`;
@@ -108,7 +108,7 @@ one_of Event
     idle
     hurt[amount: Whole]
     healed[amount: Whole, by: Text]
-end
+end one_of Event
 
 mut last = Event.hurt[amount: 5]
 ```
@@ -128,7 +128,7 @@ match last
     case healed[by]
         show_msg("{by} healed you")
     case idle
-end
+end match
 ```
 
 - **Every case must be covered;** there's no catch-all (D37).
@@ -148,7 +148,7 @@ match target
     case some[value]
         attack(value)
     case none
-end
+end match
 id = nearest_enemy() ?? 0
 ```
 

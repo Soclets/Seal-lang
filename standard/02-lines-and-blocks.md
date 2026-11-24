@@ -5,7 +5,7 @@ mut tries = 0
 while tries < 3
     show_msg("Try {tries}")
     tries = tries + 1
-end
+end while
 ```
 
 ## Lines
@@ -27,18 +27,33 @@ total = (first_round + second_round +
 ## Blocks
 
 A block's opening line, such as `if`, `while` or `proc`, has no `:` at its end (D9). Its body is the deeper-indented
-lines after it, and it closes with a plain `end` at the opening line's depth (D20):
+lines after it, and it closes at the opening line's depth with `end` followed by what it closes, as Unio's do (D20,
+D76, Unio D8):
 
 ```
 opening line
     body
-end
+end what
 ```
 
-where `opening line` is the block's first line and `body` its statements.
+where `opening line` is the block's first line, `body` its statements, and `what` is what the block is:
 
-- **An `end` at the wrong depth is refused** (D20).
-- **A missing `end` is reported naming the block it should close,** as in "the `while` on line 3 has no `end`" (D20).
+| Block | Closer |
+|---|---|
+| `if`, with its `elif` and `else` | `end if` |
+| `while` | `end while` |
+| `for each` | `end for` |
+| `match` | `end match` |
+| a call's `otherwise` | `end otherwise` |
+| `proc heal[…]` | `end proc heal` |
+| `record Enemy` | `end record Enemy` |
+| `one_of Event` | `end one_of Event` |
+| `fam.proc spawn` | `end fam.proc spawn` |
+
+- **A closer at the wrong depth, or naming another block, is refused** (D20, D76).
+- **A missing closer is reported naming the block it should close,** as in "the `while` on line 3 has no `end
+  while`" (D20, D76).
+- **The language server types the closer** when a block is opened (D76).
 
 ## Indentation
 
@@ -54,8 +69,8 @@ and anything else, a tab included, is refused, with the corrected line as the fi
   (D63, Unio D98, D100).
 - **`//` comments to the end of the line,** and **`///`** is a doc comment on the lines right before a declaration
   (D63, Unio D74).
-- **`comment name` on its own line starts a block comment,** closed by a plain `end`; everything between is ignored
-  (D20, D63).
+- **`comment name` on its own line starts a block comment,** closed by `end comment name`, as
+  in Unio; everything between is ignored (D63, D76, Unio D74).
 - **One blank line in a row is fine; two or more are refused** (D63, Unio D97).
 - **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144).
 

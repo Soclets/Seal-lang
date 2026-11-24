@@ -1,11 +1,11 @@
 fam.proc spawn
     proc spawn[kind: Text]
         show_msg("A " & kind & " appears")
-    end
+    end proc spawn
     proc spawn.boss[kind: Text]
         show_msg("The boss " & kind & " appears!")
-    end
-end
+    end proc spawn.boss
+end fam.proc spawn
 
 spawn("goblin")
 spawn.boss("dragon")

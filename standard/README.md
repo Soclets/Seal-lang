@@ -25,7 +25,6 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `$x` | `x` | D7 |
 | `;` at the end of a statement | nothing: the line ends it | D8 |
 | `:` at the end of an opening line | nothing | D9 |
-| `end if`, `end while`, `end proc name`, `end otherwise` | `end` | D20 |
 | `else if` | `elif` | D10 |
 | `proc name[$a: Whole] returns Whole:` | `proc name[a: Whole] -> Whole`, types and `->` optional | D5, D6, D21, D45 |
 | `show_msg("{x}")` | `"{x}"`: every text fills its braces in both | D75 |

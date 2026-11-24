@@ -4,7 +4,7 @@ proc heal[amount, times]
     labels [amount as by, times as times]
     defaults [times: 1]
     hp = hp + amount * times
-end
+end proc heal
 
 heal(by: 5)
 heal(by: 2, times: 3)

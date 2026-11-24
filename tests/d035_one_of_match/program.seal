@@ -2,7 +2,7 @@ one_of Event
     idle
     hurt[amount: Whole]
     healed[amount: Whole, by: Text]
-end
+end one_of Event
 
 mut hp = 30
 
@@ -16,8 +16,8 @@ proc handle[event: Event]
         case healed[amount, by]
             hp = hp + amount
             show_msg("{by} healed {amount}, {hp} left")
-    end
-end
+    end match
+end proc handle
 
 handle(Event.hurt[amount: 5])
 handle(Event.idle)

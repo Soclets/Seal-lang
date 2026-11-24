@@ -3,8 +3,8 @@ proc doubled_level[level]
         fail too_high
     else
         return level * 2
-    end
-end
+    end if
+end proc doubled_level
 
 a = doubled_level(3) ?? 0
 b = doubled_level(12) ?? -1
@@ -13,5 +13,5 @@ c = doubled_level(20) otherwise
     case too_high
         show_msg("too high")
         instead 99
-end
+end otherwise
 show_msg("{c}")

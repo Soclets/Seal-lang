@@ -5,7 +5,7 @@
 ```
 proc name[parameters] -> Type ! [failures]
     body
-end
+end proc name
 ```
 
 where `name` is the procedure's name, `parameters` its parameters separated by commas, `Type` the type it gives back,
@@ -15,11 +15,11 @@ as they are (D20, D21, D45).
 ```
 proc on_hit[points]
     score = score + points
-end
+end proc on_hit
 
 proc average[a: Float, b: Float] -> Float
     return (a + b) / 2.0
-end
+end proc average
 ```
 
 - **Each parameter is its name, with its type optional,** as `points` or `a: Float` (D5, D21).
@@ -42,11 +42,11 @@ A script gives its procedures narrowings in a family, a word and its kinds decla
 fam.proc spawn
     proc spawn[kind]
         ...
-    end
+    end proc spawn
     proc spawn.boss[kind]
         ...
-    end
-end
+    end proc spawn.boss
+end fam.proc spawn
 ```
 
 where each `...` stands for that procedure's body.
@@ -104,7 +104,7 @@ proc heal[target, amount, times]
     labels [amount as by, times as times]
     defaults [times: 1]
     hp = hp + amount * times
-end
+end proc heal
 
 heal(goblin, by: 10)              // means heal(goblin, by: 10, times: 1)
 ```
