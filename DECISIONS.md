@@ -2576,3 +2576,21 @@ player_pos = Vec2[x: 40.0, y: 80.0]
 
 **Tankun's words.** "What the fuck? Why would you decl in Seal", then, asked "So, should host types be usable without
 declaring them, the way doors are?", the owner chose: "yea"
+
+## D86. D68's rule covers `match`, and an unread `at` name is marked `unused`
+
+2026-11-24.
+
+**Chosen.**
+- **When any case of a `match` leaves,** by `return`, `break` or `fail`, nothing may follow its `end match` in the same
+  block, as D68 has it for `if` (Unio D9). The rest goes in the cases that don't leave.
+- **A `for each`'s `at` name that's never read is marked `unused`,** as `for each count at key unused item in stock`,
+  as D61 has it for the `for each` name itself.
+
+**Weighed.**
+- Leaving `match` out of D68. A line after it would run on only some of its ways, which is what D68 is there to show.
+- Allowing an unread `at` name. It's a name made and never read, which D2 refuses everywhere else.
+
+**Why this won.** Each follows a rule already decided, for the same reason.
+
+**Tankun's words.** Asked "Should both work that way?", the owner chose: "yea"

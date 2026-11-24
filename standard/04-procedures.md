@@ -71,8 +71,8 @@ values (D2, D30).
   with `while true` still needs a `return` after it (D68, Unio D57, D149).
 - **Nothing may follow `return`, `break` or `fail` in the same block,** and a bare `return` as a procedure's last line
   is refused (D68, Unio D57).
-- **When any way through an `if` leaves, nothing may follow its `end`;** the rest goes in the ways that don't leave
-  (D68, Unio D9).
+- **When any way through an `if` or a `match` leaves, nothing may follow its `end if` or `end match`;** the rest goes in
+  the ways that don't leave (D68, D86, Unio D9).
 
 ## Calls
 
