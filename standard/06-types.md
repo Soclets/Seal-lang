@@ -24,6 +24,9 @@ examples in Seal's syntax (README).
   that only turns out empty while running is a failed check, as dividing by zero is (D89).
 - **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
   `<` and `>` on text aren't decided (D64).
+- **`==` and `!=` compare bigger values by their contents** (D95): records field by field; lists and arrays by length
+  and their items in order; `Dict`s by their keys, each with an equal value, whatever order they were added in; and
+  `one_of`s by their case and its values.
 - **Text is written in double quotes, and joined only by filling it in with braces,** as in `"{first} {last}"` (D16,
   D75, D77, Unio D21, D201). Seal has no operator for joining text: `&` is refused, and so is `+` on text, each with
   the braces form as the fix.

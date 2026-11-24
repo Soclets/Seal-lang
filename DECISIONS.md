@@ -2800,3 +2800,29 @@ anything but a `Float` is refused.
 **Why this won.** A game shows a speed, a timer or a percentage without seventeen digits.
 
 **Tankun's words.** Asked "Should Seal take Unio's `places:` in braces as it is?", the owner chose: "yea"
+
+## D95. `==` and `!=` compare records, lists, `Dict`s and `one_of`s by their contents
+
+2026-11-24.
+
+**Chosen.** Since every name owns its value and nothing is shared (D15), two bigger values are equal when their contents
+are:
+- **records:** every field equal;
+- **lists and arrays:** the same length, with equal items in the same order;
+- **`Dict`s:** the same keys, each with an equal value; the order keys were added in doesn't count;
+- **`one_of`s:** the same case, with equal values.
+
+```
+if player.pos == spawn.pos
+if hand == ["A", "K"]
+```
+
+**Weighed.**
+- Refusing `==` on them, comparing field by field by hand. Long, and easy to get wrong when a field is added later.
+- Counting a `Dict`'s order. The order shows when going through it (D33), but it isn't part of what the dictionary
+  holds.
+
+**Why this won.** With no references, "the same contents" is the only thing "equal" can mean.
+
+**Tankun's words.** Asked "Should `==` and `!=` work on records, lists, `Dict`s and `one_of`s, comparing their
+contents?", the owner chose: "yea"
