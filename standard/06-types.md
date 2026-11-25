@@ -57,6 +57,28 @@ whole number written there and never changed, with no `mut`, as `max_items = 10`
 `bag: List<Text>[len.max: max_items] = []`. Any other name, a calculation or a call is refused, since its value isn't
 known while loading (D103).
 
+## Units
+
+Units are optional: a `Whole` or a `Float` can carry one, as Cyborg's do, and nothing is ever required to (D111):
+
+```
+wait(2 time::secs)
+wait(500 time::ms)
+total = 2 time::secs + 500 time::ms      // 2.5 secs
+```
+
+- **A number takes its unit after it,** from a unit group, reached with `::` (D110, D111).
+- **Units that measure the same thing combine and convert by themselves;** ones that measure different things, as
+  seconds and pixels, are refused together (D111).
+- **Where a unit is expected, a plain number is refused,** with the unit added as the fix, so a door taking a time
+  can't be given a bare `2` (D111).
+- **Inside its group, a unit has its short name,** as `time::secs` and `time::ms`, since the group says what it
+  measures (D111).
+- **Everything else follows Cyborg's units,** decided there: derived units, angles, points and spans, prefixes and
+  showing a unit (D111).
+
+**Not decided:** Seal's own list of units and their names; how `sin` and the other angle built-ins take units.
+
 ## Ranged numbers
 
 A `Whole` or a `Float` can be given a lowest and a highest value as type settings (D107):

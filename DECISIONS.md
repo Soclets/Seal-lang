@@ -1663,6 +1663,8 @@ choose (D11).
 💀", then, asked "Should Seal leave units out, with hosts saying units through their doors' labels?", the owner chose:
 "yea. Shouldn't it be `secs:`?"
 
+(Replaced by D111: units, as Cyborg's, as an optional layer.)
+
 ## D56. A name made inside a block ends where the block ends, and a loop's body is fresh each pass
 
 2026-11-23.
@@ -3309,3 +3311,47 @@ of the left", "Ohhh, Idk about name being like that. Since, we usually don't do 
 `fam` very diverse", "What about `group.`?", "Any other names for group?", then, asked "Should handler groups be
 `group.handler level_failed`, with `handles [ … ]`, members declared as `::start_over`, and `::start_over` usable after
 a handled procedure's call?", the owner chose: "yea"
+
+## D111. Units, as Cyborg's, as an optional layer
+
+2026-11-25.
+
+**Chosen.** Seal takes Cyborg's units, replacing D55's "no units", with three differences:
+- **Nothing is ever required to carry a unit,** unlike Cyborg's sizes (Cyborg D101). Plain `Whole`s and `Float`s work
+  as before, and a host or script that never uses units pays nothing for them. A door can still say its unit through a
+  label, as `wait(seconds: 2)`.
+- **Where something does take a unit, a plain number is refused,** with the unit added as the fix: if a host's `wait`
+  takes a time, `wait(2)` is refused and `wait(2 time::secs)` passes.
+- **Inside its group, a unit has its short name,** as `time::secs` and `time::ms`, since the group already says what
+  it measures. Unit groups are reached with `::` (D110, Cyborg D488).
+
+```
+wait(2 time::secs)
+wait(500 time::ms)
+x = x + speed * dt         // pixels per second times seconds: pixels
+```
+
+Everything else follows Cyborg's decisions: a unit as part of a number's type, units of one measure combining and
+converting by themselves, derived units, angles, points and spans, prefixes and showing a unit, and Cyborg's open
+questions stay open for Seal too. Seal's own list of units, likely time, angles and screen units, and how the angle
+built-ins (D109) take them, come next.
+
+**Weighed.**
+- No units, with labels saying them (D55). A label pins one unit, and nothing catches a bare number carried to the
+  wrong place.
+- Cyborg's units in full, sizes included. As Tankun pointed out, nobody has to learn all of them, and a scripting
+  language shouldn't require them anywhere.
+- Waiting until NginSeal showed which unit bugs people hit, as the design session first recommended.
+
+**Why this won.** Units catch the classic game bugs before a script runs: seconds against milliseconds, degrees
+against radians, and movement that forgot the frame time. Optional, they cost only the people who use them, and the
+refusals teach the rule where it matters. Tankun called it a bigger pitch than speed and safety, with the learning
+curve as the trade-off.
+
+**Tankun's words.** "What the fuck would happen if we add full Cyborg units (and bro, as the rule says, I swear
+there's a rule. Don't read their fucking docs, and just ask the main/design session of it)", "You don't have to learn
+all of full units, though", "How does our `wait` name?", has code, "So, you could do `wait(2)`?", "What does units even
+give?", "Wait a fucking minute, that's a big pitch, even bigger than speed & safety, I think. So, summing up all of
+that? Ohhhhhhh", "So, maybe the learning curve is very much the tradeoff?", then, asked "Should Seal take Cyborg's
+units as an optional layer, with short unit names inside their groups, replacing D55?", the owner chose: "yea. Btw, if
+Seal ever has a JIT or learning host. It would be NginJIT, NginLearn"
