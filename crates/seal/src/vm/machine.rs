@@ -250,6 +250,9 @@ fn join_pieces(
             JoinPiece::Bool(_) => 5,
             JoinPiece::Float(_) => 24,
             JoinPiece::Places(_, places) => 24 + usize::from(places),
+            JoinPiece::NumberPlaces(register, places) => {
+                heap.number(get(registers, register)?)?.size().saturating_mul(3).saturating_add(usize::from(places) + 2)
+            }
             JoinPiece::Value(..) => 16,
         });
     }
@@ -311,13 +314,17 @@ fn join_pieces(
 /// The instructions [`run`] hands over to work outside its loop: each changes its registers as the loop would, and
 /// gives the failure it ends with, when it has one.
 #[inline(never)]
+#[allow(clippy::too_many_lines)] // one case per instruction handed over
 fn rare_instruction(
     instruction: Instruction,
     registers: &mut [u64],
     heap: &mut Heap,
     compiled: &Compiled,
     pc: usize,
+    steps_left: u64,
 ) -> Result<Option<u32>, Stopped> {
+    // trace: D14. What's left to pay for big numbers' work with.
+    heap.work_allowance = steps_left.saturating_mul(BULK_UNIT);
     let get = |registers: &[u64], register: Register| {
         registers.get(usize::from(register)).copied().ok_or_else(|| broken("a register outside its frame", pc))
     };
@@ -416,6 +423,27 @@ fn rare_instruction(
         Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
             let appending = matches!(instruction, Instruction::AppendPieces { .. });
             join_pieces(registers, heap, compiled, to, site, appending).map_err(stop)?;
+        }
+        // trace: D115, D116
+        Instruction::LoadNumber { to, site } => {
+            let Some(number) = compiled.numbers.get(usize::from(site)) else {
+                return Err(broken("a number written out that isn't there", pc));
+            };
+            let handle = heap.new_number(number.clone()).map_err(|error| stop(Stop::from(error)))?;
+            set(registers, to, handle)?;
+        }
+        Instruction::NumberOperation { to, left, right, operation } => {
+            let made = super::numbers::operation(operation, registers, left, right, heap).map_err(stop)?;
+            set(registers, to, made)?;
+        }
+        Instruction::ConvertNumber { to, from, site } => {
+            let Some(&(conversion, failure)) = compiled.number_conversions.get(usize::from(site)) else {
+                return Err(broken("a number conversion that isn't there", pc));
+            };
+            match super::numbers::convert(conversion, failure, get(registers, from)?, heap).map_err(stop)? {
+                super::numbers::Converted::Slot(made) => set(registers, to, made)?,
+                super::numbers::Converted::Failed(failure) => return Ok(Some(failure)),
+            }
         }
         _ => return Err(broken("an instruction handed over that isn't one of these", pc)),
     }
@@ -595,10 +623,7 @@ fn maths_function(function: u8, arguments: &[u64], pc: usize) -> Result<u64, Sto
             let unit = if per_turn == 360 { "degs" } else { "turns" };
             not_real(format!("`{name}({} {unit})`", float_to_text(float(0))), value)
         }
-        13 => match maths::atan2(float(0), float(1)) {
-            Some(angle) => floats(angle),
-            None => Err((Stop::NotDesigned("`atan2` of the point (0, 0), which has no angle,".to_owned()), pc)),
-        },
+        13 => floats(maths::atan2(float(0), float(1))),
         _ => {
             let (a, b, t) = (float(0), float(1), float(2));
             let text = format!("`lerp({}, to: {}, by: {})`", float_to_text(a), float_to_text(b), float_to_text(t));
@@ -655,6 +680,9 @@ fn write_pieces(
             JoinPiece::Float(register) => built.push_str(&float_to_text(f64::from_bits(get(register)?))),
             JoinPiece::Places(register, places) => {
                 built.push_str(&float_with_places(f64::from_bits(get(register)?), places));
+            }
+            JoinPiece::NumberPlaces(register, places) => {
+                built.push_str(&super::numbers::with_places(heap.number(get(register)?)?, places));
             }
             JoinPiece::Value(register, type_id) => {
                 let room = heap.room_left();
@@ -1476,8 +1504,11 @@ pub fn run(
             | Instruction::Scale { .. }
             | Instruction::TextToBool { .. }
             | Instruction::JoinPieces { .. }
-            | Instruction::AppendPieces { .. } => {
-                match rare_instruction(instruction, registers, heap, compiled, pc) {
+            | Instruction::AppendPieces { .. }
+            | Instruction::LoadNumber { .. }
+            | Instruction::NumberOperation { .. }
+            | Instruction::ConvertNumber { .. } => {
+                match rare_instruction(instruction, registers, heap, compiled, pc, steps_left) {
                     Ok(Some(failed)) => failure = failed,
                     Ok(None) => {}
                     Err(stopped) => return Err(stopped),

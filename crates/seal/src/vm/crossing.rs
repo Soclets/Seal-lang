@@ -1,7 +1,7 @@
 //! Values crossing between a script's heap and its host (D15, D48): always as copies.
 
 use super::dict::{Dict, Probe};
-use super::heap::{Heap, HeapError, Object, SLOT_COST};
+use super::heap::{Heap, HeapError, Number, Object, SLOT_COST};
 use crate::compile::bytecode::{Crossing, Layout, PLAIN_CASE};
 use crate::host::Value;
 
@@ -31,6 +31,9 @@ pub fn describe(crossing: &Crossing) -> String {
         Crossing::Float => "a `Float`".to_owned(),
         Crossing::Bool => "a `Bool`".to_owned(),
         Crossing::Text => "a `Text`".to_owned(),
+        Crossing::HugeWhole => "a `HugeWhole`".to_owned(),
+        Crossing::Decimal => "a `Decimal`".to_owned(),
+        Crossing::HugeDecimal => "a `HugeDecimal`".to_owned(),
         Crossing::List(_) => "a list".to_owned(),
         Crossing::Dict(..) => "a `Dict`".to_owned(),
         Crossing::Maybe { .. } => "a `Maybe`".to_owned(),
@@ -74,6 +77,7 @@ pub fn plain_value(slot: u64, crossing: &Crossing) -> Option<Value> {
 /// # Errors
 ///
 /// Fails when the value isn't of the crossing's type, or the script would pass its memory cap.
+#[allow(clippy::too_many_lines)] // one case per kind of value
 pub fn to_slot(value: &Value, crossing: &Crossing, heap: &mut Heap, layouts: &[Layout]) -> Result<u64, CrossingError> {
     match (crossing, value) {
         (Crossing::Nothing, Value::Nothing) => Ok(0),
@@ -84,6 +88,9 @@ pub fn to_slot(value: &Value, crossing: &Crossing, heap: &mut Heap, layouts: &[L
             heap.work = heap.work.saturating_add(text.len() as u64);
             Ok(heap.new_text(text, text.len())?)
         }
+        (Crossing::HugeWhole, Value::HugeWhole(value)) => Ok(heap.new_number(Number::Huge(value.clone()))?),
+        (Crossing::Decimal, Value::Decimal(value)) => Ok(heap.new_number(Number::Decimal(*value))?),
+        (Crossing::HugeDecimal, Value::HugeDecimal(value)) => Ok(heap.new_number(Number::HugeDecimal(value.clone()))?),
         (Crossing::List(item), Value::List(values)) => {
             heap.charge(values.len().saturating_mul(SLOT_COST))?;
             heap.refund(values.len().saturating_mul(SLOT_COST));
@@ -199,6 +206,11 @@ pub fn to_value(slot: u64, crossing: &Crossing, heap: &Heap, layouts: &[Layout])
         Crossing::Float => Value::Float(f64::from_bits(slot)),
         Crossing::Bool => Value::Bool(slot != 0),
         Crossing::Text => Value::Text(heap.text(slot)?.to_owned()),
+        Crossing::HugeWhole | Crossing::Decimal | Crossing::HugeDecimal => match heap.number(slot)? {
+            Number::Huge(value) => Value::HugeWhole(value.clone()),
+            Number::Decimal(value) => Value::Decimal(*value),
+            Number::HugeDecimal(value) => Value::HugeDecimal(value.clone()),
+        },
         Crossing::List(item) => match heap.get(slot)? {
             Object::List { items, .. } => {
                 let mut values = Vec::with_capacity(items.len());

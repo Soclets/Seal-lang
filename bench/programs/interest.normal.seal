@@ -1,0 +1,10 @@
+// trace: D116, D127. Exact compound interest in a `HugeDecimal`, its digits growing every year.
+proc run[n: Whole] -> Whole
+    mut savings: HugeDecimal = 100.00
+    mut year = 0
+    while year < n
+        savings = savings * 1.05
+        year = year + 1
+    end
+    return be.Text(savings).len
+end

@@ -122,7 +122,11 @@ fn fits(host: &HostType, crossing: &Crossing) -> bool {
         | (HostType::Whole, Crossing::Whole)
         | (HostType::Float, Crossing::Float)
         | (HostType::Bool, Crossing::Bool)
-        | (HostType::Text, Crossing::Text) => true,
+        | (HostType::Text, Crossing::Text)
+        | (HostType::HugeWhole, Crossing::HugeWhole)
+        | (HostType::Decimal, Crossing::Decimal)
+        | (HostType::HugeDecimal, Crossing::HugeDecimal) => true,
+        (HostType::Measured { base, .. }, crossing) => fits(base, crossing),
         (HostType::List(host), Crossing::List(crossing)) => fits(host, crossing),
         (HostType::Dict(host_key, host_value), Crossing::Dict(key, value)) => {
             fits(host_key, key) && fits(host_value, value)

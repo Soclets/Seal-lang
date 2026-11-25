@@ -14,9 +14,8 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D114 and D117 to D132 are built, except the language server's parts and what's listed
-   under "Not built yet" below; D115, D116, D119 and D124 to D127 (the new number types) are C13. All 18 tests in
-   `tests/` pass.
+2. **Decisions built.** D1 to D134 are built, except the language server's parts and what's listed under "Not built
+   yet" below (units and limits on a `HugeWhole`). All 20 tests in `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -62,7 +61,8 @@ checker, compiler or VM.
   (D109), `lerp` (D114), each correctly rounded (D50).
 - [x] **C12. Units** (D111 to D113, D120 to D123): numbers with units, Seal's three groups, a script's and a host's own
   groups, conversions, rates, points, `in`, the angle built-ins taking angles, and units at a host's doors.
-- [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116), timed in the benchmarks.
+- [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116, D119, D124 to D127), timed in the benchmarks.
+  Built and timed, all but units and limits on a `HugeWhole` (D115), which stop as not built yet.
 - [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
   and sent to the design session.
 
@@ -191,7 +191,22 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D131** A handler's case for a failure the call can't give is allowed and never runs; one written straight into
   an `otherwise` block is still refused.
 - **D132** `**` chains from the right and comes before a negating `-`.
-- What a `( … )`, a negating `-` or one side of maths is wanted to be only guides its type now: the whole lands where
+- **D133** `atan2` of (0, 0) gives 0, and -0.0 counts as zero, where IEEE 754 gives ±π.
+- **D134** `asin` and `acos` give a plain `Float`; `atan2` gives `rads` only when given values with units.
+- **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** `crates/seal/src/decimal.rs` holds
+  decimal128, with IEEE 754's rounding (34 digits, to the nearest, a tie to even, exponents -6176 to 6111) and its
+  preferred exponents, so places carry through (`1.50 + 1.50` is `3.00`), each operation worked out exactly on
+  `Big` and rounded once; and the exact `HugeDecimal`, whose `/` and `sqrt` give the exact answer or stop. Checked
+  against Python's decimal128 context on 21,000 random operations: all the same, except `0 ** 0`, which is 1 as for
+  `Whole` and `Float`, where Python calls it invalid. On the heap, all three are a `Number`, never changed once made.
+  A number becomes a bigger type by itself where it always fits (a `Whole` into any, a `HugeWhole` or `Decimal` into
+  a `HugeDecimal`), where it lands and beside another in maths; a number written out takes the type wanted, or the
+  other side's (D119), exactly as written, refused with `~` or with more digits than a `Decimal` keeps. D127's
+  operations, `abs`, `min`, `max`, `clamp`, `sqrt` and `lerp` as its table says, `places:` on decimals, `==` by
+  amount. D126's conversions, with `too_big` and `not_a_number` as failures that `handles [ … ]` can name. A host
+  passes them as `seal::big::Big`, `seal::decimal::Decimal` and `seal::decimal::HugeDecimal`. Their work is paid for
+  before it's done, refused when the steps left can't pay, and a `HugeDecimal`'s exponent counts against the memory
+  cap, since lining two up writes its zeros out. the whole lands where
   it's used, so `sqrt(7.0 secs / ~1.1 secs)` and `Whole[max: 5] = 10 - 7` check as the whole, not each part.
 
 ## How it's built (the building session's design)
@@ -296,19 +311,13 @@ Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D1
 - 21: `newln` outside braces.
 - D58: whether n-body's Normal program is rightly the one written with D62's direct changes.
 
-New questions from C7 to C12, not sent yet (the first three of C7 to C10's are answered by D130 to D132):
+Batch 2, sent 2026-11-25 after C12 (C7 to C10's first three were answered by D130 to D132):
 - D108: a negative power of a `Whole` only known while running is a failed check (built), as D89 treats an empty
   separator.
-- D109: `atan2(y: 0.0, x: 0.0)`, a point with no angle (stops; IEEE 754 says 0). D107: `clamp` with `low:` above
-  `high:` (stops).
+- D107: `clamp` with `low:` above `high:` (stops). (D109's `atan2` of (0, 0) is answered by D133.)
 - D91 lists the declarations `///` goes on; a name made inside a block isn't among them (stops).
 - A comment after code inside an open bracket, as `foo(a, // the first`: D91 allows a comment line there (stops).
-- D113 against D111: `asin`, `acos` and `atan2` give `rads`, so a script that never writes a unit gets one anyway, and
-  `asin(x) - 0.7` is refused (`rads` minus a plain number), though D111 says a script that never uses units pays
-  nothing for them and D113 that a plain `Float` still means radians. Should they give `rads` only when given values
-  with units (`atan2(y: 3.0 px, x: 1.0 px)`), and a plain `Float` otherwise? (Built as written: always `rads`.)
-- D121's example `x: Float[unit: px.point] = 100.0` puts a plain number where a unit goes, which D111 refuses (built:
-  refused, with `100.0 px.point` as the fix). Is the example a slip?
+- (Answered: D134 for the angle built-ins' units; D121's example was a slip, noted under it.)
 - A `Whole` with a unit becomes a `Float` only when its unit changes: `w: Float[unit: secs] = 2000 ms` passes but
   `= 2 secs` is refused, as a plain `Whole` into a `Float` is (D16). Is that wanted, or should the second pass too?
 - `a + b in ms`: `in` after maths without brackets could measure the whole or only `b` (stops).
@@ -326,6 +335,15 @@ Ralph has no `Float`, lists, `for each`, `.len`, dividing or the biggest `Whole`
 dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused` parameters (D61), deeper changes
 (D62), and everything with records, `one_of`, `Dict` and failures.
 
+New from C13, not sent yet:
+- How a whole-valued `Decimal` shows: built as D125 reads, with the places it keeps, so `d: Decimal = 3` shows `3`
+  and `3.0` shows `3.0`, unlike a `Float`'s `3.0`.
+- Converting a `Float` to a `HugeWhole` or `HugeDecimal`: D126 lists neither (stops as not designed).
+- `be.Decimal` on text with more than 34 digits rounds them, as decimal128 does; a number written in the script with
+  more is refused. A text whose number is past a `Decimal`'s range fails with `not_a_number`.
+- `be.Float` on a `HugeWhole`, `Decimal` or `HugeDecimal` past a `Float`'s range fails with `too_big` (D126 says only
+  "to the nearest `Float`").
+
 ## Not designed yet: every stop left in the code
 
 - a `\r` that isn't right before a line break
@@ -335,7 +353,8 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - a handler used inside its own cases
 - `in` after maths without brackets, as `a + b in ms`
 - maths on units whose answer's unit has no written form, as `px * px`, and maths on points beyond `±` a span
-- `atan2` of (0, 0), which has no angle; a `clamp` whose `low:` is more than its `high:` (both stop while running too)
+- a `clamp` whose `low:` is more than its `high:` (it stops while running too)
+- converting a `Float` to a `HugeWhole` or a `HugeDecimal`, which D126 doesn't list
 
 ## Not built yet
 
@@ -346,7 +365,7 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
 - Passing a value of a type that holds itself between a host and a script (D72).
-- Converting to `HugeWhole`, `Decimal` and `HugeDecimal` (C13).
+- Units and limits on a `HugeWhole` (D115).
 - The language server (D47): an empty package, as the prompt says.
 
 ## Draft wordings

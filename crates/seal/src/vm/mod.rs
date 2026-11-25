@@ -4,4 +4,5 @@ pub mod crossing;
 pub mod dict;
 pub mod heap;
 pub mod machine;
+pub mod numbers;
 pub mod show;

@@ -1,0 +1,10 @@
+// trace: D115. A `HugeWhole` growing past any `Whole`: n factorial, counted by its digits.
+proc run[n: Whole] -> Whole
+    mut product: HugeWhole = 1
+    mut i = 2
+    while i at_most n
+        product = product * i
+        i = i + 1
+    end
+    return be.Text(product).len
+end

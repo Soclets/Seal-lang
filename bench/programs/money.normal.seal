@@ -1,0 +1,14 @@
+// trace: D116, D125. Prices summed and split in `Decimal`s, exactly, as a shop or an idle game keeps its money.
+proc run[n: Whole] -> Whole
+    mut total: Decimal = 0.00
+    mut tax: Decimal = 0.00
+    mut i = 0
+    while i < n
+        price: Decimal = 4.99
+        total = total + price * (i rem.floor 7 + 1)
+        tax = tax + price * 0.08
+        i = i + 1
+    end
+    share = (total + tax) div.floor 3
+    return be.Whole.floor(share) ?? 0
+end

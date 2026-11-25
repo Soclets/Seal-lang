@@ -190,7 +190,7 @@ fn d108_d109_d114_maths() {
     let script = "x = 3\nsquare = x ** 2\narea = 2 * x ** 2\nroot = 2.0 ** 0.5\nangle = atan2(y: 1.0, x: 1.0)\nwave = sin(1.0)\nfar = abs(-7)\nlow = min(3.5, 2.5)\nhigh = max(2, 9)\nheld = clamp(150, low: 0, high: 100)\npart = lerp(0.0, to: 10.0, by: 0.25)\nshow_msg(\"{square} {area} {root} {pi} {angle} {wave} {far} {low} {high} {held} {part}\")\n";
     assert_eq!(
         shows(script),
-        ["9 18 ~1.4142135623730951 ~3.141592653589793 ~0.7853981633974483 rads ~0.8414709848078965 7 2.5 9 100 2.5"]
+        ["9 18 ~1.4142135623730951 ~3.141592653589793 ~0.7853981633974483 ~0.8414709848078965 7 2.5 9 100 2.5"]
     );
     assert!(refusal("big = 2 ** 70\nshow_msg(\"{big}\")\n").contains("too big for a `Whole`"));
     assert!(refusal("half = 2 ** -1\nshow_msg(\"{half}\")\n").contains("negative power"));
@@ -269,4 +269,63 @@ fn d111_a_host_gives_its_doors_and_groups_units() {
     assert!(doors.add_unit_group("time", &[("ticks", "base")]).is_err());
     assert!(doors.add_unit_group("money", &[("cents", "base"), ("dollars", "100 euros")]).is_err());
     assert!(doors.add("say", |_text: String| ()).and_then(|door| door.units([Some("secs")])).is_err());
+}
+
+#[test]
+fn d133_d134_angles_from_plain_numbers_stay_plain() {
+    let script = "a = atan2(y: 0.0, x: 0.0)\nb = atan2(y: 1.0, x: 1.0) - 0.5\nc = asin(1.0)\nd = atan2(y: -0.0, x: -1.0)\ne = atan2(y: 0.0 px, x: 0.0 px)\nshow_msg(\"{a} {b} {c} {d} {e}\")\n";
+    assert_eq!(shows(script), ["0.0 ~0.2853981633974483 ~1.5707963267948966 ~3.141592653589793 0.0 rads"]);
+}
+
+#[test]
+fn d115_huge_whole_never_overflows() {
+    let script = "mut cookies: HugeWhole = 0\nclicks = 9223372036854775807\ncookies = cookies + clicks\ncookies = cookies * clicks\nbest = be.Whole(cookies) ?? 0\nsmall: HugeWhole = 42\nback = be.Whole(small) ?? 0\nbig: HugeWhole = 2\npower = big ** 100\nread = be.HugeWhole(\"123456789012345678901234567890\") ?? 0\nwritten: HugeWhole = 100000000000000000000000\nshow_msg(\"{cookies} {best} {back} {power} {read} {written}\")\n";
+    assert_eq!(
+        shows(script),
+        [
+            "85070591730234615847396907784232501249 0 42 1267650600228229401496703205376 123456789012345678901234567890 100000000000000000000000"
+        ]
+    );
+    assert!(refusal("x = 100000000000000000000000\nshow_msg(\"{x}\")\n").contains("too big for a `Whole`"));
+    assert!(refusal("x: HugeWhole = 2\ny = x + 0.5\nshow_msg(\"{y}\")\n").contains("can't mix"));
+    assert!(refusal("x: HugeWhole = 7\ny = x / 2\nshow_msg(\"{y}\")\n").contains("leaves a remainder"));
+}
+
+#[test]
+fn d116_d119_d124_d125_decimals_are_exact_and_keep_their_places() {
+    let script = "mut gold: Decimal = 0.0\nprice: Decimal = 4.99\ngold = gold + price * 3\nhalf = 0.5 + gold\na: Decimal = 1.50\nb = a + 1.50\nsame = b == 3.0\nten: Decimal = 10.0\nthird = ten / 3\nshow_msg(\"{gold} {half} {b} {same} {third} {third, places: 2}\")\n";
+    assert_eq!(shows(script), ["14.97 15.47 3.00 true 3.333333333333333333333333333333333 3.33"]);
+    assert!(refusal("x: Decimal = ~0.1\nshow_msg(\"{x}\")\n").contains("takes no `~`"));
+    assert!(refusal("x: Decimal = 1.5\ny: Float = 2.0\nz = x + y\nshow_msg(\"{z}\")\n").contains("can't mix"));
+    let exact = "x: HugeDecimal = 0.1\ny = x + 0.2\nz = x * x * x\nshow_msg(\"{y} {z}\")\n";
+    assert_eq!(shows(exact), ["0.3 0.001"]);
+    assert!(
+        run("x: HugeDecimal = 1.0\ny = x / 3\nshow_msg(\"{y}\")\n")
+            .err()
+            .unwrap_or_default()
+            .contains("no exact decimal answer")
+    );
+}
+
+#[test]
+fn d126_converting_between_number_types() {
+    let script = "price: Decimal = 4.99\nf = be.Whole.floor(price) ?? 0\nn = be.Whole.nearest(price) ?? 0\nfloat = be.Float(price) ?? 0.0\nshown = be.Decimal.shown(~0.1)\nnearest = be.Decimal.nearest(~0.1)\nread = be.Decimal(\" 12.50 \") ?? 0.0\nbad = be.Decimal(\"twelve\") ?? 0.0\nhuge: HugeDecimal = 1.25\nback = be.Decimal(huge) ?? 0.0\nwhole = be.HugeWhole.ceil(huge)\nshow_msg(\"{f} {n} {float} {shown} {nearest} {read} {bad} {back} {whole}\")\n";
+    assert_eq!(shows(script), ["4 5 ~4.99 0.1 0.1000000000000000055511151231257827 12.50 0.0 1.25 2"]);
+    assert!(refusal("x = be.Decimal(~0.1)\nshow_msg(\"{x}\")\n").contains("says which `Decimal`"));
+    assert!(
+        refusal("x: Decimal = 2.5\ny = be.Whole(x) ?? 0\nshow_msg(\"{y}\")\n").contains("says how the fraction goes")
+    );
+}
+
+#[test]
+fn d127_operations_on_the_new_number_types() {
+    let script = "pot: Decimal = 10.00\nshare = pot div.floor 3\nleft = pot rem.floor 3\nr: Decimal = 2.25\nroot = sqrt(r)\nsquare = r ** 2\nsize = abs(-r)\nlow = min(r, 1.5)\nmid = lerp(r, to: 4.25, by: 0.5)\nh: HugeDecimal = 2.25\nhroot = sqrt(h)\nshow_msg(\"{share} {left} {root} {square} {size} {low} {mid} {hroot}\")\n";
+    assert_eq!(shows(script), ["3 1.00 1.5 5.0625 2.25 1.5 3.250 1.5"]);
+    assert!(
+        run("h: HugeDecimal = 2.0\nr = sqrt(h)\nshow_msg(\"{r}\")\n")
+            .err()
+            .unwrap_or_default()
+            .contains("no exact decimal answer")
+    );
+    assert!(refusal("x: HugeWhole = 4\ny = sqrt(x)\nshow_msg(\"{y}\")\n").contains("`sqrt` takes"));
 }

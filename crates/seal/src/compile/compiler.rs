@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use super::bytecode::{
     Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction, JoinPiece,
-    Layout, ProcedureEntry, Register,
+    Layout, ProcedureEntry, Register, number_operation,
 };
 use crate::check::tree::{
     Block, Conversion, Expression, ExpressionKind, HandleFallback, Inside, PathStep, Procedure, Program, Rounding,
@@ -286,6 +286,58 @@ impl<'p> Compiler<'p> {
         }
     }
 
+    /// trace: D115, D116. Which of the number types on the heap a type is: 0 for `HugeWhole`, 1 for `Decimal`, 2
+    /// for `HugeDecimal`.
+    fn number_kind(&self, type_id: TypeId) -> Option<u8> {
+        match self.kind(type_id) {
+            Type::HugeWhole => Some(0),
+            Type::Decimal => Some(1),
+            Type::HugeDecimal => Some(2),
+            _ => None,
+        }
+    }
+
+    fn number_operation(&mut self, operation: u8, type_id: TypeId, to: Register, left: Register, right: Register) {
+        let kind = self.number_kind(type_id).unwrap_or(0);
+        let operation = kind * number_operation::TYPE + operation;
+        self.emit(Instruction::NumberOperation { to, left, right, operation });
+    }
+
+    /// trace: D115, D116, D127. Maths and comparisons on `HugeWhole`s, `Decimal`s and `HugeDecimal`s.
+    fn number_binary(
+        &mut self,
+        operator: BinaryOperator,
+        left: &Expression,
+        right: &Expression,
+        whole: &Expression,
+        to: Register,
+    ) {
+        let type_id = left.type_id;
+        let (left, right) = (self.value(left), self.value(right));
+        self.place = whole.place;
+        let (operation, left, right) = match operator {
+            BinaryOperator::Add => (number_operation::ADD, left, right),
+            BinaryOperator::Subtract => (number_operation::SUBTRACT, left, right),
+            BinaryOperator::Multiply => (number_operation::MULTIPLY, left, right),
+            BinaryOperator::Divide => (number_operation::DIVIDE, left, right),
+            BinaryOperator::Power => (number_operation::POWER, left, right),
+            BinaryOperator::DivFloor => (number_operation::DIVIDE_FLOOR, left, right),
+            BinaryOperator::DivTrunc => (number_operation::DIVIDE_TRUNC, left, right),
+            BinaryOperator::RemFloor => (number_operation::REMAINDER_FLOOR, left, right),
+            BinaryOperator::RemTrunc => (number_operation::REMAINDER_TRUNC, left, right),
+            BinaryOperator::Equal => (number_operation::EQUAL, left, right),
+            BinaryOperator::NotEqual => (number_operation::NOT_EQUAL, left, right),
+            BinaryOperator::Less => (number_operation::LESS, left, right),
+            BinaryOperator::AtMost => (number_operation::AT_MOST, left, right),
+            BinaryOperator::Greater => (number_operation::LESS, right, left),
+            BinaryOperator::AtLeast => (number_operation::AT_MOST, right, left),
+            BinaryOperator::Join | BinaryOperator::And | BinaryOperator::Or => {
+                return self.internal("an operator in the wrong place");
+            }
+        };
+        self.number_operation(operation, type_id, to, left, right);
+    }
+
     fn is_reference(&self, type_id: TypeId) -> bool {
         self.program.types.is_reference(type_id)
     }
@@ -369,6 +421,9 @@ impl<'p> Compiler<'p> {
             Type::Float => Crossing::Float,
             Type::Bool => Crossing::Bool,
             Type::Text => Crossing::Text,
+            Type::HugeWhole => Crossing::HugeWhole,
+            Type::Decimal => Crossing::Decimal,
+            Type::HugeDecimal => Crossing::HugeDecimal,
             Type::List { item, .. } | Type::Array { item, .. } => Crossing::List(Box::new(self.crossing(item))),
             Type::Dict { key, value } => Crossing::Dict(Box::new(self.crossing(key)), Box::new(self.crossing(value))),
             Type::Maybe(inner) => {
@@ -1698,7 +1753,10 @@ impl<'p> Compiler<'p> {
             .iter()
             .map(|part| match &part.kind {
                 ExpressionKind::Text(text) => Piece::Constant(self.text(text)),
-                ExpressionKind::ShowPlaces { value, places } => Piece::Places(self.value(value), *places),
+                ExpressionKind::ShowPlaces { value, places } => {
+                    let decimal = self.number_kind(value.type_id).is_some();
+                    Piece::Places(self.value(value), *places, decimal)
+                }
                 _ => Piece::Register(self.value(part), part.type_id),
             })
             .collect()
@@ -1711,7 +1769,8 @@ impl<'p> Compiler<'p> {
             .iter()
             .map(|piece| match *piece {
                 Piece::Constant(text) => JoinPiece::Constant(text),
-                Piece::Places(register, places) => JoinPiece::Places(register, places),
+                Piece::Places(register, places, false) => JoinPiece::Places(register, places),
+                Piece::Places(register, places, true) => JoinPiece::NumberPlaces(register, places),
                 // A number with a unit shows with its unit (D100, D112).
                 Piece::Register(register, piece_type) if self.program.types.measured(piece_type).is_some() => {
                     JoinPiece::Value(register, self.program.types.resolve(piece_type).0)
@@ -2264,7 +2323,64 @@ impl<'p> Compiler<'p> {
                         self.emit(Instruction::FloatToWhole { to, from, rounding });
                         false
                     }
+                    // trace: D115, D116, D126
+                    Conversion::Number(conversion) => {
+                        let failure = conversion.failure().map_or(0, |name| {
+                            (1u16..)
+                                .zip(&self.program.failure_names)
+                                .find(|(_, known)| *known == name)
+                                .map_or(0, |(number, _)| number)
+                        });
+                        let site = u16::try_from(self.out.number_conversions.len()).unwrap_or(u16::MAX);
+                        if site == u16::MAX {
+                            self.too_big("number conversions");
+                        }
+                        self.out.number_conversions.push((*conversion, failure));
+                        self.emit(Instruction::ConvertNumber { to, from, site });
+                        self.is_reference(expression.type_id)
+                    }
                 }
+            }
+            ExpressionKind::Number(number) => {
+                let site = u16::try_from(self.out.numbers.len()).unwrap_or(u16::MAX);
+                if site == u16::MAX {
+                    self.too_big("numbers written out");
+                }
+                self.out.numbers.push(number.clone());
+                self.emit(Instruction::LoadNumber { to, site });
+                true
+            }
+            ExpressionKind::Sqrt(value) if self.number_kind(expression.type_id).is_some() => {
+                let from = self.value(value);
+                self.place = expression.place;
+                self.number_operation(number_operation::SQRT, expression.type_id, to, from, from);
+                true
+            }
+            ExpressionKind::Negate(value) if self.number_kind(expression.type_id).is_some() => {
+                let from = self.value(value);
+                self.place = expression.place;
+                self.number_operation(number_operation::NEGATE, expression.type_id, to, from, from);
+                true
+            }
+            ExpressionKind::Maths { function, arguments, .. } if self.number_kind(expression.type_id).is_some() => {
+                use crate::check::tree::MathsFunction as Function;
+                let operation = match function {
+                    Function::Abs => number_operation::ABS,
+                    Function::Min => number_operation::MIN,
+                    Function::Max => number_operation::MAX,
+                    Function::Clamp => number_operation::CLAMP,
+                    _ => number_operation::LERP,
+                };
+                let count = u32::try_from(arguments.len()).unwrap_or(1);
+                let base = self.allocate_many(count);
+                for (offset, argument) in (0u16..).zip(arguments) {
+                    if self.value_into(argument, base.wrapping_add(offset)) {
+                        self.hold(base.wrapping_add(offset));
+                    }
+                }
+                self.place = expression.place;
+                self.number_operation(operation, expression.type_id, to, base, base.wrapping_add(1));
+                true
             }
             ExpressionKind::Sqrt(value) => {
                 let from = self.value(value);
@@ -2289,12 +2405,14 @@ impl<'p> Compiler<'p> {
             }
             ExpressionKind::Binary { operator, left, right } => {
                 self.binary(*operator, left, right, expression, to);
-                false
+                // Maths on `HugeWhole`s and decimals makes a new number, which is the caller's to let go of.
+                self.number_kind(expression.type_id).is_some()
             }
             ExpressionKind::ShowPlaces { value, places } => {
+                let decimal = self.number_kind(value.type_id).is_some();
                 let from = self.value(value);
                 self.place = expression.place;
-                let site = self.join_site(&[Piece::Places(from, *places)]);
+                let site = self.join_site(&[Piece::Places(from, *places, decimal)]);
                 self.emit(Instruction::JoinPieces { to, site });
                 true
             }
@@ -2899,6 +3017,9 @@ impl<'p> Compiler<'p> {
             self.patch(done, here);
             return;
         }
+        if self.number_kind(left.type_id).is_some() {
+            return self.number_binary(operator, left, right, whole, to);
+        }
         let is_float = matches!(self.kind(left.type_id), Type::Float);
         if !is_float
             && matches!(operator, BinaryOperator::Add | BinaryOperator::Subtract)
@@ -2975,8 +3096,8 @@ impl<'p> Compiler<'p> {
 enum Piece {
     Register(Register, TypeId),
     Constant(u32),
-    /// A `Float` shown to so many digits after its point (D94).
-    Places(Register, u8),
+    /// A `Float` shown to so many digits after its point (D94), or a decimal when it says so (D125).
+    Places(Register, u8, bool),
 }
 
 /// How many times an expression looks `key` up in `dict`, and how many other times it uses `dict` at all.
@@ -3014,6 +3135,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         | ExpressionKind::Whole(_)
         | ExpressionKind::Float(_)
         | ExpressionKind::Bool(_)
+        | ExpressionKind::Number(_)
         | ExpressionKind::Text(_) => false,
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }

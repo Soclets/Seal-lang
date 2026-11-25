@@ -14,6 +14,12 @@ pub enum HostType {
     Bool,
     /// `Text`, Rust's `String`.
     Text,
+    /// `HugeWhole`, [`crate::big::Big`] (D115).
+    HugeWhole,
+    /// `Decimal`, [`crate::decimal::Decimal`] (D116).
+    Decimal,
+    /// `HugeDecimal`, [`crate::decimal::HugeDecimal`] (D116).
+    HugeDecimal,
     /// `List<T>`, Rust's `Vec<T>`.
     List(Box<HostType>),
     /// `Dict<key: K, value: V>`, Rust's `HashMap<K, V>` (D32).

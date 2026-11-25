@@ -516,6 +516,26 @@ pub enum Instruction {
         base: Register,
         function: u8,
     },
+    /// A `HugeWhole`, `Decimal` or `HugeDecimal` written in the script: `numbers` at `site` (D115, D116).
+    LoadNumber {
+        to: Register,
+        site: u16,
+    },
+    /// An operation on `HugeWhole`s, `Decimal`s or `HugeDecimal`s (D115, D116, D127): `operation` is the type
+    /// times 32 plus the operation, as [`number_operation`] numbers them. A built-in with more than two values
+    /// takes them from `left` on.
+    NumberOperation {
+        to: Register,
+        left: Register,
+        right: Register,
+        operation: u8,
+    },
+    /// A conversion into or out of a number type, as `number_conversions` at `site` says (D115, D116, D126).
+    ConvertNumber {
+        to: Register,
+        from: Register,
+        site: u16,
+    },
     /// A ranged number landing: checked against, or pulled back to, the limits `limits` lists at `site` (D107,
     /// D128).
     CheckLimits {
@@ -824,6 +844,8 @@ pub enum JoinPiece {
     Float(Register),
     /// A `Float` shown to so many digits after its point, with no `~` (D94, Unio D175).
     Places(Register, u8),
+    /// A `Decimal` or `HugeDecimal` shown to so many digits after its point (D94, D125).
+    NumberPlaces(Register, u8),
     /// Any other value, shown as it's written in Seal, by its type's number in the script's types (D100).
     Value(Register, u32),
 }
@@ -844,6 +866,9 @@ pub enum Crossing {
     Float,
     Bool,
     Text,
+    HugeWhole,
+    Decimal,
+    HugeDecimal,
     List(Box<Crossing>),
     Dict(Box<Crossing>, Box<Crossing>),
     Maybe {
@@ -880,7 +905,14 @@ impl Crossing {
     pub fn holds_itself(&self) -> bool {
         match self {
             Crossing::Itself { .. } => true,
-            Crossing::Nothing | Crossing::Whole | Crossing::Float | Crossing::Bool | Crossing::Text => false,
+            Crossing::Nothing
+            | Crossing::Whole
+            | Crossing::Float
+            | Crossing::Bool
+            | Crossing::Text
+            | Crossing::HugeWhole
+            | Crossing::Decimal
+            | Crossing::HugeDecimal => false,
             Crossing::List(inner) | Crossing::Maybe { inner, .. } => inner.holds_itself(),
             Crossing::Dict(key, value) => key.holds_itself() || value.holds_itself(),
             Crossing::Record { fields, .. } => fields.iter().any(|(_, field)| field.holds_itself()),
@@ -973,6 +1005,10 @@ pub struct Compiled {
     pub scales: Vec<(crate::check::types::Size, bool)>,
     /// The limits each `CheckLimits` holds a value to, by its site (D107).
     pub limits: Vec<crate::check::types::Limits>,
+    /// The `HugeWhole`s, `Decimal`s and `HugeDecimal`s written in the script (D115, D116).
+    pub numbers: Vec<crate::decimal::Number>,
+    /// Each `ConvertNumber`'s conversion, and the number of the failure it gives, 0 when it gives none (D126).
+    pub number_conversions: Vec<(crate::check::tree::NumberConversion, u16)>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
@@ -1004,4 +1040,33 @@ mod tests {
     fn an_instruction_is_eight_bytes() {
         assert_eq!(std::mem::size_of::<Instruction>(), 8);
     }
+}
+
+/// The operations of `NumberOperation`, by number (D115, D116, D127).
+pub mod number_operation {
+    pub const ADD: u8 = 0;
+    pub const SUBTRACT: u8 = 1;
+    pub const MULTIPLY: u8 = 2;
+    pub const DIVIDE: u8 = 3;
+    /// To a `Whole` power, in `right`.
+    pub const POWER: u8 = 4;
+    pub const DIVIDE_FLOOR: u8 = 5;
+    pub const DIVIDE_TRUNC: u8 = 6;
+    pub const REMAINDER_FLOOR: u8 = 7;
+    pub const REMAINDER_TRUNC: u8 = 8;
+    pub const EQUAL: u8 = 9;
+    pub const NOT_EQUAL: u8 = 10;
+    pub const LESS: u8 = 11;
+    pub const AT_MOST: u8 = 12;
+    pub const NEGATE: u8 = 13;
+    pub const ABS: u8 = 14;
+    pub const MIN: u8 = 15;
+    pub const MAX: u8 = 16;
+    /// The value, `low:` and `high:` in three registers from `left`.
+    pub const CLAMP: u8 = 17;
+    pub const SQRT: u8 = 18;
+    /// `a`, `to:` and `by:` in three registers from `left`.
+    pub const LERP: u8 = 19;
+    /// What the type adds: a `HugeWhole` 0, a `Decimal` 1, a `HugeDecimal` 2, each times this.
+    pub const TYPE: u8 = 32;
 }

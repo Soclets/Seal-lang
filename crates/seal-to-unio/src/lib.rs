@@ -98,6 +98,7 @@ impl Translator<'_> {
             Type::Maybe(_) => return not_shared("a `Maybe`"),
             Type::Ranged { .. } => return not_shared("a ranged number"),
             Type::Measured { .. } => return not_shared("a number with a unit"),
+            Type::HugeWhole | Type::Decimal | Type::HugeDecimal => return not_shared("the new number types"),
             Type::Nothing | Type::Error | Type::Variable(_) => return not_shared("a value with no type to write"),
         })
     }
@@ -286,6 +287,7 @@ impl Translator<'_> {
                     Conversion::TextToWhole => "be.Whole",
                     Conversion::TextToBool => return not_shared("`be.Bool`"),
                     Conversion::Scale { .. } => return not_shared("a unit's conversion"),
+                    Conversion::Number(_) => return not_shared("the new number types"),
                     Conversion::FloatToWhole(Rounding::Floor) => "be.Whole.floor",
                     Conversion::FloatToWhole(Rounding::Trunc) => "be.Whole.trunc",
                     Conversion::FloatToWhole(Rounding::Ceil) => "be.Whole.ceil",
@@ -369,6 +371,7 @@ impl Translator<'_> {
             return Ok(call);
         }
         Ok(match &expression.kind {
+            ExpressionKind::Number(_) => return not_shared("the new number types"),
             ExpressionKind::Whole(value) => value.to_string(),
             ExpressionKind::Float(value) => {
                 // A `Float`'s own text is how Unio writes the literal, `~` included (Unio D155, D180).

@@ -1,0 +1,14 @@
+// The same sums as `money`, in `Float`s, as a yardstick for what exact decimals cost.
+proc run[n: Whole] -> Whole
+    mut total = 0.0
+    mut tax = 0.0
+    mut i = 0
+    while i < n
+        price = ~4.99
+        total = total + price * be.Float(i rem.floor 7 + 1)
+        tax = tax + price * ~0.08
+        i = i + 1
+    end
+    share = (total + tax) / 3.0
+    return be.Whole.floor(share)
+end

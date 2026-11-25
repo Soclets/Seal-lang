@@ -111,6 +111,9 @@ plain!(i64, Whole, Whole, |whole| whole.cast_unsigned(), |bits| bits.cast_signed
 plain!(f64, Float, Float, |float| float.to_bits(), f64::from_bits);
 plain!(bool, Bool, Bool, |flag| u64::from(*flag), |bits| bits != 0);
 plain!(String, Text, Text);
+plain!(crate::big::Big, HugeWhole, HugeWhole);
+plain!(crate::decimal::Decimal, Decimal, Decimal);
+plain!(crate::decimal::HugeDecimal, HugeDecimal, HugeDecimal);
 
 impl<T: SealType> SealType for Vec<T> {
     fn host_type() -> HostType {

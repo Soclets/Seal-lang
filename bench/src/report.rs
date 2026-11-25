@@ -91,6 +91,15 @@ const BENCHMARKS: [Benchmark; 7] = [
     },
 ];
 
+/// The new number types, timed on Seal alone (D115, D116): no other engine here has them. Each is a program, what
+/// it does, what `run` is given, and the answer it must give, checked against Python's own `decimal` and integers.
+const NUMBER_BENCHMARKS: [(&str, &str, i64, &str); 4] = [
+    ("money.normal", "`Decimal`: 1,000,000 prices summed with tax, then split three ways", 1_000_000, "6786395"),
+    ("money.float", "the same sums in `Float`s, as a yardstick", 1_000_000, "6786395"),
+    ("factorial.normal", "`HugeWhole`: 3000 factorial, 9,131 digits", 3000, "9131"),
+    ("interest.normal", "`HugeDecimal`: 2,000 years of exact 5% interest, 4,048 digits", 2000, "4048"),
+];
+
 /// The patrol benchmark's sizes: the Normal run, and the Purpose run, which isolates pausing in one script.
 const PATROL: (usize, usize) = (1000, 100);
 const PATROL_PURPOSE: (usize, usize) = (1, 1_000_000);
@@ -568,6 +577,35 @@ impl Report {
         }
     }
 
+    /// trace: D57, D115, D116. The new number types, timed, with their answers checked.
+    fn numbers(&mut self) {
+        let _ = writeln!(self.out, "\n## The new number types (D115, D116), Normal\n");
+        let _ = writeln!(
+            self.out,
+            "Timed on Seal alone, since Luau has neither, and D57 sets no goal for them; the `Float` row shows what \
+             exactness costs.\n"
+        );
+        let _ = writeln!(self.out, "| Program | Mean | Deviation | Least | Peak memory |");
+        let _ = writeln!(self.out, "|---|---|---|---|---|");
+        for (name, title, argument, expected) in NUMBER_BENCHMARKS {
+            let program = self.root.join(format!("bench/programs/{name}.seal"));
+            match self.seal_row(&self.seal, &program, argument) {
+                Ok(measured) if same_answer(&measured.result, expected) => {
+                    let peak = measured.peak.map_or_else(|| "?".to_owned(), bytes);
+                    let _ = writeln!(
+                        self.out,
+                        "| {title} | {} | {} | {} | {peak} |",
+                        seconds(mean(&measured.times)),
+                        seconds(deviation(&measured.times)),
+                        seconds(least(&measured.times))
+                    );
+                }
+                Ok(measured) => self.problems.push(format!("`{name}` gave {}, not {expected}", measured.result)),
+                Err(why) => self.problems.push(format!("`{name}`: {why}")),
+            }
+        }
+    }
+
     fn goals(&self) -> String {
         let mut out = String::new();
         let time = |benchmark: &str, engine: &str| self.normal.get(&(benchmark.to_owned(), engine.to_owned())).copied();
@@ -744,6 +782,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     if only.is_none() {
         report.checks();
+        report.numbers();
     }
     // D57's fourth goal: a 10,000-line script checked and compiled in under 100 ms.
     let lines = measure(&report.seal, &["lines".to_owned(), "10000".to_owned()]).ok();

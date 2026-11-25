@@ -13,7 +13,8 @@ use crate::syntax::tree as syntax;
 const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
 
 /// The built-ins that can fail, which `handles [ … ]` can name (D101, D129).
-const FAILING_BUILT_INS: [&str; 2] = ["be.Whole", "be.Bool"];
+const FAILING_BUILT_INS: [&str; 6] =
+    ["be.Whole", "be.Bool", "be.Float", "be.HugeWhole", "be.Decimal", "be.HugeDecimal"];
 
 /// Whether a block can leave the code around it by `return` or `fail`, or by a `break` out of a loop around it
 /// (D129). `loops` counts the loops entered inside it, whose `break`s stay inside.
@@ -140,6 +141,17 @@ impl<'a> Checker<'a> {
             }
             ExpressionKind::Convert { conversion: super::tree::Conversion::TextToBool, .. } => {
                 Some("be.Bool".to_owned())
+            }
+            ExpressionKind::Convert { conversion: super::tree::Conversion::Number(number), .. } => {
+                let target = match number.to {
+                    super::tree::NumberType::Whole => "Whole",
+                    super::tree::NumberType::Float => "Float",
+                    super::tree::NumberType::Text => "Text",
+                    super::tree::NumberType::Huge => "HugeWhole",
+                    super::tree::NumberType::Decimal => "Decimal",
+                    super::tree::NumberType::HugeDecimal => "HugeDecimal",
+                };
+                Some(format!("be.{target}"))
             }
             _ => None,
         };

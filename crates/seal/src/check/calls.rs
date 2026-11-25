@@ -1,7 +1,7 @@
 //! Checking calls: the script's procedures, the host's doors, the built-ins, and methods on values.
 
 use super::expressions::name_path;
-use super::tree::{Conversion, Expression, ExpressionKind, ProcedureId, Rounding};
+use super::tree::{Conversion, Expression, ExpressionKind, NumberType, ProcedureId, Rounding};
 use super::types::{BOOL, ERROR, FLOAT, NOTHING, TEXT, Type, TypeId, WHOLE};
 use super::{Checker, DeferredArgument, Requirement};
 use crate::message::Place;
@@ -74,7 +74,12 @@ impl Checker<'_> {
                 let Some(value) = self.single_argument("sqrt", &path, 1, arguments, place) else {
                     return Self::error(place);
                 };
-                let checked = self.expression(value, Some(FLOAT));
+                let checked = self.expression(value, None);
+                // trace: D127. A `Decimal`'s root is correctly rounded, a `HugeDecimal`'s exact or a stop.
+                if self.takes_decimal(checked.type_id, false) {
+                    let type_id = checked.type_id;
+                    return Expression { kind: ExpressionKind::Sqrt(Box::new(checked)), type_id, place };
+                }
                 if !self.program.types.unify(checked.type_id, FLOAT) {
                     // trace: Unio D185
                     let found = self.describe(checked.type_id);
@@ -246,8 +251,8 @@ impl Checker<'_> {
                 if !self.program.types.unify(value.type_id, FLOAT) {
                     return refuse_float(self, &value);
                 }
-                // trace: D113. They give their angle in `rads`.
-                (vec![value], self.radians())
+                // trace: D134. They take a plain ratio, so they give a plain `Float`, in radians.
+                (vec![value], FLOAT)
             }
             Function::Atan2 | Function::Lerp => {
                 let (Some(first), Some(second)) = (entries.first(), entries.get(1)) else { return Self::error(place) };
@@ -259,7 +264,8 @@ impl Checker<'_> {
                     .types
                     .measured(first.type_id)
                     .map_or(self.program.types.resolve(first.type_id), |(base, _)| base);
-                if plain != FLOAT && !self.program.types.is_open(plain) {
+                let decimal = function == Function::Lerp && self.takes_decimal(first.type_id, true);
+                if plain != FLOAT && !decimal && !self.program.types.is_open(plain) {
                     return refuse_float(self, &first);
                 }
                 if !self.program.types.unify(second.type_id, first.type_id)
@@ -276,14 +282,19 @@ impl Checker<'_> {
                 let mut checked = vec![first.clone(), second];
                 if function == Function::Lerp {
                     let Some(by) = entries.get(2) else { return Self::error(place) };
-                    let by = self.expression(&by.value, Some(FLOAT));
-                    if !self.program.types.unify(by.type_id, FLOAT) {
+                    // trace: D127. A `Decimal`'s `lerp` goes by a `Decimal`.
+                    let by_type = if self.takes_decimal(first.type_id, true) { first.type_id } else { FLOAT };
+                    let by = self.expression(&by.value, Some(by_type));
+                    if !self.program.types.unify(by.type_id, by_type) {
                         return refuse_float(self, &by);
                     }
                     checked.push(by);
                     (checked, first.type_id)
-                } else {
+                } else if self.program.types.measured(first.type_id).is_some() {
+                    // trace: D134. Two values with units give `rads`; two plain ones a plain `Float`.
                     (checked, self.radians())
+                } else {
+                    (checked, FLOAT)
                 }
             }
         };
@@ -343,7 +354,7 @@ impl Checker<'_> {
     }
 
     /// The one unlabelled argument a built-in takes.
-    fn single_argument<'e>(
+    pub(super) fn single_argument<'e>(
         &mut self,
         name: &str,
         path: &[String],
@@ -633,8 +644,7 @@ impl Checker<'_> {
                 return Self::error(place);
             }
             [target, ..] if ["HugeWhole", "Decimal", "HugeDecimal"].contains(target) => {
-                self.not_built(place, format!("converting to `{target}` (D115, D116) isn't"));
-                return Self::error(place);
+                return self.convert_to_number(path, arguments, place);
             }
             [target, ..]
                 if target.starts_with(|first: char| first.is_ascii_uppercase())
@@ -662,6 +672,23 @@ impl Checker<'_> {
             return Self::error(place);
         };
         let value = self.expression(argument, None);
+        if let Some(from) = self.big_number(value.type_id) {
+            let to = match narrowing.first().copied() {
+                Some("Text") => NumberType::Text,
+                Some("Float") => NumberType::Float,
+                Some("Bool") => {
+                    let found = self.describe(value.type_id);
+                    self.refuse_why(
+                        argument.place,
+                        format!("there's no conversion from {found} to a `Bool`"),
+                        "a number is compared, as `n != 0`, for a `Bool`.",
+                    );
+                    return Self::error(place);
+                }
+                _ => NumberType::Whole,
+            };
+            return self.convert_from_number(value, from, &full, to, rounding, place);
+        }
         let found = self.program.types.resolve(value.type_id);
         let same_type = |checker: &mut Self, target: &str| {
             // trace: Unio D22

@@ -258,6 +258,57 @@ pub enum Conversion {
         from_whole: bool,
         to_float: bool,
     },
+    /// Into or out of `HugeWhole`, `Decimal` or `HugeDecimal`: by itself where nothing can be lost, or with `be.`
+    /// (D115, D116, D126).
+    Number(NumberConversion),
+}
+
+/// One conversion between number types, or from text into one (D115, D116, D126).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NumberConversion {
+    pub from: NumberType,
+    pub to: NumberType,
+    pub how: NumberHow,
+}
+
+/// What a number conversion converts from or to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumberType {
+    Whole,
+    Float,
+    Text,
+    Huge,
+    Decimal,
+    HugeDecimal,
+}
+
+/// How a number conversion takes what doesn't fit exactly (D126).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumberHow {
+    /// Exactly, or to the nearest the type holds, a tie to even; or failing with `too_big`.
+    Exact,
+    /// Into a whole number, rounding a fraction as `be.Whole.floor` and the rest do (Unio D178).
+    Round(Rounding),
+    /// `be.Decimal.shown`: the number a `Float` shows.
+    Shown,
+    /// `be.Decimal.nearest`: the nearest `Decimal` to a `Float`'s value.
+    Nearest,
+}
+
+impl NumberConversion {
+    /// The failure it can give: `not_a_number` from text, `too_big` into a type that might not hold the value.
+    #[must_use]
+    pub fn failure(&self) -> Option<&'static str> {
+        match (self.from, self.to) {
+            (NumberType::Text, _) => Some("not_a_number"),
+            (
+                NumberType::Huge | NumberType::Decimal | NumberType::HugeDecimal,
+                NumberType::Whole | NumberType::Float,
+            )
+            | (NumberType::Huge | NumberType::HugeDecimal, NumberType::Decimal) => Some("too_big"),
+            _ => None,
+        }
+    }
 }
 
 /// The maths built-ins beyond `sqrt` (D107, D109, D114). `abs`, `min`, `max` and `clamp` work on a `Whole` or a
@@ -341,6 +392,8 @@ pub enum ExpressionKind {
         value: Box<Expression>,
     },
     Sqrt(Box<Expression>),
+    /// A `HugeWhole`, `Decimal` or `HugeDecimal` written out (D115, D116, D119).
+    Number(crate::decimal::Number),
     /// One of the maths built-ins, its arguments in their declared order (D107, D109, D114).
     Maths {
         function: MathsFunction,

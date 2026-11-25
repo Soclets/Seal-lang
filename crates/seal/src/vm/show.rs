@@ -3,7 +3,7 @@
 //! Both walk a value through the heap without nesting in the host's stack, since a value can be as deep as the script
 //! makes it (D72, Building rule 1).
 
-use super::heap::{Heap, HeapError, Object};
+use super::heap::{Heap, HeapError, Number, Object};
 use crate::check::types::{Type, TypeId, TypeTable};
 use crate::compile::bytecode::{Layout, PLAIN_CASE};
 use crate::number::float_to_text;
@@ -92,6 +92,8 @@ pub fn show(
             Type::Float => out.push_str(&float_to_text(f64::from_bits(slot))),
             Type::Bool => out.push_str(if slot == 0 { "false" } else { "true" }),
             Type::Text => write_quoted(heap.text(slot)?, out),
+            // trace: D115, D124, D125
+            Type::HugeWhole | Type::Decimal | Type::HugeDecimal => out.push_str(&number_text(heap.number(slot)?)),
             Type::List { item, .. } | Type::Array { item, .. } => {
                 let Object::List { items, .. } = heap.get(slot)? else {
                     return Err(HeapError::Broken("a handle that should lead to a list"));
@@ -216,6 +218,12 @@ pub fn equal(
             Type::Float => f64::from_bits(left) == f64::from_bits(right),
             Type::Whole | Type::Bool => left == right,
             Type::Text => left == right || heap.text(left)? == heap.text(right)?,
+            // trace: D125. Amounts are compared, so `3.00 == 3.0`.
+            Type::HugeWhole | Type::Decimal | Type::HugeDecimal => {
+                let (left, right) = (heap.number(left)?, heap.number(right)?);
+                *work = work.saturating_add(left.size() as u64 / 8);
+                compare_numbers(left, right) == Some(std::cmp::Ordering::Equal)
+            }
             Type::List { item, .. } | Type::Array { item, .. } => {
                 let (Object::List { items: left_items, .. }, Object::List { items: right_items, .. }) =
                     (heap.get(left)?, heap.get(right)?)
@@ -316,4 +324,25 @@ pub fn equal(
         }
     }
     Ok(true)
+}
+
+/// A `HugeWhole`, `Decimal` or `HugeDecimal` as it's shown (D115, D124, D125).
+#[must_use]
+pub fn number_text(number: &Number) -> String {
+    match number {
+        Number::Huge(value) => value.to_decimal(),
+        Number::Decimal(value) => value.to_text(),
+        Number::HugeDecimal(value) => value.to_text(),
+    }
+}
+
+/// Two numbers of one kind compared by amount; nothing for two of different kinds, which a script never compares.
+#[must_use]
+pub fn compare_numbers(left: &Number, right: &Number) -> Option<std::cmp::Ordering> {
+    match (left, right) {
+        (Number::Huge(left), Number::Huge(right)) => Some(left.compare(right)),
+        (Number::Decimal(left), Number::Decimal(right)) => Some(left.compare(right)),
+        (Number::HugeDecimal(left), Number::HugeDecimal(right)) => Some(left.compare(right)),
+        _ => None,
+    }
 }

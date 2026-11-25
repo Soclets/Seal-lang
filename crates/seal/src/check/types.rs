@@ -17,6 +17,12 @@ pub const WHOLE: TypeId = TypeId(2);
 pub const FLOAT: TypeId = TypeId(3);
 pub const BOOL: TypeId = TypeId(4);
 pub const TEXT: TypeId = TypeId(5);
+/// A whole number of any size (D115).
+pub const HUGE_WHOLE: TypeId = TypeId(6);
+/// IEEE 754's decimal128 (D116).
+pub const DECIMAL: TypeId = TypeId(7);
+/// An exact decimal of any size (D116).
+pub const HUGE_DECIMAL: TypeId = TypeId(8);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -28,6 +34,12 @@ pub enum Type {
     Float,
     Bool,
     Text,
+    /// A whole number of any size (D115).
+    HugeWhole,
+    /// IEEE 754's decimal128 (D116).
+    Decimal,
+    /// An exact decimal of any size (D116).
+    HugeDecimal,
     /// `List<T>`, with the most it may hold when it has `len.max` (Unio D167).
     List {
         item: TypeId,
@@ -261,7 +273,17 @@ impl TypeTable {
     #[must_use]
     pub fn new() -> Self {
         let mut table = TypeTable::default();
-        for basic in [Type::Error, Type::Nothing, Type::Whole, Type::Float, Type::Bool, Type::Text] {
+        for basic in [
+            Type::Error,
+            Type::Nothing,
+            Type::Whole,
+            Type::Float,
+            Type::Bool,
+            Type::Text,
+            Type::HugeWhole,
+            Type::Decimal,
+            Type::HugeDecimal,
+        ] {
             table.intern(basic);
         }
         table.unit_groups = seal_unit_groups();
@@ -490,6 +512,9 @@ impl TypeTable {
             Type::Float => "Float".to_owned(),
             Type::Bool => "Bool".to_owned(),
             Type::Text => "Text".to_owned(),
+            Type::HugeWhole => "HugeWhole".to_owned(),
+            Type::Decimal => "Decimal".to_owned(),
+            Type::HugeDecimal => "HugeDecimal".to_owned(),
             Type::List { item, max } => match max {
                 Some(max) => format!("List<{}>[len.max: {max}]", self.written(*item)),
                 None => format!("List<{}>", self.written(*item)),
@@ -515,6 +540,9 @@ impl TypeTable {
     pub fn is_reference(&self, id: TypeId) -> bool {
         match self.get(id) {
             Type::Text
+            | Type::HugeWhole
+            | Type::Decimal
+            | Type::HugeDecimal
             | Type::List { .. }
             | Type::Array { .. }
             | Type::Dict { .. }

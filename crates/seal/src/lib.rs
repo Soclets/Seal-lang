@@ -9,6 +9,7 @@
 pub mod big;
 pub mod check;
 pub mod compile;
+pub mod decimal;
 pub mod host;
 pub mod maths;
 pub mod message;

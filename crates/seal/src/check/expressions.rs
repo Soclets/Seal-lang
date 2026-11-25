@@ -15,6 +15,7 @@ impl Checker<'_> {
         let checked = self.expression_as_written(expression, wanted);
         match wanted {
             Some(wanted) => {
+                let checked = self.land_number(checked, wanted);
                 let checked = self.fit_limit(checked, wanted);
                 self.land_unit(checked, wanted)
             }
@@ -55,6 +56,11 @@ impl Checker<'_> {
         use syntax::ExpressionKind as Kind;
         let place = expression.place;
         match &expression.kind {
+            Kind::Whole(_) | Kind::Float { .. }
+                if let Some(number) = self.number_literal(&expression.kind, false, wanted, place) =>
+            {
+                number
+            }
             Kind::Whole(digits) => {
                 if let Ok(value) = digits.parse::<i64>() {
                     Expression { kind: ExpressionKind::Whole(value), type_id: WHOLE, place }
@@ -157,6 +163,12 @@ impl Checker<'_> {
                 );
                     Self::error(place)
                 }
+            }
+            Kind::Unary { operator: UnaryOperator::Negate, operand }
+                if matches!(operand.kind, Kind::Whole(_) | Kind::Float { .. })
+                    && let Some(number) = self.number_literal(&operand.kind, true, wanted, place) =>
+            {
+                number
             }
             Kind::Unary { operator: UnaryOperator::Negate, operand } => match &operand.kind {
                 // A `-` right before a number makes the number negative, so the smallest `Whole` can be written.
@@ -409,8 +421,8 @@ impl Checker<'_> {
         };
         let checked = self.expression(&built, None);
         let Some(places) = places else { return Some(checked) };
-        // trace: D94, Unio D175. `places:` rounds a `Float` for showing.
-        if !self.program.types.unify(checked.type_id, FLOAT) {
+        // trace: D94, D125, Unio D175. `places:` rounds a `Float`, a `Decimal` or a `HugeDecimal` for showing.
+        if !self.takes_decimal(checked.type_id, false) && !self.program.types.unify(checked.type_id, FLOAT) {
             let found = self.describe(checked.type_id);
             self.refuse_why(
                 place,
@@ -565,8 +577,18 @@ impl Checker<'_> {
             | BinaryOperator::DivTrunc
             | BinaryOperator::RemFloor
             | BinaryOperator::RemTrunc => {
-                let left = self.expression(left, Some(WHOLE));
-                let right = self.expression(right, Some(WHOLE));
+                // trace: D119, D127. A number written beside a bigger number type takes that type.
+                let (left, right) = if super::numbers::is_literal(left) && !super::numbers::is_literal(right) {
+                    let right = self.expression_as_written(right, None);
+                    (self.expression_as_written(left, Some(right.type_id)), right)
+                } else {
+                    let left = self.expression_as_written(left, None);
+                    let right = self.expression_as_written(right, Some(left.type_id));
+                    (left, right)
+                };
+                if self.big_number(left.type_id).is_some() || self.big_number(right.type_id).is_some() {
+                    return self.number_binary(operator, left, right, operator_place, place);
+                }
                 self.expect_operand(&left, WHOLE, &quoted);
                 self.expect_operand(&right, WHOLE, &quoted);
                 Expression {
@@ -581,11 +603,30 @@ impl Checker<'_> {
                 let (left_syntax, right_syntax) = (left, right);
                 // What's wanted only guides the sides' types: a side doesn't land there, the whole does, so
                 // `7.0 secs / 1.1 secs` is a plain `Float` even where one is wanted (D120).
-                let left = self.expression_as_written(left, operand_wanted);
-                // A value with a unit says its own; the other side works its out (D120).
-                let left_measured = self.program.types.measured(left.type_id).is_some();
-                let right = self.expression_as_written(right, (!left_measured).then_some(left.type_id));
-                if left_measured || self.program.types.measured(right.type_id).is_some() {
+                // trace: D119. A number written beside another value takes its type, on either side.
+                let (left, right) = if super::numbers::is_literal(left) && !super::numbers::is_literal(right) {
+                    let right = self.expression_as_written(right, operand_wanted);
+                    let right_measured = self.program.types.measured(right.type_id).is_some();
+                    (self.expression_as_written(left, (!right_measured).then_some(right.type_id)), right)
+                } else {
+                    let left = self.expression_as_written(left, operand_wanted);
+                    if operator == BinaryOperator::Power && self.big_number(left.type_id).is_some() {
+                        return self.number_power(left, right, operator_place, place);
+                    }
+                    // A value with a unit says its own; the other side works its out (D120).
+                    let left_measured = self.program.types.measured(left.type_id).is_some();
+                    let right = self.expression_as_written(right, (!left_measured).then_some(left.type_id));
+                    (left, right)
+                };
+                if self.big_number(left.type_id).is_some() || self.big_number(right.type_id).is_some() {
+                    if operator == BinaryOperator::Power {
+                        return self.number_power(left, right_syntax, operator_place, place);
+                    }
+                    return self.number_binary(operator, left, right, operator_place, place);
+                }
+                if self.program.types.measured(left.type_id).is_some()
+                    || self.program.types.measured(right.type_id).is_some()
+                {
                     return self.measured_binary(operator, left, right, operator_place, place);
                 }
                 if !self.program.types.unify(left.type_id, right.type_id) {
@@ -1057,7 +1098,7 @@ impl Checker<'_> {
                     super::tree::Conversion::TextToWhole
                         | super::tree::Conversion::TextToBool
                         | super::tree::Conversion::ListToLimit(_)
-                )
+                ) || matches!(conversion, super::tree::Conversion::Number(number) if number.failure().is_some())
             }
             ExpressionKind::ListAdd { variable, .. } => {
                 matches!(self.program.types.get(self.variable_type(*variable)), Type::List { max: Some(_), .. })

@@ -350,6 +350,23 @@ fn main() -> ExitCode {
     let count_limit = option("--count");
     let seconds = option("--seconds").unwrap_or(if count_limit.is_some() { u64::MAX } else { 10 });
     let show = arguments.iter().any(|argument| argument == "--show");
+    // One script from a file, through every check a fuzzed one goes through.
+    if let Some(path) = arguments.iter().position(|argument| argument == "--file").and_then(|at| arguments.get(at + 1))
+    {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            eprintln!("couldn't read {path}");
+            return ExitCode::FAILURE;
+        };
+        let checked = run(&source);
+        println!("=> {}\n{}{}", checked.ending, checked.messages, checked.output);
+        return match checked.broken {
+            Some(why) => {
+                println!("BROKE A RULE: {why}");
+                ExitCode::FAILURE
+            }
+            None => ExitCode::SUCCESS,
+        };
+    }
     if arguments.iter().any(|argument| argument == "--ralph") {
         return ralph::ralph_mode(seed, count_limit.unwrap_or(u64::MAX), seconds);
     }

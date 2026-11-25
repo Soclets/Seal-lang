@@ -1,5 +1,5 @@
 {
-  "passed": 18,
+  "passed": 21,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -19,6 +19,9 @@
     "d102_closer_notes": { "status": "pass" },
     "d130_fallback_only_on_failure": { "status": "pass" },
     "d131_handler_extra_cases": { "status": "pass" },
-    "d132_power_order": { "status": "pass" }
+    "d132_power_order": { "status": "pass" },
+    "d133_atan2_no_direction": { "status": "pass" },
+    "d134_angle_units_in_out": { "status": "pass" },
+    "d135_mut_is_changed": { "status": "pass" }
   }
 }

@@ -6,6 +6,7 @@
 
 use super::dict::Dict;
 use crate::compile::bytecode::{Layout, PLAIN_CASE};
+pub use crate::decimal::Number;
 
 /// What every heap value costs beyond its contents, in bytes of the memory cap.
 pub const VALUE_COST: usize = 48;
@@ -45,6 +46,7 @@ pub enum Object {
         layout: u16,
     },
     Dict(Box<Dict>),
+    Number(Box<Number>),
     /// A value taken out for a moment while it's being changed.
     Taken,
 }
@@ -64,6 +66,8 @@ pub struct Heap {
     cap: usize,
     /// Bulk work done since it was last asked about, in items and bytes, to be counted as steps (D14).
     pub work: u64,
+    /// How much work the steps left can pay for, set before an instruction that works out big numbers (D14).
+    pub work_allowance: u64,
     /// Freed short texts, emptied, whose room the next short texts reuse.
     spare_texts: Vec<String>,
 }
@@ -71,7 +75,7 @@ pub struct Heap {
 impl Heap {
     #[must_use]
     pub fn new(cap: usize) -> Self {
-        Heap { cap, ..Heap::default() }
+        Heap { cap, work_allowance: u64::MAX, ..Heap::default() }
     }
 
     /// How many bytes of its cap the script holds.
@@ -231,6 +235,29 @@ impl Heap {
         }
     }
 
+    /// Puts a number on the heap (D115, D116).
+    ///
+    /// # Errors
+    ///
+    /// Fails when the script would hold more than its cap (D14).
+    pub fn new_number(&mut self, number: Number) -> Result<u64, HeapError> {
+        let size = number.size();
+        self.allocate(Object::Number(Box::new(number)), size)
+    }
+
+    /// The number a handle leads to.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the handle doesn't lead to a number, which is a bug in Seal.
+    #[inline]
+    pub fn number(&self, handle: u64) -> Result<&Number, HeapError> {
+        match self.get(handle)? {
+            Object::Number(number) => Ok(number),
+            _ => Err(HeapError::Broken("a handle that should lead to a number")),
+        }
+    }
+
     /// Whether a value has exactly one holder, so that it can be changed in place (D15).
     #[must_use]
     #[inline]
@@ -347,6 +374,7 @@ impl Heap {
                     self.work = self.work.saturating_add(dict.len() as u64);
                     dict.size()
                 }
+                Object::Number(number) => number.size(),
             };
             self.refund(VALUE_COST.saturating_add(size));
             if let Ok(index) = u32::try_from(slot) {
@@ -411,6 +439,7 @@ impl Heap {
                 let size = copy.size();
                 (Object::Dict(Box::new(copy)), size, inside, dict.len())
             }
+            Object::Number(number) => (Object::Number(number.clone()), number.size(), Vec::new(), 1),
             Object::Free | Object::Taken => return Err(HeapError::Broken("a value that isn't there to copy")),
         };
         self.work = self.work.saturating_add(work as u64);

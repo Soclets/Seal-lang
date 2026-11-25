@@ -337,6 +337,9 @@ impl Generator {
                 if self.seal() && self.random.chance(1, 10) {
                     return self.measured(Kind::Whole);
                 }
+                if self.seal() && self.random.chance(1, 12) {
+                    return self.big_number(Kind::Whole);
+                }
                 // The maths built-ins and `**` on `Whole`s (D107, D108).
                 if self.seal() && self.random.chance(1, 8) {
                     let a = self.operand(Kind::Whole, level - 1);
@@ -434,6 +437,9 @@ impl Generator {
                 if self.seal() && self.random.chance(1, 8) {
                     return self.measured(Kind::Float);
                 }
+                if self.seal() && self.random.chance(1, 10) {
+                    return self.big_number(Kind::Float);
+                }
                 match self.random.below(6) {
                     0..=2 => {
                         let operator = *self.random.pick(&["+", "-", "*", "/"]).unwrap_or(&"+");
@@ -453,9 +459,9 @@ impl Generator {
                             0 => format!("sin({a})"),
                             1 => format!("cos({a})"),
                             2 => format!("tan({a})"),
-                            // trace: D113. These give `rads`, measured back into a plain number.
-                            3 => format!("asin({a}) in rads"),
-                            4 => format!("atan2(y: {a}, x: {b}) in rads"),
+                            // trace: D134. On plain numbers these give a plain `Float`.
+                            3 => format!("asin({a})"),
+                            4 => format!("atan2(y: {a}, x: {b})"),
                             5 => format!("lerp({a}, to: {b}, by: 0.5)"),
                             6 => {
                                 let base = self.operand(Kind::Float, level - 1);
@@ -698,6 +704,60 @@ impl Generator {
             6 => format!("({a} degs * {b}) in turns"),
             7 => format!("({x} secs / {y} secs)"),
             _ => format!("({x} rads) in degs"),
+        }
+    }
+
+    /// `HugeWhole`s, `Decimal`s and `HugeDecimal`s, read from text and worked with, then converted back to a
+    /// `Whole` or a `Float` (D115, D116, D119, D125 to D127).
+    fn big_number(&mut self, kind: Kind) -> String {
+        const WHOLES: [&str; 8] = [
+            "0",
+            "7",
+            "-12",
+            "123456789012345678901234567890",
+            "-99999999999999999999",
+            "9223372036854775808",
+            "seven",
+            "1_000",
+        ];
+        const DECIMALS: [&str; 10] = [
+            "4.99",
+            "0.1",
+            "-0.001",
+            "10.00",
+            "0",
+            "2.25",
+            "123456789.123456789",
+            "1.",
+            "x",
+            "99999999999999999999999999999999999.5",
+        ];
+        let pick = |random: &mut Random, items: &[&'static str]| random.pick(items).copied().unwrap_or("0");
+        let huge = |random: &mut Random| format!("(be.HugeWhole(\"{}\") ?? 0)", pick(random, &WHOLES));
+        let decimal = |random: &mut Random| format!("(be.Decimal(\"{}\") ?? 0.0)", pick(random, &DECIMALS));
+        let exact = |random: &mut Random| format!("(be.HugeDecimal(\"{}\") ?? 0.0)", pick(random, &DECIMALS));
+        let (h1, h2) = (huge(&mut self.random), huge(&mut self.random));
+        let (d1, d2) = (decimal(&mut self.random), decimal(&mut self.random));
+        let (e1, e2) = (exact(&mut self.random), exact(&mut self.random));
+        let power = self.random.below(40);
+        if kind == Kind::Whole {
+            return match self.random.below(6) {
+                0 => format!("(be.Whole({h1} * {h2} + 5) ?? 0)"),
+                1 => format!("(be.Whole({h1} div.floor {h2}) ?? 0)"),
+                2 => format!("(be.Whole.floor({d1} * {d2}) ?? 0)"),
+                3 => format!("(be.Whole.nearest(sqrt({e1} * {e1})) ?? 0)"),
+                4 => format!("(be.Whole.trunc({e1} rem.trunc {e2}) ?? 0)"),
+                _ => format!("(be.Whole({h1} ** {power} rem.floor 1000) ?? 0)"),
+            };
+        }
+        match self.random.below(7) {
+            0 => format!("(be.Float({d1} / {d2} + 0.5) ?? 0.0)"),
+            1 => format!("(be.Float(lerp({d1}, to: {d2}, by: 0.25)) ?? 0.0)"),
+            2 => format!("(be.Float(abs({e1} - {e2}) + min({e1}, 2.5)) ?? 0.0)"),
+            3 => format!("(be.Float(be.Decimal.shown({})) ?? 0.0)", self.float_literal()),
+            4 => format!("(be.Float(sqrt({d1}) ** {}) ?? 0.0)", power % 5),
+            5 => format!("(be.Float({e1} * {e2} - {h1}) ?? 0.0)"),
+            _ => format!("(be.Float(clamp({d1}, low: 0.0, high: 9.99)) ?? 0.0)"),
         }
     }
 

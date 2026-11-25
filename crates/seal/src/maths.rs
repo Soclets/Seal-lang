@@ -349,10 +349,16 @@ fn arctan(z: &Big, precision: u64) -> (Big, u64) {
     (sum.shift_left(u64::from(halvings)), (2 * n + 8) << halvings)
 }
 
-/// atan2(y, x): the angle of the point (x, y), correctly rounded (D109); nothing when both are zero, which has no
-/// angle.
+/// atan2(y, x): the angle of the point (x, y), correctly rounded (D109). The point (0, 0) has no direction and gives 0,
+/// and a negative zero counts as zero, where IEEE 754 would give ±π (D133).
 #[must_use]
-pub fn atan2(y: f64, x: f64) -> Option<f64> {
+pub fn atan2(y: f64, x: f64) -> f64 {
+    // trace: D133
+    let (y, x) = (if y == 0.0 { 0.0 } else { y }, if x == 0.0 { 0.0 } else { x });
+    atan2_of(y, x).unwrap_or(0.0)
+}
+
+fn atan2_of(y: f64, x: f64) -> Option<f64> {
     if y == 0.0 && x == 0.0 {
         return None;
     }
@@ -803,10 +809,12 @@ mod tests {
         assert_eq!(sin(1.0), 0.841_470_984_807_896_5);
         assert_eq!(cos(1.0), 0.540_302_305_868_139_8);
         assert_eq!(tan(1.0), 1.557_407_724_654_902_3);
-        assert_eq!(atan2(1.0, 1.0), Some(std::f64::consts::FRAC_PI_4));
-        assert_eq!(atan2(1.0, 0.0), Some(std::f64::consts::FRAC_PI_2));
-        assert_eq!(atan2(0.0, -1.0), Some(std::f64::consts::PI));
-        assert_eq!(atan2(0.0, 0.0), None);
+        assert_eq!(atan2(1.0, 1.0), std::f64::consts::FRAC_PI_4);
+        assert_eq!(atan2(1.0, 0.0), std::f64::consts::FRAC_PI_2);
+        assert_eq!(atan2(0.0, -1.0), std::f64::consts::PI);
+        assert_eq!(atan2(-0.0, -1.0), std::f64::consts::PI);
+        assert_eq!(atan2(0.0, 0.0), 0.0);
+        assert_eq!(atan2(-0.0, -0.0), 0.0);
         assert_eq!(asin(1.0), Some(std::f64::consts::FRAC_PI_2));
         assert_eq!(acos(-1.0), Some(std::f64::consts::PI));
         assert_eq!(acos(1.0), Some(0.0));
@@ -855,7 +863,7 @@ mod tests {
             let y = x / 10.0;
             assert!(ulps(asin(y).unwrap_or(0.0), y.asin()) <= 1, "asin({y})");
             assert!(ulps(acos(y).unwrap_or(0.0), y.acos()) <= 1, "acos({y})");
-            assert!(ulps(atan2(x, y + 0.5).unwrap_or(0.0), x.atan2(y + 0.5)) <= 1, "atan2({x}, {y})");
+            assert!(ulps(atan2(x, y + 0.5), x.atan2(y + 0.5)) <= 1, "atan2({x}, {y})");
             let base = x.abs() + 0.01;
             assert!(ulps(power(base, y * 3.0), base.powf(y * 3.0)) <= 1, "{base} ** {}", y * 3.0);
         }
@@ -881,7 +889,7 @@ mod dump {
             println!("cos {:e} {:e}", x, super::cos(x));
             println!("tan {:e} {:e}", x, super::tan(x));
             println!("asin {:e} {:e}", y, super::asin(y).unwrap_or(0.0));
-            println!("atan2 {:e} {:e} {:e}", x, y, super::atan2(x, y).unwrap_or(0.0));
+            println!("atan2 {:e} {:e} {:e}", x, y, super::atan2(x, y));
             println!("pow {:e} {:e} {:e}", b, y * 5.0, super::power(b, y * 5.0));
             println!("sindeg {:e} {:e}", x * 37.0, super::angle_function(0, x * 37.0, 360));
             println!("costurn {:e} {:e}", y, super::angle_function(1, y, 1));

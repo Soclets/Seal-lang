@@ -98,6 +98,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         | ExpressionKind::Float(_)
         | ExpressionKind::Bool(_)
         | ExpressionKind::Text(_)
+        | ExpressionKind::Number(_)
         | ExpressionKind::Variable(_) => {}
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
@@ -200,6 +201,9 @@ impl Facts<'_> {
             ExpressionKind::Convert { conversion: Conversion::TextToWhole, .. } => named("not_a_whole"),
             ExpressionKind::Convert { conversion: Conversion::TextToBool, .. } => named("not_a_bool"),
             ExpressionKind::Convert { conversion: Conversion::ListToLimit(_), .. } => named("full"),
+            ExpressionKind::Convert { conversion: Conversion::Number(conversion), .. } => {
+                conversion.failure().map(named).unwrap_or_default()
+            }
             ExpressionKind::ListAdd { variable, .. } => {
                 let limited = self.program.variable(*variable).is_some_and(|variable| {
                     matches!(self.program.types.get(variable.type_id), Type::List { max: Some(_), .. })
@@ -460,12 +464,15 @@ impl Checker<'_> {
         let purpose = pending.purpose.as_str();
         match &pending.requirement {
             Requirement::Number => {
-                if !matches!(kind, Type::Whole | Type::Float | Type::Measured { .. }) {
+                if !matches!(
+                    kind,
+                    Type::Whole | Type::Float | Type::Measured { .. } | Type::HugeWhole | Type::Decimal | Type::HugeDecimal
+                ) {
                     self.refuse(place, format!("{purpose}, but this is {found}"));
                 }
             }
             Requirement::Ordered => match kind {
-                Type::Whole | Type::Float => {}
+                Type::Whole | Type::Float | Type::HugeWhole | Type::Decimal | Type::HugeDecimal => {}
                 // trace: D96
                 Type::Text => self.refuse_why(
                     place,
@@ -759,7 +766,7 @@ impl Checker<'_> {
     /// pauses (D52), and what isn't decided about loops over shared names.
     #[allow(clippy::too_many_lines)] // the whole-script passes, run one after another over the same facts
     pub(super) fn finish(&mut self) {
-        for name in ["missing", "not_a_whole", "full", "not_a_bool"] {
+        for name in ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"] {
             self.failure(name);
         }
         let door_failures: Vec<String> = self.doors.iter().flat_map(|door| door.failures.clone()).collect();

@@ -11,6 +11,9 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     Text(String),
+    HugeWhole(crate::big::Big),
+    Decimal(crate::decimal::Decimal),
+    HugeDecimal(crate::decimal::HugeDecimal),
     /// A list or an array.
     List(Vec<Value>),
     /// A dictionary's pairs, in the order their keys were added (D32).
@@ -36,6 +39,9 @@ impl Value {
             Value::Float(_) => "a `Float`",
             Value::Bool(_) => "a `Bool`",
             Value::Text(_) => "a `Text`",
+            Value::HugeWhole(_) => "a `HugeWhole`",
+            Value::Decimal(_) => "a `Decimal`",
+            Value::HugeDecimal(_) => "a `HugeDecimal`",
             Value::List(_) => "a list",
             Value::Dict(_) => "a `Dict`",
             Value::Maybe(_) => "a `Maybe`",

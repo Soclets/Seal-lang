@@ -5,6 +5,7 @@ mod calls;
 mod expressions;
 mod finish;
 mod handlers;
+mod numbers;
 pub mod tree;
 pub mod types;
 mod units;
@@ -748,6 +749,11 @@ impl<'a> Checker<'a> {
             self.refuse(written.place, what);
             return ERROR;
         }
+        if matches!(name, "HugeWhole" | "Decimal" | "HugeDecimal") && !written.settings.is_empty() {
+            // trace: D115. A `HugeWhole` takes units and limits as a `Whole` does; that's still to build.
+            self.not_built(written.place, format!("units and limits on a `{name}` (D115) aren't"));
+            return ERROR;
+        }
         if matches!(name, "Whole" | "Float") && !written.settings.is_empty() {
             let plain = if name == "Float" { FLOAT } else { WHOLE };
             // trace: D112. `unit:` gives the number a unit; its other settings are its limits (D107).
@@ -795,6 +801,9 @@ impl<'a> Checker<'a> {
             "Float" => FLOAT,
             "Bool" => BOOL,
             "Text" => TEXT,
+            "HugeWhole" => types::HUGE_WHOLE,
+            "Decimal" => types::DECIMAL,
+            "HugeDecimal" => types::HUGE_DECIMAL,
             "List" | "Array" | "Maybe" => {
                 let item = if left_out {
                     self.program.types.fresh()
@@ -2633,6 +2642,9 @@ impl<'a> Checker<'a> {
             HostType::Float => FLOAT,
             HostType::Bool => BOOL,
             HostType::Text => TEXT,
+            HostType::HugeWhole => types::HUGE_WHOLE,
+            HostType::Decimal => types::DECIMAL,
+            HostType::HugeDecimal => types::HUGE_DECIMAL,
             HostType::List(item) => {
                 let item = self.host_type(item);
                 self.program.types.list(item)
