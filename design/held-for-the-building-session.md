@@ -5,8 +5,9 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D141, in DECISIONS.md. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
-  are for after the current work.
+- D130 to D142, in DECISIONS.md. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
+  are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
+  installed through Homebrew.
 - Batch 1's "still open" 13, 14, 17 and 21 are already answered: D126, D127, D128 and D129. 16 is its own call.
 - Batch 2 and 3, readings the design session gives itself:
   - A negative power of a `Whole` known only while running is a failed check, as D89 has it (built; right).

@@ -1737,6 +1737,8 @@ Seal has records inside records.
 
 (Changed by D140: that rework is done now, so the row meets goal 1 like every other.)
 
+(Changed by D142: goal 1 also has LuaJIT's interpreter, `luajit -joff`, as a bar; LuaJIT with its JIT is a reference.)
+
 **Weighed.**
 - A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
 - Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
@@ -4245,3 +4247,38 @@ affordable, and verifying keeps the sandbox whole for a fraction of what reading
 
 **Tankun's words.** Asked "Should Seal be able to compile scripts ahead of time to bytecode files, always verified when
 loaded?", the owner chose: "yea"
+
+## D142. LuaJIT's interpreter joins Luau's as a bar Seal must beat
+
+2026-11-25.
+
+**Chosen.** D57's goal 1 gets a second bar: Seal is faster than Luau's interpreter **and** LuaJIT's interpreter,
+`luajit -joff`, with its JIT off, on every benchmark, judged Normal against Normal under D58's rules, with every check
+on (D57, goal 7) and no `unsafe` (Building rule 2). LuaJIT with its JIT on is measured for reference only, with no
+target, as full V8 is (D57, goal 3). It's part of the current work, as every D57 goal is.
+
+A first, quick run by the design session on Tankun's Mac (2026-11-25, answers not checked, other sessions busy), using
+Seal's own Normal Luau programs, best of 7, against Seal's last full run:
+
+| Benchmark | Luau interpreter | `luajit -joff` | Seal |
+|---|---|---|---|
+| `fib(32)` | 69.7 ms | 33.6 ms | 48.8 ms |
+| n-body, 100,000 steps | 69.3 ms | 71.1 ms | 67.0 ms |
+| spectral-norm, 200 | 27.1 ms | 44.1 ms | 20.4 ms |
+| fannkuch-redux, 9 | 210.2 ms | 143.4 ms | 123.0 ms |
+| binary-trees, 14 | 137.0 ms | 129.6 ms | 113.7 ms |
+
+So calls, `fib`, are where the work is: LuaJIT's interpreter is hand-written assembly for each kind of CPU. Word count
+and text building weren't run.
+
+**Weighed.**
+- Luau alone, as D57 has it. Seal already beats LuaJIT's interpreter on four of these five, and it's the strongest
+  interpreter bar there is.
+- LuaJIT with its JIT on. It turns hot code into machine code, which Seal doesn't do on purpose (D46), so it's a
+  reference, not a bar.
+
+**Why this won.** "Faster than the fastest Lua interpreter" is the claim worth making, and Seal's static types give it
+an edge every dynamic interpreter lacks.
+
+**Tankun's words.** "Is it faster than Luau? The LuaJ interp", then, asked "Should D57's goal 1 add LuaJIT's
+interpreter (`luajit -joff`) as a second bar, with Seal faster than both on every benchmark?", the owner chose: "yea"
