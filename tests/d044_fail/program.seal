@@ -12,6 +12,6 @@ show_msg("{a} {b}")
 c = doubled_level(20) otherwise
     case too_high
         show_msg("too high")
-        instead 99
+        use 99
 end
 show_msg("{c}")

@@ -9,7 +9,7 @@ save(game) ?? ignore
 load_level(name) ?? crash
 best = load_best() otherwise
     case not_found
-        instead 0
+        use 0
 end
 bag.add("Gem") otherwise
     case full
@@ -21,9 +21,11 @@ end
 - **`??`** handles it on one line, with a value, `ignore`, `crash` or a handler (Unio D23, D121, D98).
 - **What deals with a failure runs only when there is one:** a fallback after `??`, as `?? default_level()`, and a
   handler's arguments are worked out only when the call fails (D130).
-- **`otherwise`** handles each failure in its own `case`, ending in `instead`, `return`, `break` or failing on
+- **`otherwise`** handles each failure in its own `case`, ending in `use`, `return`, `break` or failing on
   purpose, or simply ending when the call gives back nothing (Unio D40, D186).
-- **`instead` is the last line of its case:** a line after it can never run, so it's refused, as one after `return`
+- **`use` gives a value in place of the failed call's result,** and the line carries on; `return` leaves the
+  procedure instead (D144, replacing Unio D40's `instead`).
+- **`use` is the last line of its case:** a line after it can never run, so it's refused, as one after `return`
   or `break` is (D80, Unio D57).
 
 In a script, `?? crash` stops the script, not the host, which is told (D14, chapter 10).
@@ -59,15 +61,15 @@ group.handler level_failed
     handles [load_level, load_save]
     ::start_over
         case not_found
-            instead 1
+            use 1
         case broken
-            instead 1
+            use 1
     end
     ::start_at[level: Whole]
         case not_found
-            instead level
+            use level
         case broken
-            instead level
+            use level
     end
 end
 

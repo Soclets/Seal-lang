@@ -13,7 +13,7 @@ proc pick[name: Text] -> Whole
         case not_found
             return 1
         case broken
-            instead 0
+            use 0
     end
     show_msg("loaded {name}")
     return level + 10

@@ -20,9 +20,9 @@ group.handler level_failed
     handles [load_level, load_save]
     ::start_over
         case not_found
-            instead 1
+            use 1
         case broken
-            instead 2
+            use 2
     end
 end
 

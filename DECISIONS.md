@@ -2467,6 +2467,8 @@ a block.
 
 **Tankun's words.** Asked "Should `instead` have to be the last line of its case?", the owner chose: "yea"
 
+(Changed by D144: `instead` is written `use`.)
+
 ## D81. A procedure's header writes its types
 
 2026-11-24.
@@ -4314,3 +4316,41 @@ the line carries on, and a case that leaves is a visible exception to that, as `
 then asking whether this is the same as `if`), "So, is it the same thing? And why the fuck is there a big blob on
 my last msg", "Why?", then, asked "Should D68's rule stay off `otherwise` blocks, so lines can follow one whose cases
 can leave, as they follow `?`?", the owner chose: "yea"
+
+## D144. `instead` is written `use`
+
+2026-11-25.
+
+**Chosen.** In an `otherwise` block or a handler, a case that gives a value in place of the failed call's result
+writes `use`, replacing Unio D40's `instead`:
+
+```
+level = load_level(name) otherwise
+    case not_found
+        return 1
+    case broken
+        use 0
+end
+```
+
+`use 0` puts 0 where the failed call's result would have gone, and the line carries on; `return` leaves the whole
+procedure. Everything else about it stays: it's the last line of its case (D80), and a case ends in `use`, `return`,
+`break` or failing on purpose (Unio D40). `use` is a keyword, so it can't be a name. The Unio translator (D19) writes
+it as `instead`.
+
+**Weighed.**
+- `instead`, as Unio has it, and as the design session recommended keeping: it says exactly what happens, a value in
+  place of the failed one.
+- An abbreviation of `instead`. None exists: `inst` reads as instance, and `ins` as insert, from the Ins key, HTML's
+  `<ins>` and diffs.
+- `use`'s meaning in Rust, PHP and Cyborg, bringing in a module. Inside a `case` it can only mean one thing, and Seal
+  has no imports, as Tankun pointed out. If Seal ever lets a script use another (chapter 2, Not decided), that will
+  need another word.
+
+**Why this won.** It's shorter in a line written in every case, reads naturally ("if it's not found, use 0"), and
+being inside an `otherwise` case already says that it replaces the failed result.
+
+**Tankun's words.** "What about `ins` for `instead`? Since `inst` means instance", "Man, any abbrevs for `instead`",
+"Well, this `use` is in a case. So, idk about the confusion, and Seal doesn't even like paths that much", "What's the
+diff between those two? ret and use", "Ah, so `use` just replaces the failed result?", then, asked "Should `instead`
+become `use`?", the owner chose: "yea"
