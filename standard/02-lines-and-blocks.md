@@ -85,8 +85,7 @@ other indentation is refused, with the corrected line as the fix (D106).
 - **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144):
   `\"`, `\\` and `\{`. A `\` before any other character, as in `"\n"`, is refused, and so is a tab character inside
   text, since it can't be told from spaces (D92).
-
-**Not decided:** how a new line or a tab is written inside text.
+A line break or a tab inside text is written with the built-in names `{newln}` and `{tab}` (D118).
 
 ## Files
 

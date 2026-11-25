@@ -3546,3 +3546,32 @@ with the four number types already decided (D115, D116).
 
 **Tankun's words.** "WHat would it be for?", then, asked "Should Seal leave out a rational type for now?", the owner
 chose: "yea"
+
+## D118. `{newln}` and `{tab}` give a line break and a tab in text
+
+2026-11-25.
+
+**Chosen.** `newln` and `tab` are built-in names that braces fill in with a line break and a tab character:
+
+```
+show_msg("Game over{newln}Score: {score}")
+help = "Keys:{newln}{tab}WASD to move"
+```
+
+They're built-ins, so no name can be `newln` or `tab` (D71). Staying on a line stays the host's narrowing, as the test
+host's `show_msg.same_line`, since it's an instruction to a door, not a character in the text.
+
+**Weighed.**
+- `{new_line}`, as the design session first named it. `newln` is short, and reads like `println`.
+- `{sameln}` in place of `.same_line`, as Tankun asked, now that text is filled in everywhere (D75). It would be the one
+  brace that isn't a character: an instruction inside a text that could be stored, put mid-text, or reach a door whose
+  host shows text its own way (D11).
+- Text running over several lines, its line breaks counting. The following lines' indentation would be in the text
+  too.
+- `\n` and `\t`, which D92 refuses: codes to remember, where Unio D30 has a plain word replace them.
+
+**Why this won.** Braces already fill in text, and a word says what it gives.
+
+**Tankun's words.** has code, "`.same_line` is what I mean. It's just that `same_line` was before eveyrthing became
+fmr", then, asked "Should `{newln}` and `{tab}` give a line break and a tab inside text, with `.same_line` staying the
+host's narrowing?", the owner chose: "yea"

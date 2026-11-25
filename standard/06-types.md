@@ -254,6 +254,8 @@ show_msg("Correct! You got it in {tries} tries")
 - **Every value shows as it's written in Seal,** a list, record, `Dict` or `one_of` included, with text inside in its
   quotes and a `Float` with its `~` when it isn't exact: `"{bag}"` with `["Gem", "Key"]` shows `["Gem", "Key"]`, and
   `be.Text` gives the same (D100, Unio D155).
+- **`{newln}` and `{tab}` give a line break and a tab,** built-in names filled in like any other, as
+  `"Game over{newln}Score: {score}"`; no name can be `newln` or `tab` (D71, D118).
 - **Empty braces, as `"{}"`, are refused,** with `"\{}"` as the fix (D93).
 - **A brace to show as it is is written `\{`,** as in `"Type \{help}"`, which shows `Type {help}` (D63, D75, Unio
   D30).
