@@ -3860,3 +3860,27 @@ outside a ranged result type stops the script.
 
 **Tankun's words.** Asked "Should a ranged number be its type plus a check, applied everywhere a value lands,
 parameters and `return`s included?", the owner chose: "yea"
+
+## D129. `fail` in a handler is a jump; `handles` names anything that can fail; `newln` only in braces
+
+2026-11-25.
+
+**Chosen.**
+- **A `fail` inside a handler's case counts as a jump,** needing the `*` where the handler is used, since it leaves
+  the procedure as `return` and `break` do (Unio D42, which left it open).
+- **`handles [ … ]` can name any procedure that can fail:** the script's own, a narrowed one as `spawn.boss`, a door
+  of the host's, or a built-in as `be.Whole`.
+- **`newln` and `tab` exist only inside braces** (D118). The text holding just a line break is `"{newln}"`, as in
+  `save_text.split(by: "{newln}")`; they're not values of their own outside text.
+
+**Weighed.**
+- `newln` and `tab` as plain `Text` values too, usable outside braces, as the design session first proposed. Two ways
+  to write the same thing, where `"{newln}"` already works.
+- A text running over several lines, as Tankun asked about. Refused, as D118 weighed: the next lines' indentation
+  would be in the text.
+
+**Why this won.** Each follows what's already decided: a jump is anything leaving the procedure, a failing procedure is
+a failing procedure wherever it comes from, and braces are how text gets a line break.
+
+**Tankun's words.** "Should it be `{newln}` outside too?", has code, then, asked "Should all three work that way?", the
+owner chose: "yea"

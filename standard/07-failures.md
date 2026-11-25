@@ -79,7 +79,8 @@ end
 - **`group.handler name`** declares a group: "a handler kind of group". It isn't a family, since its members aren't
   kinds of its name (D110).
 - **Each member is declared as `::name`,** the mark it's reached with (D110).
-- **`handles [ … ]`,** an optional first line, lists the procedures the group is for. Right after a call to one of
+- **`handles [ … ]`,** an optional first line, lists the procedures the group is for: any that can fail, the
+  script's own, narrowed ones as `spawn.boss`, the host's doors, and built-ins as `be.Whole` (D129). Right after a call to one of
   them, `::start_over` reaches into the groups that handle it; if two such groups both have that member, the short form
   is refused there (D110).
 - **The full form, `level_failed::start_over`, works anywhere** (D110).
@@ -89,6 +90,7 @@ end
   D40, D42).
 - **A handler that can `return` or `break` is marked `*` where it's used,** as `?? ::*give_up` or
   `?? level_failed::*give_up`; the mark is required on one that can jump and refused on one that can't (Unio D42).
+  A `fail` inside a handler's case leaves the procedure too, so it counts as a jump (D129).
 - **`include`** inside an `otherwise` block brings in a handler's cases beside the block's own; together they cover
   every failure, none twice (Unio D43).
 - **A handler can take parameters,** written as a procedure's are, and is given arguments where it's used (Unio D44).
