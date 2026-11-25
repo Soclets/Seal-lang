@@ -4624,3 +4624,29 @@ Seal's static types let it skip the checks a dynamic language's API can't.
 **Tankun's words.** "Is calling host optimized?", "Is that the most optimized way?", "How does that compare to Luau",
 then, asked "Should a C door receive its values as an array of plain tagged values, with numbers inside and big values
 as handles, aiming at Rust's door-call speed?", the owner chose: "yea"
+
+## D153. `.sealc` files hold one script or a bundle of many, loaded by name
+
+2026-11-25.
+
+**Chosen.** D141's bytecode files are `.sealc`, "Seal, compiled", as Python's `.pyc` and Lua's `.luac`, and one file
+holds either one compiled script or a bundle of many, with an index at its front:
+- **`seal build goblin.seal`** writes `goblin.sealc`; given several scripts, `seal build` can write them as one
+  bundle. The command's spelling is the building session's.
+- **A host loads a script from a `.sealc` by name,** the same way from a single file or a bundle, and every script is
+  verified as it's loaded (D141).
+- **Both are built with D141,** after the current work.
+
+**Weighed.**
+- One file per script now and bundles later, as the building session proposed and the design session first agreed. A
+  bundle is the same format with an index, so it costs little, and games on consoles and phones ship one file faster
+  than hundreds.
+- A separate extension for bundles, as `.sealbund`, which Tankun asked about: bundles seen at a glance, as Java's
+  `.jar` beside `.class`. But it's one format, read by one loader and one verifier, so a second name would mark a
+  difference nothing uses.
+
+**Why this won.** One extension, one format and one way to load, with two ways to ship.
+
+**Tankun's words.** "What about bundle", "What about `.sealbund`?", "Isn't that about the syntax?", then, asked "Should
+a `.sealc` file hold either one script or a bundle of many, loaded by name, with both built now?", the owner chose:
+"yea"
