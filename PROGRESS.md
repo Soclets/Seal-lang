@@ -389,7 +389,6 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - a `///` before a name made inside a block
 - a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
 - a handler used inside its own cases
-- `in` after maths without brackets, as `a + b in ms`
 - maths on units whose answer's unit has no written form, as `px * px`, and maths on points beyond `±` a span
 - a `clamp` whose `low:` is more than its `high:` (it stops while running too)
 - converting a `Float` to a `HugeWhole` or a `HugeDecimal`, which D126 doesn't list
@@ -414,7 +413,7 @@ Refusals, failed checks and stops whose wording no decision gives, drafted in Un
 what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole line, `fix:` stands in place of `what:`
 (Unio D101), as for indentation, spacing, a `ret`'s header or a `mut` that goes; those are marked.
 
-373 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-25, replacing the list of 2026-11-23: `fmt`'s and `&`'s
+374 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-25, after D144 to D149's new words; the 3 marked **(new today)** weren't in this morning's list, which replaced the list of 2026-11-23: `fmt`'s and `&`'s
 are gone with them (D75, D77), and so are the named closers' (D102). The 156 marked **(new)** weren't in the
 earlier list: units, handlers, ranged numbers, the maths built-ins, the new number types, D135's `mut` and the rest
 built since. `{…}` stands for what the message fills in.
@@ -500,6 +499,8 @@ built since. `{…}` stands for what the message fills in.
 
 - refused: `{digits}` is too big for a `Whole`
   - why: a `Whole` goes up to 9223372036854775807.
+- refused: `_` is the value of what an `=` changes, and nothing is changed here **(new today)**
+  - why: on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.
 - refused: a `{name}` is built with `[ ]`, naming every field
   - why: a record is built as `Name[field: value]`.
 - refused: `{name}` is a type, not a value
@@ -521,7 +522,7 @@ built since. `{…}` stands for what the message fills in.
 - refused: `places:` takes a whole number written out, but this is `{places}` **(new)**
   - why: `places:` says how many digits a `Float` shows after its point, as `{speed, places: 2}`.
 - refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name **(new)**
-  - why: `in` in braces measures a name in one of its group's units, as `{total in secs}`.
+  - why: `to` in braces measures a name in one of its group's units, as `{total to secs}`.
 - refused: `{{inside}}` isn't a name with its fields and facts **(new)**
   - why: braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.
 - refused: there's no name `{first}` here
@@ -864,9 +865,9 @@ built since. `{…}` stands for what the message fills in.
 - refused: this plain number goes where `{unit_text}` is wanted **(new)**
   - why: where something takes a unit, the number says it, so seconds and milliseconds, or degrees and radians, can't be mixed up.
 - refused: this has a unit, `{unit_text}`, where a plain number goes **(new)**
-  - why: a value with a unit gives its plain number when it's measured in one, as `value in {unit_text}`.
-- refused: `in` measures a value with a unit, but this is {found} **(new)**
-  - why: `value in unit` gives the plain number a value with a unit is, as `total in secs`.
+  - why: a value with a unit gives its plain number when it's measured in one, as `value to {unit_text}`.
+- refused: `to` measures a value with a unit, but this is {found} **(new today)**
+  - why: `value to unit` gives the plain number a value with a unit is, as `total to secs`.
 - refused: a value in `{from_text}` isn't measured in `{to_text}` **(new)**
   - why: only a unit of the value's own group measures it, and only one with a fixed size, which `frames` and `tiles` haven't.
 - not designed yet: a `HugeWhole` measured in a unit it isn't always a whole number of isn't decided yet **(new)**
@@ -1020,7 +1021,8 @@ built since. `{…}` stands for what the message fills in.
   - why: a slide's step is a procedure, so anything after the slide needs the slide in `( )`.
 - refused: two comparisons in a row
   - why: each comparison stands alone; join two with `and`, as in `1 < x and x < 10`.
-- not designed yet: `in` after maths written without brackets, which could measure either side, isn't decided yet **(new)**
+- refused: this is maths measured with `to`, without brackets **(new today)**
+  - why: `to` has no place in maths' order, so the maths it measures is in brackets, as `(a + b) to ms`.
 - refused: `&` doesn't join text; text is joined by filling it in with braces **(new)**
   - why: text is joined only with braces, as in `"Score: {score}"`, which looks like what it shows.
 - refused: `{0}` needs `.floor` or `.trunc`, as in `{0}.floor`
@@ -1046,12 +1048,12 @@ built since. `{…}` stands for what the message fills in.
   - why: a `Whole`'s power is 0 or more, since a negative one isn't a whole number; `be.Float(…)` gives `Float`s.
 - check failed: `{name}` takes a value from -1 to 1 **(new)**
   - why: no angle has a sine or cosine past 1 or below -1.
+- check failed: this splits a text by an empty text **(new)**
+  - why: an empty text is never found between two pieces; `for_each` goes through a text's characters.
 - check failed: this division leaves a remainder
   - why: `/` on two `Whole`s divides exactly; `div.floor` and `div.trunc` say how a fraction goes.
 - check failed: a negative number has no square root
   - why: the square root of a negative number isn't a real number.
-- check failed: this splits a text by an empty text **(new)**
-  - why: an empty text is never found between two pieces; `for_each` goes through a text's characters.
 - check failed: this range's step is 0
   - why: a range with a step of 0 never reaches its end.
 - check failed: this range's step points away from its end
