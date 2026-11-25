@@ -11,6 +11,9 @@ the building session's to propose.
 - **The host then calls the script's procedures by name,** whenever its own events happen, as a game engine calls an
   enemy's `on_hit` (D4). The call is checked against the types in the procedure's header (D81).
 - **A script with no procedures is a program,** run once from top to bottom (D4).
+- **A host can load a script from its text, or from a bytecode file compiled ahead of time,** which Seal verifies
+  before loading and refuses if it's been changed or comes from another Seal version. The script means the same
+  either way (D141).
 
 ## Doors
 

@@ -1369,6 +1369,8 @@ than a dynamic one can be: there's no type check left to make while running.
 scripts at load time to bytecode run by a register VM, with no JIT?", the owner chose: "yea. Btw, the impl-tor could
 decide bytecode names".
 
+(Changed by D141: a script can also be compiled ahead of time to a bytecode file, verified when loaded.)
+
 ## D47. One workspace of five parts, with the library alone what hosts depend on
 
 2026-11-23.
@@ -4214,3 +4216,32 @@ text of its own meets D57's goal 1 like every other. This replaces D139's "later
 **Tankun's words.** "Fuck it, then. Let it finish", then, asked "do you mean let it do the rework now, as part of the
 current work, so D139 changes from "later" to "now" and nothing needs sending?", the owner chose: "yea, I'll go shower
 soon anyways"
+
+## D141. Scripts can be compiled ahead of time to bytecode files, always verified when loaded
+
+2026-11-25.
+
+**Chosen.** Beside loading from text (D46), a script can be compiled ahead of time, when a game is built, into a
+bytecode file that a host loads:
+- **The `seal` command compiles it,** as `seal build`, reading, checking and compiling once, so the script's mistakes
+  show up when the game is built. The command's exact spelling is the building session's.
+- **Loading a bytecode file always verifies it first,** as WebAssembly does: the file carries its types, and one pass
+  checks that every instruction gets the types it expects and stays inside the script, so a tampered file, or one from
+  another Seal version, is refused like a bad script and can never harm the host (Building rule 1). Since Seal makes
+  no compatibility promise (D137), a file from another version is refused and rebuilt.
+- **A script means the same either way,** from text or from a file.
+- **Loading from text stays,** for mods and quick scripts.
+- The file format, the verifier and the optimizations it makes affordable are the building session's to propose. It's
+  built after the current work.
+
+**Weighed.**
+- Loading only from text, as D46 has it, which never weighed this. Every load reads, checks and compiles again.
+- Bytecode files loaded without verifying, trusted because the host built them. The VM trusts its bytecode completely
+  (D46), so one tampered file would run unchecked instructions; loading Lua bytecode is a classic way out of Lua's
+  sandbox, which is why Roblox doesn't allow it.
+
+**Why this won.** A shipped game's scripts load almost at once, optimizations too slow for load time become
+affordable, and verifying keeps the sandbox whole for a fraction of what reading and checking text costs.
+
+**Tankun's words.** Asked "Should Seal be able to compile scripts ahead of time to bytecode files, always verified when
+loaded?", the owner chose: "yea"
