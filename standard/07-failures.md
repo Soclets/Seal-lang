@@ -70,7 +70,7 @@ group.handler level_failed
 end
 
 a = load_level("forest") ?? ::start_over
-b = load_save("slot1") ?? level_failed::start_at(level: 3)
+b = load_save("slot1") ?? level_failed::start_at(3)
 c = load_level("cave") otherwise
     include ::start_over
 end
