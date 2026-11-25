@@ -1731,6 +1731,8 @@ Seal has records inside records.
 
 (Changed by D58: comparisons are Normal against Normal, under Cyborg's benchmark rules.)
 
+(Changed by D139: the row loading each tiny script from a text of its own may stay unmet until a later rework.)
+
 **Weighed.**
 - A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
 - Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
@@ -4166,3 +4168,27 @@ Ralph's are.
 **Tankun's words.** Unasked, in the answer quoted whole in D137: "yea. Btw, when we do the Seal oracle (which is
 definitely not soon, if ever). It would proven, to match the spec, entirely (except the 3rd parties we rely on, like
 SPARK Platinum, or Rocq)"
+
+## D139. Fresh loading of tiny scripts stays a goal, met by a rework done later
+
+2026-11-25.
+
+**Chosen.** The patrolling-scripts row that loads each tiny script from a text of its own, read, checked and compiled
+from scratch, keeps D57's goal 1: faster than Luau. Today Seal takes 8.6 µs to Luau's 5.1, after a round of fixes.
+- **The rework that meets it is done, but later,** not in the current work: names stored as numbers, and each script's
+  tree in one block of memory, across the reader, checker and compiler, as rustc and Zig do.
+- **Until then, that row is the one D57 goal allowed to stay unmet,** and it's reported as such; small fixes to loading
+  carry on meanwhile.
+
+**Weighed.**
+- Measuring the row for reference only, with no target, as the design session recommended, since D57's patrolling
+  benchmark as a whole is met (51% of Luau's time) and about a third of Seal's loading is type checking, which Luau
+  doesn't do.
+- Counting it as met within twice Luau's time, as the building session recommended.
+- The rework now, before anything else.
+
+**Why this won.** Tankun's choice: Seal is meant to be fast, so the goal stands, and the rework waits until the
+current work is done.
+
+**Tankun's words.** Asked "Should that row be measured for reference only, with no target, and the rework left until
+NginSeal shows a need?", the owner chose: "No, fuck it, We'll do it, but later"
