@@ -285,32 +285,30 @@ The VM, and its optimizations (Building rule 5):
 
 ## Benchmarks
 
-`bench/RESULTS.md` has every number. After C7 (2026-11-25), Normal: `fib` 52.1 ms (was 55.5), n-body 66.0 ms (67.6),
-spectral-norm 19.2 ms (21.7), fannkuch 113 ms (120), word count 24.4 ms (25.9), text building 335 µs (287), binary-trees
-114.5 ms (115.2), patrol run 2.10 ms (2.08). Loading a 12-line script from a text of its own is about 10.2 µs (9.7):
-the reader keeps the script's text for the fixes it shows, and checks comment lines' indentation (D91).
+`bench/RESULTS.md` has every number. On 2026-11-25 (evening), Normal: `fib` 30 to 33 ms, n-body 64 ms,
+spectral-norm 17.8 ms, fannkuch 102 ms, word count 26.5 ms, text building 343 µs, binary-trees 99 ms, patrol run
+2.2 ms. Loading a 12-line script from a text of its own: about 4.45 µs (12.3 µs this morning).
 
-In short, judged Normal against Normal (D58):
+In short, judged Normal against Normal (D58), against both of goal 1's bars, Luau's interpreter and, by D142,
+LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
 
-- **Faster than Luau's interpreter:** met on all eight as the benchmarks are defined: `fib`, n-body, spectral-norm,
-  fannkuch, word count, text building, binary-trees, and the patrolling scripts as a whole run (1,000 scripts loaded
-  from one text, each resumed 100 times), with resuming and footprint each better than Luau's.
-- **Where Seal is behind Luau: loading a script from a text of its own.** On 2026-11-25 (after C13), timed apart from
-  the rest of the patrol run: from the same text, where Seal reuses what it compiled and Luau compiles once, a script
-  loads and runs to its first pause in about 170 ns against Luau's 185 ns (met, from 230 ns: the top level's task
-  becomes the first call's, a new stack comes zeroed from the system, the kept scripts are searched newest first,
-  the first paused task is held in the script itself, and the name is shared with the kept script's). From a text of its own, with nothing reused, a 12-line script takes Seal about 8.2 µs and Luau about 5.0 µs
-  (not met; it was 12.3 µs after C12, and about 10 µs before). Split up: reading about 3.3 µs, checking about 3.1 µs,
-  compiling about 1.0 µs, and setting the script up about 0.9 µs. Done: a syntax expression is 72 bytes instead of 208
-  (C12's units and handlers had grown it), the reader moves names out of tokens instead of copying them and compares
-  tokens in place, Seal's own types and unit groups and the doors' description are worked out once and shared, door
-  calls borrow instead of copying, built-in failure names aren't copied, and the D84 fix is written only when shown.
-  What's left is spread thin across many small allocations: every name is its own string from the reader to the
-  checked tree, and every node, scope and table its own allocation, with no single place over a few percent. Luau
-  also does no type checking, which is a third of Seal's time. Closing the rest needs names interned as numbers and
-  the trees built in one block, a rework of the reader, checker and compiler together, not a fix. A 10,000-line script
-  loads in about 9 ms, far inside goal 4, so this only shows on very small scripts loaded in great numbers from
-  different texts.
+- **Faster than both on every benchmark:** `fib`, n-body, spectral-norm, fannkuch, word count, text building,
+  binary-trees, the patrolling scripts as a whole run, resuming, and loading from the same text.
+- **Loading a script from a text of its own: met against Luau, not against LuaJIT.** About 4.45 µs against Luau's
+  4.85 µs and LuaJIT's 1.79 µs. D140's rework got it from 12.3 µs: names and texts borrowed from the script, one token
+  list, lists and tables kept between scripts on a thread, a value with no operator read without the operators'
+  levels, short lists of names before hash tables, and passes that skip what needs nothing. What's left is spread
+  across reading (about 1.5 µs), checking (1.6 µs) and compiling (0.8 µs), with no single place over a few percent.
+  LuaJIT reads and compiles in one pass with no types to check; matching it would take a front end rebuilt as one
+  pass. Asked of the design session (2026-11-25): judge this row against Luau, with LuaJIT for reference, and let
+  D141's bytecode files be the fast way to load many scripts.
+- **`fib` and the run loop.** Calls were LuaJIT's interpreter's strong point. Three things got `fib` from 49.9 ms to
+  about 30 ms, each general: a call's value lands where it's wanted with no move after it, a call with one argument
+  written as a `Whole` plus a small number is one instruction, as is `ret a + b`; the loop hands its rarer
+  instructions (dictionaries made or emptied, text's pieces, a list's length changing, door calls) to functions
+  outside it; and only what nearly every instruction uses has a name of its own in the loop, so the processor keeps
+  the instruction list and the frame's registers in its own registers. How the compiler lays the loop out still moves
+  `fib` by up to 5% from one build to the next.
 - **n-body, and what D62 changed.** Until D62, a body's fields could only be changed by copying the body out, changing
   it and putting it back. With D62 the plain way is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the
   Normal program, and the copy-out one is kept as `nbody.ceil.seal`, the Ceil.source program. Written the plain way it
@@ -322,7 +320,8 @@ In short, judged Normal against Normal (D58):
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
-- **A 10,000-line script loads in under 100 ms:** met, about 9 ms.
+- **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
+  refuses, so it went unmeasured for a while; it joins with braces now).
 - **Footprint:** a paused patrolling script holds 512 bytes of its cap, about 1.8 KB of real memory.
 - **Pausing costs about as much as a call:** met; resuming is cheaper than a host call.
 - **Ceil.program and Ceil.machine.program** need `llvm-profdata` to merge the profile. Rust's own isn't installed,
