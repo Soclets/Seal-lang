@@ -184,7 +184,7 @@ pub fn big_script(lines: usize) -> String {
             "proc work_{index}[n: Whole, scale: Float] -> Whole
     mut total = n
     mut items = [n, n + 1, n + {index}]
-    for each item at pos place in items
+    for_each item at pos place in items
         if item rem.floor 2 == 0
             total = total + item * place
         else
@@ -197,9 +197,9 @@ pub fn big_script(lines: usize) -> String {
         level = level * 1.5 + be.Float(count)
         count = count + 1
     end
-    label = \"work\" & n & \":\" & total
+    label = \"work{{n}}:{{total}}\"
     items.add(be.Whole.floor(level))
-    return total + items.len + (be.Whole(label) ?? {index})
+    ret total + items.len + (be.Whole(label) ?? {index})
 end
 
 "

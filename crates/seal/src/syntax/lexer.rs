@@ -16,8 +16,8 @@ pub enum Keyword {
     End,
     While,
     Break,
-    For,
-    Each,
+    /// `for_each`, one keyword of two words joined (D146).
+    ForEach,
     In,
     At,
     Proc,
@@ -28,7 +28,7 @@ pub enum Keyword {
     Match,
     Case,
     Otherwise,
-    Instead,
+    Use,
     Ignore,
     Crash,
     Labels,
@@ -60,19 +60,18 @@ impl Keyword {
             "end" => Keyword::End,
             "while" => Keyword::While,
             "break" => Keyword::Break,
-            "for" => Keyword::For,
-            "each" => Keyword::Each,
+            "for_each" => Keyword::ForEach,
             "in" => Keyword::In,
             "at" => Keyword::At,
             "proc" => Keyword::Proc,
-            "return" => Keyword::Return,
+            "ret" => Keyword::Return,
             "fail" => Keyword::Fail,
             "record" => Keyword::Record,
             "one_of" => Keyword::OneOf,
             "match" => Keyword::Match,
             "case" => Keyword::Case,
             "otherwise" => Keyword::Otherwise,
-            "instead" => Keyword::Instead,
+            "use" => Keyword::Use,
             "ignore" => Keyword::Ignore,
             "crash" => Keyword::Crash,
             "labels" => Keyword::Labels,
@@ -112,19 +111,18 @@ impl Keyword {
             Keyword::End => "end",
             Keyword::While => "while",
             Keyword::Break => "break",
-            Keyword::For => "for",
-            Keyword::Each => "each",
+            Keyword::ForEach => "for_each",
             Keyword::In => "in",
             Keyword::At => "at",
             Keyword::Proc => "proc",
-            Keyword::Return => "return",
+            Keyword::Return => "ret",
             Keyword::Fail => "fail",
             Keyword::Record => "record",
             Keyword::OneOf => "one_of",
             Keyword::Match => "match",
             Keyword::Case => "case",
             Keyword::Otherwise => "otherwise",
-            Keyword::Instead => "instead",
+            Keyword::Use => "use",
             Keyword::Ignore => "ignore",
             Keyword::Crash => "crash",
             Keyword::Labels => "labels",
@@ -1215,9 +1213,9 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     if let TokenKind::Symbol(OpenRound | OpenSquare | Dot | TypeOpen | Negate | Symbol::Path) = before {
         return 0;
     }
-    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
+    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `incl`, the `::` stands apart.
     if matches!(after, TokenKind::Symbol(Symbol::Path)) {
-        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "include"));
+        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "incl"));
     }
     let touches_brackets = matches!(
         before,

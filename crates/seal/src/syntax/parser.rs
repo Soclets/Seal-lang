@@ -727,7 +727,7 @@ impl<'a> Parser<'a> {
         Ok(Handler { name, parameters, labels, labels_any_order, defaults, cases, place: opener.place })
     }
 
-    /// A handler where it's used, after `??` or `include`: `::name`, `group::name`, `*` before a name that can jump,
+    /// A handler where it's used, after `??` or `incl`: `::name`, `group::name`, `*` before a name that can jump,
     /// and the arguments in `( )` (D98, D110, Unio D42, D44).
     fn handler_use(&mut self) -> Result<HandlerUse<'a>, Message> {
         let place = self.here();
@@ -1041,7 +1041,7 @@ impl<'a> Parser<'a> {
                 self.end_of(&opener)?;
                 return Ok(Statement { kind: StatementKind::While { condition, body }, place });
             }
-            Some(Keyword::For) => return self.for_each(),
+            Some(Keyword::ForEach) => return self.for_each(),
             Some(Keyword::Match) => return self.match_statement(),
             Some(Keyword::Break) => {
                 self.advance();
@@ -1063,11 +1063,11 @@ impl<'a> Parser<'a> {
                 self.end_line()?;
                 return Ok(Statement { kind: StatementKind::Fail(name), place });
             }
-            Some(Keyword::Instead) => {
+            Some(Keyword::Use) => {
                 self.advance();
                 let value = self.full_expression()?;
                 self.end_line()?;
-                return Ok(Statement { kind: StatementKind::Instead(value), place });
+                return Ok(Statement { kind: StatementKind::Use(value), place });
             }
             Some(keyword @ (Keyword::Proc | Keyword::Fam | Keyword::Record | Keyword::OneOf)) => {
                 // trace: D93
@@ -1156,8 +1156,8 @@ impl<'a> Parser<'a> {
         let mut cases = Vec::new();
         let mut includes = Vec::new();
         while self.in_body(&opener)? {
-            // trace: Unio D43. `include` brings a handler's cases in beside the block's own.
-            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "include")
+            // trace: Unio D43. `incl` brings a handler's cases in beside the block's own.
+            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "incl")
                 && matches!(
                     self.peek_at(1).map(|token| &token.kind),
                     Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_))
@@ -1246,8 +1246,7 @@ impl<'a> Parser<'a> {
     /// trace: D22, D33, Unio D171, D174
     fn for_each(&mut self) -> Result<Statement<'a>, Message> {
         let opener = self.opener("for");
-        self.expect_keyword(Keyword::For)?;
-        self.expect_keyword(Keyword::Each)?;
+        self.expect_keyword(Keyword::ForEach)?;
         // trace: D61
         let item_unused = self.at_keyword(Keyword::Unused);
         if item_unused {
@@ -1913,14 +1912,14 @@ mod tests {
 
     #[test]
     fn d37_match_and_d40_otherwise_parse() {
-        let source = "match last\n    case hurt[amount]\n        hp = hp - amount\n    case idle\nend\nc = f(1) otherwise\n    case too_high\n        instead 99\nend\n";
+        let source = "match last\n    case hurt[amount]\n        hp = hp - amount\n    case idle\nend\nc = f(1) otherwise\n    case too_high\n        use 99\nend\n";
         let script = parse(source);
         assert!(script.is_ok(), "{:?}", script.err());
     }
 
     #[test]
     fn d60_a_procedure_that_takes_nothing_has_no_brackets() {
-        let script = parse("proc tick\nend\nproc count -> Whole\n    return 1\nend\ntick()\n");
+        let script = parse("proc tick\nend\nproc count -> Whole\n    ret 1\nend\ntick()\n");
         assert!(script.is_ok(), "{:?}", script.err());
         let kind = parse("proc tick[]\nend\n").err().map(|message| message.kind);
         assert_eq!(kind, Some(MessageKind::Refused));

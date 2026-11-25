@@ -5,5 +5,5 @@ proc run[count: Whole] -> Text
         text = "{text}{number},"
         number = number + 1
     end
-    return text
+    ret text
 end

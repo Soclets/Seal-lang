@@ -64,5 +64,5 @@ proc run[n: Whole] -> Whole
             end
         end
     end
-    return checksum * 100 + max_flips
+    ret checksum * 100 + max_flips
 end

@@ -23,9 +23,9 @@ pub enum VariableKind {
     Named,
     /// A procedure's parameter: read-only (Unio D147).
     Parameter,
-    /// A `for each`'s item (Unio D171).
+    /// A `for_each`'s item (Unio D171).
     LoopItem,
-    /// A `for each`'s position or key (D33, Unio D174).
+    /// A `for_each`'s position or key (D33, Unio D174).
     LoopPosition,
     /// A value taken out of a case by `match` (D37).
     CaseValue,
@@ -196,7 +196,7 @@ pub enum StatementKind {
         condition: Expression,
         body: Block,
     },
-    /// `for each` over a `range[…]` (Unio D170, D172).
+    /// `for_each` over a `range[…]` (Unio D170, D172).
     ForRange {
         item: VariableId,
         position: Option<(VariableId, bool)>,
@@ -206,7 +206,7 @@ pub enum StatementKind {
         step: Option<Box<Expression>>,
         body: Block,
     },
-    /// `for each` over a list, an array or a dictionary; which one is the source's type (D33, Unio D171).
+    /// `for_each` over a list, an array or a dictionary; which one is the source's type (D33, Unio D171).
     ForEach {
         item: VariableId,
         position: Option<(VariableId, PositionKind)>,
@@ -221,7 +221,7 @@ pub enum StatementKind {
     Return(Option<Expression>),
     Fail(FailureId),
     /// `instead value`: the value an `otherwise` case carries on with (Unio D40).
-    Instead(Expression),
+    Use(Expression),
 }
 
 #[derive(Clone, Debug)]
@@ -429,7 +429,7 @@ pub enum ExpressionKind {
         fields: Vec<(u32, Expression)>,
     },
     List(Vec<Expression>),
-    /// `range[…]` kept as a list (D99); a `for each` over one is [`StatementKind::ForRange`], which builds no list.
+    /// `range[…]` kept as a list (D99); a `for_each` over one is [`StatementKind::ForRange`], which builds no list.
     Range {
         from: Box<Expression>,
         end: Box<Expression>,

@@ -253,7 +253,7 @@ impl Translator<'_> {
             StatementKind::SetKey { .. } => return not_shared("a `Dict`"),
             StatementKind::Match { .. } => return not_shared("`match`"),
             StatementKind::Fail(_) => return not_shared("`fail`"),
-            StatementKind::Instead(_) => return not_shared("`otherwise`"),
+            StatementKind::Use(_) => return not_shared("`otherwise`"),
         }
         Ok(())
     }

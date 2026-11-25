@@ -259,10 +259,10 @@ pub enum StatementKind<'a> {
     Return(Option<Expression<'a>>),
     Fail(Word<'a>),
     /// `instead value`, ending an `otherwise` case (Unio D40).
-    Instead(Expression<'a>),
+    Use(Expression<'a>),
 }
 
-/// What `at …` in a `for each` gives (D33, Unio D174).
+/// What `at …` in a `for_each` gives (D33, Unio D174).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PositionKind {
     Pos,
@@ -487,7 +487,7 @@ pub enum ExpressionKind<'a> {
     Otherwise {
         call: Box<Expression<'a>>,
         cases: Vec<OtherwiseCase<'a>>,
-        /// The handlers brought in with `include` (Unio D43).
+        /// The handlers brought in with `incl` (Unio D43).
         includes: Vec<HandlerUse<'a>>,
     },
     /// `start |> step |> step |> step` (Unio D5, D128).

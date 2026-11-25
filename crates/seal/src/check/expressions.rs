@@ -1235,7 +1235,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `call otherwise` and its cases, with any handlers it brings in with `include` (D37, Unio D40, D43, D186).
+    /// `call otherwise` and its cases, with any handlers it brings in with `incl` (D37, Unio D40, D43, D186).
     fn otherwise(
         &mut self,
         call: &syntax::Expression<'a>,
@@ -1295,7 +1295,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `instead`, `return`, `break` or
+    /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `use`, `ret`, `break` or
     /// `fail`, or simply ends after a call that gives nothing (Unio D40, D186). `before` are the lines that make the
     /// handler's parameters from its arguments, run before the case's own.
     pub(super) fn case_block(
@@ -1306,23 +1306,22 @@ impl<'a> Checker<'a> {
         failable: bool,
         before: Vec<super::tree::Statement>,
     ) -> super::tree::Block {
-        self.context.instead_types.push(type_id);
+        self.context.use_types.push(type_id);
         let body = self.block(&case.body);
-        self.context.instead_types.pop();
-        let ends_with_instead =
-            matches!(body.last().map(|last| &last.kind), Some(super::tree::StatementKind::Instead(_)));
-        if gives_nothing && ends_with_instead {
+        self.context.use_types.pop();
+        let ends_with_use = matches!(body.last().map(|last| &last.kind), Some(super::tree::StatementKind::Use(_)));
+        if gives_nothing && ends_with_use {
             self.refuse_why(
                 body.last().map_or(case.failure.place, |last| last.place),
-                "this call gives nothing, so there's no value to give `instead`",
+                "this call gives nothing, so there's no value to give `use`",
                 "after a call that gives nothing, a case may just end.",
             );
-        } else if !gives_nothing && !ends_with_instead && !Self::block_leaves(&body) && failable {
+        } else if !gives_nothing && !ends_with_use && !Self::block_leaves(&body) && failable {
             // trace: Unio D40
             self.refuse_why(
                 case.failure.place,
                 format!("the case `{}` can reach its end without giving a value", case.failure.text),
-                "each case ends with `instead` and a value, `return`, `break` or `fail`.",
+                "each case ends with `use` and a value, `ret`, `break` or `fail`.",
             );
         }
         let mut whole = before;

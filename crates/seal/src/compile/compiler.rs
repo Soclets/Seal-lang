@@ -47,8 +47,8 @@ struct Function {
     /// The registers holding heap values this frame must free: names it made and values not yet handed on.
     held: Vec<Register>,
     loops: Vec<Loop>,
-    /// Where an `instead` puts its value, innermost `otherwise` last.
-    instead_targets: Vec<Register>,
+    /// Where an `use` puts its value, innermost `otherwise` last.
+    use_targets: Vec<Register>,
     /// A name being handed over whole to the call being compiled, and the register it lives in: for now its
     /// value is the callee's, so this frame neither frees it nor lists it as held.
     moved_name: Option<VariableId>,
@@ -545,7 +545,7 @@ impl<'p> Compiler<'p> {
         }
     }
 
-    /// Frees everything held since `mark` on a way out, such as `break` or `return`, leaving the list as it is for
+    /// Frees everything held since `mark` on a way out, such as `break` or `ret`, leaving the list as it is for
     /// the code that follows on other ways.
     fn release_on_exit(&mut self, mark: usize, except: Option<Register>) {
         let held: Vec<Register> = self.function.held.get(mark..).unwrap_or(&[]).to_vec();
@@ -573,7 +573,7 @@ impl<'p> Compiler<'p> {
         last.locations.clear();
         last.held.clear();
         last.loops.clear();
-        last.instead_targets.clear();
+        last.use_targets.clear();
         last.texts.clear();
         last.takeovers.clear();
         last.views.clear();
@@ -584,7 +584,7 @@ impl<'p> Compiler<'p> {
             locations: last.locations,
             held: last.held,
             loops: last.loops,
-            instead_targets: last.instead_targets,
+            use_targets: last.use_targets,
             texts: last.texts,
             takeovers: last.takeovers,
             views: last.views,
@@ -713,7 +713,7 @@ impl<'p> Compiler<'p> {
             }
             self.emit(Instruction::ReturnNothing);
         } else {
-            // Checking made sure every way through ends in a `return` or a `fail`.
+            // Checking made sure every way through ends in a `ret` or a `fail`.
             self.emit(Instruction::Unreachable);
         }
         let failures =
@@ -1715,6 +1715,17 @@ impl<'p> Compiler<'p> {
             }
             StatementKind::Return(Some(value)) => {
                 let reference = self.is_reference(value.type_id);
+                // A plain value an instruction works out is worked out straight into the first register, where the
+                // value a procedure gives back goes, so it returns with nothing copied: `ReturnNothing` leaves that
+                // register as it is.
+                if !reference && !matches!(value.kind, ExpressionKind::Variable(_)) {
+                    self.value_into(value, 0);
+                    self.release_on_exit(0, None);
+                    self.place = statement.place;
+                    self.emit(Instruction::ReturnNothing);
+                    self.function.held.truncate(held_mark);
+                    return;
+                }
                 let register = self.value(value);
                 if reference && !self.function.held.contains(&register) {
                     // A borrowed value, such as a parameter, gets a holder of its own before it leaves.
@@ -1733,9 +1744,9 @@ impl<'p> Compiler<'p> {
                 self.emit(Instruction::Fail { failure: failure.0 });
                 return;
             }
-            StatementKind::Instead(value) => {
-                let Some(&target) = self.function.instead_targets.last() else {
-                    self.internal("an `instead` outside an `otherwise`");
+            StatementKind::Use(value) => {
+                let Some(&target) = self.function.use_targets.last() else {
+                    self.internal("an `use` outside an `otherwise`");
                     return;
                 };
                 self.held_into(value, target);
@@ -2299,7 +2310,21 @@ impl<'p> Compiler<'p> {
             }
             ExpressionKind::Call { procedure, arguments } => {
                 let can_pause = self.program.procedure(*procedure).is_some_and(|procedure| procedure.can_pause);
-                let base = self.arguments(arguments, false, self.function.moved_name);
+                // A call whose value goes to the newest register, holding nothing to free, is made from that register,
+                // so its value lands there with no move after: the callee writes its first register only as it
+                // returns. Only for a call that can neither fail nor pause, with a plain value.
+                let in_place =
+                    self.program.procedure(*procedure).is_some_and(|callee| !callee.can_fail && !callee.can_pause)
+                        && !reference
+                        && !matches!(self.kind(expression.type_id), Type::Nothing)
+                        && to != 0
+                        && u32::from(to) + 1 == self.function.next
+                        && !self.function.held.contains(&to);
+                let base = if in_place {
+                    self.arguments_from(Some(to), arguments, false, self.function.moved_name)
+                } else {
+                    self.arguments(arguments, false, self.function.moved_name)
+                };
                 self.place = expression.place;
                 self.emit(Instruction::Call { base, procedure: procedure.0 });
                 if can_pause {
@@ -2664,7 +2689,7 @@ impl<'p> Compiler<'p> {
                 self.place = expression.place;
                 let fine = self.emit(Instruction::JumpUnlessFailed { offset: 0 });
                 let mut ends = Vec::new();
-                self.function.instead_targets.push(to);
+                self.function.use_targets.push(to);
                 for (failure, body) in cases {
                     let next = self.emit(Instruction::JumpUnlessFailureIs { failure: failure.0, offset: 0 });
                     self.emit(Instruction::ClearFailure);
@@ -2673,7 +2698,7 @@ impl<'p> Compiler<'p> {
                     let here = self.here();
                     self.patch(next, here);
                 }
-                self.function.instead_targets.pop();
+                self.function.use_targets.pop();
                 // Checking made sure the cases cover every failure the call can give.
                 self.emit(Instruction::Unreachable);
                 let here = self.here();
@@ -2924,9 +2949,27 @@ impl<'p> Compiler<'p> {
     /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
     /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
     fn arguments(&mut self, arguments: &[Expression], to_door: bool, moved: Option<VariableId>) -> Register {
+        self.arguments_from(None, arguments, to_door, moved)
+    }
+
+    /// The arguments, worked out into the registers after `base`, which is the newest register when it's given, and a
+    /// new one when it isn't.
+    fn arguments_from(
+        &mut self,
+        base: Option<Register>,
+        arguments: &[Expression],
+        to_door: bool,
+        moved: Option<VariableId>,
+    ) -> Register {
         let count = u32::try_from(arguments.len()).unwrap_or(u32::MAX);
         let held_before = self.function.held.len();
-        let base = self.allocate_many(count + 1);
+        let base = match base {
+            Some(base) => {
+                self.allocate_many(count);
+                base
+            }
+            None => self.allocate_many(count + 1),
+        };
         let mut given = Vec::new();
         for (slot, argument) in (base + 1..).zip(arguments) {
             let is_moved = matches!(&argument.kind, ExpressionKind::Variable(variable) if Some(*variable) == moved);
@@ -3281,9 +3324,7 @@ fn block_uses(block: &[Statement], variable: VariableId) -> bool {
         StatementKind::Inside { path, change } => {
             inside_uses(path, variable) || block_uses(std::slice::from_ref(&**change), variable)
         }
-        StatementKind::Make { value, .. } | StatementKind::Evaluate(value) | StatementKind::Instead(value) => {
-            uses(value)
-        }
+        StatementKind::Make { value, .. } | StatementKind::Evaluate(value) | StatementKind::Use(value) => uses(value),
         StatementKind::Set { variable: changed, value } | StatementKind::SetField { variable: changed, value, .. } => {
             *changed == variable || uses(value)
         }
@@ -3441,7 +3482,7 @@ fn fold(expression: &Expression) -> Option<Folded> {
     }
 }
 
-/// Whether a name is made by `for each` or `match`, which only borrow what they name.
+/// Whether a name is made by `for_each` or `match`, which only borrow what they name.
 #[must_use]
 pub fn borrows(kind: VariableKind) -> bool {
     !matches!(kind, VariableKind::Named)

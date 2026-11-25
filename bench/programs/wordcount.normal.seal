@@ -10,10 +10,10 @@ proc run[words: Whole] -> Whole
         made = made + 1
     end
     mut most = 0
-    for each count in counts
+    for_each count in counts
         if count > most
             most = count
         end
     end
-    return counts.len * 1000000 + most
+    ret counts.len * 1000000 + most
 end

@@ -71,7 +71,7 @@ fn walk_block(block: &[Statement], visitor: &mut dyn Visitor) {
             | StatementKind::Set { value, .. }
             | StatementKind::SetField { value, .. }
             | StatementKind::Evaluate(value)
-            | StatementKind::Instead(value)
+            | StatementKind::Use(value)
             | StatementKind::Return(Some(value)) => walk_expression(value, false, visitor),
             StatementKind::SetItem { index, value, .. } => {
                 walk_expression(index, false, visitor);
@@ -398,7 +398,7 @@ impl Visitor for WriteCollector {
     }
 }
 
-/// Finds a `for each` over a top-level name whose body could change that name from somewhere else: through a
+/// Finds a `for_each` over a top-level name whose body could change that name from somewhere else: through a
 /// procedure it calls, or through another task while it's paused (D51). Both are refused (D69).
 struct LoopChecker<'p> {
     facts: &'p Facts<'p>,
@@ -445,16 +445,16 @@ impl Visitor for LoopChecker<'_> {
             Some((place, Some(procedure))) => {
                 let called = self.facts.program.procedure(procedure).map_or("this", |procedure| procedure.name.as_str());
                 self.messages.push(
-                    Message::refused(place, format!("`{called}` can change `{name}`, which this `for each` is going through"))
-                        .with_because(format!("line {} opens the `for each`", statement.place.line), statement.place)
+                    Message::refused(place, format!("`{called}` can change `{name}`, which this `for_each` is going through"))
+                        .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                         .with_why(format!(
-                            "what a `for each` goes through can't change inside it; copying `{name}` into a name of its own first lets the loop go through the copy."
+                            "what a `for_each` goes through can't change inside it; copying `{name}` into a name of its own first lets the loop go through the copy."
                         )),
                 );
             }
             Some((place, None)) => self.messages.push(
-                Message::refused(place, format!("this can pause, while a `for each` is going through the top-level name `{name}`"))
-                    .with_because(format!("line {} opens the `for each`", statement.place.line), statement.place)
+                Message::refused(place, format!("this can pause, while a `for_each` is going through the top-level name `{name}`"))
+                    .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                     .with_why(format!(
                         "another task could change `{name}` during the pause; copying it into a name of its own first lets the loop go through the copy."
                     )),
@@ -573,7 +573,7 @@ impl Checker<'_> {
                 Type::Dict { value, .. } => {
                     self.program.types.unify(*item, value);
                 }
-                // trace: D66. `for each` goes through a text by graphemes.
+                // trace: D66. `for_each` goes through a text by graphemes.
                 Type::Text => {
                     self.program.types.unify(*item, TEXT);
                 }
@@ -748,7 +748,7 @@ impl Checker<'_> {
                     self.refuse_why(
                         procedure_place,
                         format!("what `{name}` gives back can't be worked out from its body"),
-                        "a procedure's result comes from its `return`s; where they can't say, it's written with `-> Type`.",
+                        "a procedure's result comes from its `ret`s; where they can't say, it's written with `-> Type`.",
                     );
                 }
                 self.program.types.settle_as_error(result);

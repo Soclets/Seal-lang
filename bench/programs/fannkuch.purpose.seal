@@ -1,10 +1,10 @@
 // Purpose: shuffling a list in place. A list of 16 whole numbers is reversed `rounds` times, item by item.
 proc run[rounds: Whole] -> Whole
     mut items: List<Whole> = []
-    for each i in range[from: 0, before: 16]
+    for_each i in range[from: 0, before: 16]
         items.add(i)
     end
-    for each unused round in range[from: 1, to: rounds]
+    for_each unused round in range[from: 1, to: rounds]
         mut low = 0
         mut high = 15
         while low < high
@@ -15,5 +15,5 @@ proc run[rounds: Whole] -> Whole
             high = high - 1
         end
     end
-    return items[offset: 0] * 100 + items[offset: 15]
+    ret items[offset: 0] * 100 + items[offset: 15]
 end

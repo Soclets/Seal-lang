@@ -6,17 +6,17 @@ end
 
 proc build[depth: Whole] -> Tree
     if depth == 0
-        return Tree.leaf
+        ret Tree.leaf
     else
-        return Tree.node[left: build(depth - 1), right: build(depth - 1)]
+        ret Tree.node[left: build(depth - 1), right: build(depth - 1)]
     end
 end
 
 proc run[rounds: Whole] -> Whole
     mut made = 0
-    for each unused round in range[from: 1, to: rounds]
+    for_each unused round in range[from: 1, to: rounds]
         unused tree = build(10)
         made = made + 1
     end
-    return made
+    ret made
 end

@@ -457,7 +457,7 @@ fn rare_instruction(
     Ok(None)
 }
 
-/// A `range[…]` kept as a list (D99), checked as a `for each` checks one (Unio D172), with its memory counted before
+/// A `range[…]` kept as a list (D99), checked as a `for_each` checks one (Unio D172), with its memory counted before
 /// it's built, so a range of billions stops at the cap instead of being built. Kept out of [`run`]'s loop.
 #[inline(never)]
 fn make_range([from, end, step]: [i64; 3], inclusive: bool, heap: &mut Heap) -> Result<u64, Stop> {
@@ -1874,7 +1874,7 @@ pub fn run(
                     return Err(check_failed(
                         "this splits a text by an empty text",
                         "the text to split at is `\"\"`".to_owned(),
-                        "an empty text is never found between two pieces; `for each` goes through a text's characters.",
+                        "an empty text is never found between two pieces; `for_each` goes through a text's characters.",
                         pc,
                     ));
                 }

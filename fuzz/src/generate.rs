@@ -105,7 +105,7 @@ struct Name {
     kind: Kind,
     mutable: bool,
     read: bool,
-    /// Being gone through by a `for each`, or matched on: it can't change for now.
+    /// Being gone through by a `for_each`, or matched on: it can't change for now.
     frozen: bool,
 }
 
@@ -125,7 +125,7 @@ pub enum Dialect {
     /// Everything Seal has.
     Seal,
     /// What Unio's oracle, Ralph, has built so far of what Seal shares with Unio: numbers, text, `if`, `while`,
-    /// procedures, maths and converting. Lists and `for each` are shared too, but Ralph doesn't run them yet.
+    /// procedures, maths and converting. Lists and `for_each` are shared too, but Ralph doesn't run them yet.
     Ralph,
 }
 
@@ -911,9 +911,9 @@ impl Generator {
             1 => format!("range[from: 1, to: {spots}.len]"),
             _ => format!("range[from: {outer}, to: {spots}.len]"),
         };
-        self.line(&format!("for each {outer} in range[from: 1, to: {spots}.len]"));
+        self.line(&format!("for_each {outer} in range[from: 1, to: {spots}.len]"));
         self.depth += 1;
-        self.line(&format!("for each {inner} in {range}"));
+        self.line(&format!("for_each {inner} in {range}"));
         self.depth += 1;
         let place = |generator: &mut Generator| match generator.random.below(8) {
             0..=2 => format!("pos: {outer}"),
@@ -971,7 +971,7 @@ impl Generator {
         self.depth -= 1;
         self.end("for");
         let spot = self.fresh();
-        self.line(&format!("for each {spot} in {spots}"));
+        self.line(&format!("for_each {spot} in {spots}"));
         self.depth += 1;
         self.line(&format!("show_msg(\"{{{spot}.x}} {{{spot}.y}}\")"));
         self.depth -= 1;
@@ -1212,10 +1212,10 @@ impl Generator {
                 };
                 // One loop in six never reads its counter, and says so (D61).
                 if self.random.chance(1, 6) {
-                    self.line(&format!("for each unused {item} in {range}"));
+                    self.line(&format!("for_each unused {item} in {range}"));
                     self.loop_body(&[]);
                 } else {
-                    self.line(&format!("for each {item} in {range}"));
+                    self.line(&format!("for_each {item} in {range}"));
                     self.loop_body(&[(item, Kind::Whole)]);
                 }
             }
@@ -1226,10 +1226,10 @@ impl Generator {
                     self.freeze(&text, true);
                     if self.random.chance(1, 2) {
                         let position = self.fresh();
-                        self.line(&format!("for each {item} at pos {position} in {text}"));
+                        self.line(&format!("for_each {item} at pos {position} in {text}"));
                         self.loop_body(&[(item, Kind::Text), (position, Kind::Whole)]);
                     } else {
-                        self.line(&format!("for each {item} in {text}"));
+                        self.line(&format!("for_each {item} in {text}"));
                         self.loop_body(&[(item, Kind::Text)]);
                     }
                     self.freeze(&text, false);
@@ -1245,10 +1245,10 @@ impl Generator {
                     if self.random.chance(1, 2) {
                         let position = self.fresh();
                         let label = if self.random.chance(1, 2) { "pos" } else { "offset" };
-                        self.line(&format!("for each {item} at {label} {position} in {list}"));
+                        self.line(&format!("for_each {item} at {label} {position} in {list}"));
                         self.loop_body(&[(item, item_kind), (position, Kind::Whole)]);
                     } else {
-                        self.line(&format!("for each {item} in {list}"));
+                        self.line(&format!("for_each {item} in {list}"));
                         self.loop_body(&[(item, item_kind)]);
                     }
                     self.freeze(&list, false);
@@ -1290,7 +1290,7 @@ impl Generator {
                     let value = self.fresh();
                     let key = self.fresh();
                     self.freeze(&dict, true);
-                    self.line(&format!("for each {value} at key {key} in {dict}"));
+                    self.line(&format!("for_each {value} at key {key} in {dict}"));
                     self.loop_body(&[(value, Kind::Whole), (key, Kind::Text)]);
                     self.freeze(&dict, false);
                 }
@@ -1343,7 +1343,7 @@ impl Generator {
                         } else {
                             self.line(&format!("{call} otherwise"));
                             self.depth += 1;
-                            self.line("include low_failed::note");
+                            self.line("incl low_failed::note");
                             self.depth -= 1;
                             self.end("otherwise");
                         }
@@ -1409,7 +1409,7 @@ impl Generator {
         self.end("for");
     }
 
-    #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `return`, written in order
+    #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `ret`, written in order
     fn procedure(&mut self) {
         let name = format!(
             "{}_{}",
@@ -1533,11 +1533,11 @@ impl Generator {
         }
         let returned = result.map(|kind| self.value(kind, 2));
         self.depth -= 1;
-        // Names the body made are shown before the `return`, inside the body.
+        // Names the body made are shown before the `ret`, inside the body.
         self.depth += 1;
         self.close_scope();
         if let Some(returned) = returned {
-            self.line(&format!("return {returned}"));
+            self.line(&format!("ret {returned}"));
         }
         if fails {
             self.depth -= 1;
@@ -1563,7 +1563,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            ret 1\n        case node[left, right]\n            ret 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
         }
         // trace: D123. Now and then a unit group of the script's own.
         if self.seal() && self.random.chance(1, 3) {
@@ -1585,7 +1585,7 @@ impl Generator {
         if self.seal() && !failing.is_empty() {
             let _ = write!(
                 self.out,
-                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            instead 0\n    end\n    ::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
+                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            use 0\n    end\n    ::with[value: Whole]\n        case too_low\n            use value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
                 failing.join(", ")
             );
             self.handlers = true;
@@ -1600,7 +1600,7 @@ impl Generator {
 }
 
 /// The words and symbols of Seal, for scripts made of nothing but them.
-pub const VOCABULARY: [&str; 80] = [
+pub const VOCABULARY: [&str; 79] = [
     "mut",
     "unused",
     "if",
@@ -1609,19 +1609,18 @@ pub const VOCABULARY: [&str; 80] = [
     "end",
     "while",
     "break",
-    "for",
-    "each",
+    "for_each",
     "in",
     "at",
     "proc",
-    "return",
+    "ret",
     "fail",
     "record",
     "one_of",
     "match",
     "case",
     "otherwise",
-    "instead",
+    "use",
     "ignore",
     "crash",
     "labels",

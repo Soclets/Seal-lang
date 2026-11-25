@@ -6,5 +6,5 @@ proc run[n: Whole] -> Whole
         product = product * i
         i = i + 1
     end
-    return be.Text(product).len
+    ret be.Text(product).len
 end

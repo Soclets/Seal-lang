@@ -10,5 +10,5 @@ proc run[n: Whole] -> Whole
         i = i + 1
     end
     share = (total + tax) / 3.0
-    return be.Whole.floor(share)
+    ret be.Whole.floor(share)
 end

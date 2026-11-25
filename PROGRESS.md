@@ -8,14 +8,15 @@ formatting, lints with warnings as errors, builds, runs the packages' own tests,
 with Ralph, runs every test in `tests/` as `tests/README.md` describes, and writes `test-status.json`.
 
 **The benchmarks:** `sh bench/run.sh` builds Seal's benchmark host in each way D58's kinds need, runs every benchmark
-on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
+on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.md`.
 
 ## The finish line (from the prompt), and where each point stands
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D135 are built, except the language server's parts and what's listed under "Not built
-   yet" below. All 21 tests in `tests/` pass.
+2. **Decisions built.** D1 to D146 are built, except the language server's parts, D136's C API and D141's bytecode
+   files, which both come after the current work, and what's listed under "Not built yet" below. All 22 tests in
+   `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -195,6 +196,15 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D135** A `mut` name that's never changed is refused, with the line without `mut` as the fix (a draft wording, as
   D135 says its wording comes later): any change counts, `=`, a method, or deep inside. A name never read gets only
   "never used".
+- **D140** The loading rework: names and texts borrowed from the script, one token list, kept lists and tables, and a
+  value with no operator after it read without going down the operators' levels. Loading a patrolling script from a
+  text of its own went from 12.3 µs to 4.84 µs, faster than Luau's 4.91 µs.
+- **D142** LuaJIT's interpreter, `luajit -joff`, is measured as goal 1's second bar, and LuaJIT's JIT for reference.
+  It runs the Luau programs as they are. Not met yet: `fib(32)` and loading each patrolling script from its own text.
+- **D143** Already built so: the new test passed as it came.
+- **D144, D145, D146** `instead` is written `use`, `return` `ret`, `include` `incl`, and `for each` `for_each`, one
+  keyword; `for` and `each` alone aren't keywords any more. The Unio translator writes Unio's words. A `for_each`
+  block's `end` note stays `\\ for`, as D102 has it (a question for the design session).
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
   entry itself, in two 64-bit halves, so working with one allocates nothing beyond the entry; the money benchmark
   went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/seal/src/decimal.rs` holds
@@ -394,7 +404,7 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 Refusals, failed checks and stops whose wording no decision gives, drafted in Unio's layout (Unio D54): `what:` says
 what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole line, `fix:` stands in place of `what:`
-(Unio D101), as for indentation, spacing, a `return`'s header or a `mut` that goes; those are marked.
+(Unio D101), as for indentation, spacing, a `ret`'s header or a `mut` that goes; those are marked.
 
 373 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-25, replacing the list of 2026-11-23: `fmt`'s and `&`'s
 are gone with them (D75, D77), and so are the named closers' (D102). The 156 marked **(new)** weren't in the
@@ -468,7 +478,7 @@ built since. `{…}` stands for what the message fills in.
 - refused: `{name}` splits a text, but this is {found}
 - refused: `{name}` takes `by:` and the text to split at
 - refused: this splits a text by an empty text **(new)**
-  - why: an empty text is never found between two pieces; `for each` goes through a text's characters, as `for each letter in name`.
+  - why: an empty text is never found between two pieces; `for_each` goes through a text's characters, as `for_each letter in name`.
 - refused: {found} has no method `{}`
 - refused: `.add` takes the item, then `pos:` or `offset:` when it goes at a place
 - refused: `.add` takes the item to add
@@ -580,10 +590,10 @@ built since. `{…}` stands for what the message fills in.
   - why: an `otherwise` handles each failure once, with its own `case` or an included handler's.
 - refused: the failure `{}` is handled twice
   - why: an `otherwise` has one `case` for each failure.
-- refused: this call gives nothing, so there's no value to give `instead`
+- refused: this call gives nothing, so there's no value to give `use`
   - why: after a call that gives nothing, a case may just end.
 - refused: the case `{}` can reach its end without giving a value
-  - why: each case ends with `instead` and a value, `return`, `break` or `fail`.
+  - why: each case ends with `use` and a value, `ret`, `break` or `fail`.
 - refused: this slide is a chain of {calls}, and one or two calls are written as calls
   - why: a chain of three or more calls is a slide; a shorter one is written with `( )`, as in `show_msg(be.Text(n))`.
 
@@ -595,8 +605,8 @@ built since. `{…}` stands for what the message fills in.
   - why: the cases cover every failure the call can give.
 - refused: this `otherwise` has a `case` for {}, which the call can't fail with
   - why: the call can fail with {}.
-- refused: `{called}` can change `{name}`, which this `for each` is going through
-- refused: this can pause, while a `for each` is going through the top-level name `{name}`
+- refused: `{called}` can change `{name}`, which this `for_each` is going through
+- refused: this can pause, while a `for_each` is going through the top-level name `{name}`
 - refused: {purpose}, but this is {found}
 - refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most` **(new)**
   - why: text has no one right order: by character codes `"Zebra"` comes before `"apple"`, and alphabetical order differs between languages.
@@ -605,7 +615,7 @@ built since. `{…}` stands for what the message fills in.
 - refused: a `Dict`'s value is reached with `key:`
 - refused: this is {found}, but {} is {wanted}
 - refused: what `{name}` gives back can't be worked out from its body
-  - why: a procedure's result comes from its `return`s; where they can't say, it's written with `-> Type`.
+  - why: a procedure's result comes from its `ret`s; where they can't say, it's written with `-> Type`.
 - refused: this value's type can't be worked out
 - refused: `{name}`'s type can't be worked out
 - refused: `{}` can fail with {}, but its header doesn't say so (shown with a `fix:` line) **(new)**
@@ -716,17 +726,17 @@ built since. `{…}` stands for what the message fills in.
 - refused: `{name}` is never used
   - why: a parameter that's never read on purpose is marked, as `unused {name}`.
 - refused: `{name}` is never used
-  - why: a `for each` name that's never read on purpose is marked, as `for each unused {name}`.
+  - why: a `for_each` name that's never read on purpose is marked, as `for_each unused {name}`.
 - refused: `{name}` is never used
   - why: an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out.
 - refused: `{name}` is never used
   - why: a `case` takes out only the values it reads.
-- refused: `{}` gives a value, but it can reach its `end` without a `return`
-  - why: when any `return` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.
-- refused: this `return` is the procedure's last line, where the procedure ends anyway
-  - why: a bare `return` leaves a procedure early.
-- refused: `{}` says it gives {wanted}, but it has no `return` with a value
-  - why: a procedure's result comes from its `return`s.
+- refused: `{}` gives a value, but it can reach its `end` without a `ret`
+  - why: when any `ret` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.
+- refused: this `ret` is the procedure's last line, where the procedure ends anyway
+  - why: a bare `ret` leaves a procedure early.
+- refused: `{}` says it gives {wanted}, but it has no `ret` with a value
+  - why: a procedure's result comes from its `ret`s.
 - refused: this line can never run
 - refused: this line follows an `if` that can leave
 - refused: this line follows a `match` that can leave **(new)**
@@ -737,8 +747,8 @@ built since. `{…}` stands for what the message fills in.
 - refused: this `break` isn't inside a loop
   - why: `break` leaves the innermost loop it's in.
 - refused: `fail` hands a failure to a caller, and the top level has none
-- refused: this `instead` isn't inside an `otherwise` case
-  - why: `instead` gives the value an `otherwise` case carries on with.
+- refused: this `use` isn't inside an `otherwise` case
+  - why: `use` gives the value an `otherwise` case carries on with.
 - refused: this is {found}, but {role} is {wanted_text}
 - refused: `{word}` checks a `Bool`, but this is {found}
   - why: a number or text doesn't stand for true or false; compare it{hint}.
@@ -750,8 +760,8 @@ built since. `{…}` stands for what the message fills in.
   - why: a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.
 - refused: this gives nothing, so there's no value for the name
   - why: a procedure that gives nothing back can't be used as a value.
-- refused: `{name}` is being gone through by a `for each`, so it can't change here
-  - why: what a `for each` goes through can't change inside it.
+- refused: `{name}` is being gone through by a `for_each`, so it can't change here
+  - why: what a `for_each` goes through can't change inside it.
 - refused: `{name}` can't be given a new value
 - refused: {name} is {found}, which has no fields to change
 - refused: {found} has no field `{}`
@@ -766,13 +776,13 @@ built since. `{…}` stands for what the message fills in.
 - refused: a change can't go through a `Dict`'s key on its way, since the key might be missing **(new)**
   - why: a lookup is dealt with on its own line: the value is taken out, as `mut north = shops[key: "north"] ?? crash`, changed, and put back, as `shops[key: "north"] = north`.
 - refused: this is {found}, which has no items
-- refused: `return` hands a value to a caller, and the top level has none
-- refused: this `return` gives back {}, but the procedure's header has no `-> Type` **(new)**
-- refused: this `return` gives a value, but an earlier one gives none
+- refused: `ret` hands a value to a caller, and the top level has none
+- refused: this `ret` gives back {}, but the procedure's header has no `-> Type` **(new)**
+- refused: this `ret` gives a value, but an earlier one gives none
 - refused: this gives nothing, so there's nothing to return
   - why: a procedure that gives nothing back can't be used as a value.
-- refused: this `return` gives {found}, but the procedure gives {wanted}
-- refused: this `return` gives no value, but the procedure gives one
+- refused: this `ret` gives {found}, but the procedure gives {wanted}
+- refused: this `ret` gives no value, but the procedure gives one
 - refused: `at key` is for going through a `Dict`
 - refused: `at {word}` is for going through a list; a `Dict` is gone through `at key` (shown with a `fix:` line) **(new)**
 - refused: `at key` is for going through a `Dict`, but this is {found}
@@ -1033,7 +1043,7 @@ built since. `{…}` stands for what the message fills in.
 - check failed: a negative number has no square root
   - why: the square root of a negative number isn't a real number.
 - check failed: this splits a text by an empty text **(new)**
-  - why: an empty text is never found between two pieces; `for each` goes through a text's characters.
+  - why: an empty text is never found between two pieces; `for_each` goes through a text's characters.
 - check failed: this range's step is 0
   - why: a range with a step of 0 never reaches its end.
 - check failed: this range's step points away from its end

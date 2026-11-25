@@ -121,7 +121,7 @@ impl SpareLists {
         match statement.kind {
             StatementKind::Name { value, .. }
             | StatementKind::Expression(value)
-            | StatementKind::Instead(value)
+            | StatementKind::Use(value)
             | StatementKind::Return(Some(value)) => self.expression(value),
             StatementKind::Change { place, value } => {
                 self.expression(place);

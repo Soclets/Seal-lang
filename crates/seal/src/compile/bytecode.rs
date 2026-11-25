@@ -314,7 +314,7 @@ pub enum Instruction {
         text: Register,
         index: Register,
     },
-    /// A text's graphemes as a new list of texts, for `for each` to go through (D66).
+    /// A text's graphemes as a new list of texts, for `for_each` to go through (D66).
     Graphemes {
         to: Register,
         from: Register,
@@ -664,7 +664,7 @@ pub enum Instruction {
         to: Register,
         from: Register,
     },
-    /// One pass of `for each` over a list: with the list in `base` and how many items are done in `base + 1`,
+    /// One pass of `for_each` over a list: with the list in `base` and how many items are done in `base + 1`,
     /// puts the next item in `to` and jumps back by `offset`, or carries on when none is left.
     NextItem {
         to: Register,
@@ -766,7 +766,7 @@ pub enum Instruction {
         found: Register,
         key: Register,
     },
-    /// One pass of `for each` over a dictionary: with the dictionary in `base` and the place reached in
+    /// One pass of `for_each` over a dictionary: with the dictionary in `base` and the place reached in
     /// `base + 1`, puts the next value in `to` and its key in `to + 1`, and jumps back by `offset`.
     NextEntry {
         to: Register,

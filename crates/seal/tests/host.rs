@@ -264,7 +264,7 @@ fn d17_a_failed_check_stops_the_script_at_its_exact_line() -> Result<(), Box<dyn
     let Err(Error::Stopped(message)) = script.call::<i64>("overflow", (2,)) else { panic!("the sum should overflow") };
     assert_eq!(
         message.text(),
-        "check failed: goblin.seal:57:12, line 57 column 12\n 57 |     return n * 9223372036854775807\n    |            ^^^^^^^^^^^^^^^^^^^^^^^\n \
+        "check failed: goblin.seal:57:9, line 57 column 9\n 57 |     ret n * 9223372036854775807\n    |         ^^^^^^^^^^^^^^^^^^^^^^^\n \
          what:    the result is too big for a `Whole`\n when:    `2 * 9223372036854775807`\n \
          why:     a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.\n"
     );
@@ -333,9 +333,9 @@ end
 proc settle[count: Whole] -> Float
     mut balls = [Ball[x: 0.0, v: 1.5, hits: 0], Ball[x: 4.0, v: -0.5, hits: 0], Ball[x: 9.0, v: 0.25, hits: 0]]
     kept = balls
-    for each unused round in range[from: 1, to: count]
-        for each i in range[from: 1, to: balls.len]
-            for each j in range[from: i + 1, before: balls.len + 1]
+    for_each unused round in range[from: 1, to: count]
+        for_each i in range[from: 1, to: balls.len]
+            for_each j in range[from: i + 1, before: balls.len + 1]
                 gap = balls[pos: j].x - balls[pos: i].x
                 balls[pos: i].v = balls[pos: i].v + gap * 0.125 - balls[pos: j].v * 0.5
                 balls[pos: j].v = balls[pos: j].v - gap * 0.125 * balls[pos: i].v
@@ -346,10 +346,10 @@ proc settle[count: Whole] -> Float
         end
     end
     mut total = kept[pos: 1].v
-    for each ball in balls
+    for_each ball in balls
         total = total + ball.x * 0.5 + ball.v + be.Float(ball.hits)
     end
-    return total
+    ret total
 end
 ";
     let doors = Doors::new();

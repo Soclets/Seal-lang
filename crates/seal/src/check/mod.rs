@@ -41,14 +41,14 @@ enum ProcedureState {
 /// How a statement can leave the block it's in (D68).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Leaving {
-    /// It always leaves: a `return`, a `break`, a `fail`, or an `if` or `match` whose every way does.
+    /// It always leaves: a `ret`, a `break`, a `fail`, or an `if` or `match` whose every way does.
     Always,
     /// Some way through an `if` leaves (Unio D9).
     SomeWayOfIf,
     /// Some case of a `match` leaves (D86).
     SomeWayOfMatch,
-    /// An `instead`, which ends its case (D80).
-    Instead,
+    /// An `use`, which ends its case (D80).
+    Use,
 }
 
 /// Why a spelling can't be taken twice (D71).
@@ -71,7 +71,7 @@ enum Requirement {
     Member { name: String, result: TypeId },
     /// Reached with `pos:` or `offset:`, giving `item` (Unio D75).
     Indexable { item: TypeId },
-    /// Gone through by `for each`, giving `item` (D33, Unio D171).
+    /// Gone through by `for_each`, giving `item` (D33, Unio D171).
     Iterable { item: TypeId },
 }
 
@@ -100,12 +100,12 @@ struct Context<'a> {
     /// Emptied scope tables, for the next scope to use (D140).
     spare_scopes: Vec<HashMap<&'a str, VariableId>>,
     loop_depth: u32,
-    /// The names being gone through by a `for each`, which can't change inside it (Unio D173).
+    /// The names being gone through by a `for_each`, which can't change inside it (Unio D173).
     iterating: Vec<VariableId>,
-    /// Whether a `return` with a value, or one without, has been seen.
+    /// Whether a `ret` with a value, or one without, has been seen.
     returned_value: Option<bool>,
-    /// The type an `instead` must give, innermost `otherwise` last.
-    instead_types: Vec<TypeId>,
+    /// The type an `use` must give, innermost `otherwise` last.
+    use_types: Vec<TypeId>,
 }
 
 impl<'a> Context<'a> {
@@ -116,7 +116,7 @@ impl<'a> Context<'a> {
         self.loop_depth = 0;
         self.iterating.clear();
         self.returned_value = None;
-        self.instead_types.clear();
+        self.use_types.clear();
         self
     }
 
@@ -736,7 +736,7 @@ impl<'a> Checker<'a> {
     }
 
     /// trace: D107, D128. A value landing where a ranged number's type is written: in a name, a field, an item, a
-    /// parameter or a `return`. One Seal can see past a hard edge is refused; any other is checked, or pulled back
+    /// parameter or a `ret`. One Seal can see past a hard edge is refused; any other is checked, or pulled back
     /// with `.clamp`, as it lands.
     pub(super) fn land(&mut self, value: Expression, target: TypeId) -> Expression {
         let Some(limits) = self.program.types.limits(target) else { return value };
@@ -1465,7 +1465,7 @@ impl<'a> Checker<'a> {
             self.refuse_existing(name, existing);
         } else if self.context.procedure.is_some() && self.globals.contains_key(name.text) {
             // trace: D71
-            let what = if kind == VariableKind::CaseValue { "a `case`'s value" } else { "a `for each` name" };
+            let what = if kind == VariableKind::CaseValue { "a `case`'s value" } else { "a `for_each` name" };
             self.refuse_top_level_spelling(name, what);
         }
         self.check_new_name(name);
@@ -1537,7 +1537,7 @@ impl<'a> Checker<'a> {
                 VariableKind::LoopItem => self.refuse_why(
                     place,
                     format!("`{name}` is never used"),
-                    &format!("a `for each` name that's never read on purpose is marked, as `for each unused {name}`."),
+                    &format!("a `for_each` name that's never read on purpose is marked, as `for_each unused {name}`."),
                 ),
                 VariableKind::LoopPosition => self.refuse_why(
                     place,
@@ -1594,24 +1594,24 @@ impl<'a> Checker<'a> {
                 // trace: D68, Unio D57, D149
                 self.refuse_why(
                     procedure.end_place,
-                    format!("`{}` gives a value, but it can reach its `end` without a `return`", procedure.name()),
-                    "when any `return` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.",
+                    format!("`{}` gives a value, but it can reach its `end` without a `ret`", procedure.name()),
+                    "when any `ret` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.",
                 );
             }
         } else if let Some(last) = body.last().filter(|last| matches!(last.kind, StatementKind::Return(None))) {
             // trace: D68, Unio D57
             self.refuse_why(
                 last.place,
-                "this `return` is the procedure's last line, where the procedure ends anyway",
-                "a bare `return` leaves a procedure early.",
+                "this `ret` is the procedure's last line, where the procedure ends anyway",
+                "a bare `ret` leaves a procedure early.",
             );
         } else if !self.program.types.unify(result, NOTHING) {
             // trace: D6
             let wanted = self.describe(result);
             self.refuse_why(
                 procedure.result.as_ref().map_or(procedure.place, |written| written.place),
-                format!("`{}` says it gives {wanted}, but it has no `return` with a value", procedure.name()),
-                "a procedure's result comes from its `return`s.",
+                format!("`{}` says it gives {wanted}, but it has no `ret` with a value", procedure.name()),
+                "a procedure's result comes from its `ret`s.",
             );
         }
         if let Some(slot) = self.program.procedures.get_mut(index) {
@@ -1661,13 +1661,13 @@ impl<'a> Checker<'a> {
             Leaving::Always => self.messages.push(
                 Message::refused(place, "this line can never run")
                     .with_because(format!("line {} always leaves this block", before.line), before)
-                    .with_why("nothing follows `return`, `break` or `fail` in the same block."),
+                    .with_why("nothing follows `ret`, `break` or `fail` in the same block."),
             ),
             Leaving::SomeWayOfIf => self.messages.push(
                 Message::refused(place, "this line follows an `if` that can leave")
                     .with_because(format!("line {} opens that `if`", before.line), before)
                     .with_why(
-                        "when any way through an `if` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the ways that don't leave.",
+                        "when any way through an `if` leaves, by `ret`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the ways that don't leave.",
                     ),
             ),
             // trace: D86. D68's rule covers `match`.
@@ -1675,14 +1675,14 @@ impl<'a> Checker<'a> {
                 Message::refused(place, "this line follows a `match` that can leave")
                     .with_because(format!("line {} opens that `match`", before.line), before)
                     .with_why(
-                        "when any case of a `match` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the cases that don't leave.",
+                        "when any case of a `match` leaves, by `ret`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the cases that don't leave.",
                     ),
             ),
             // trace: D80, Unio D57
-            Leaving::Instead => self.messages.push(
+            Leaving::Use => self.messages.push(
                 Message::refused(place, "this line can never run")
-                    .with_because(format!("line {} gives the case its value with `instead`", before.line), before)
-                    .with_why("`instead` ends its case: the call has its value and the script carries on after the `otherwise`, so anything else the case does goes before it."),
+                    .with_because(format!("line {} gives the case its value with `use`", before.line), before)
+                    .with_why("`use` ends its case: the call has its value and the script carries on after the `otherwise`, so anything else the case does goes before it."),
             ),
         }
     }
@@ -1690,8 +1690,8 @@ impl<'a> Checker<'a> {
     /// How a statement can leave the block it's in, when it can: always, or by some way through an `if` or a
     /// `match`.
     fn leaving(statement: &Statement) -> Option<Leaving> {
-        if matches!(statement.kind, StatementKind::Instead(_)) {
-            return Some(Leaving::Instead);
+        if matches!(statement.kind, StatementKind::Use(_)) {
+            return Some(Leaving::Use);
         }
         if Self::leaves(statement) {
             return Some(Leaving::Always);
@@ -1707,7 +1707,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Whether some way through a block leaves it by `return` or `fail`, or by a `break` out of a loop around it.
+    /// Whether some way through a block leaves it by `ret` or `fail`, or by a `break` out of a loop around it.
     /// `loops` counts the loops entered inside the block: a `break` in one of those only leaves that loop.
     fn can_leave(block: &[Statement], loops: u32) -> bool {
         block.iter().any(|statement| match &statement.kind {
@@ -1725,7 +1725,7 @@ impl<'a> Checker<'a> {
         })
     }
 
-    /// Whether a statement always leaves its block, by `return`, `break` or `fail`.
+    /// Whether a statement always leaves its block, by `ret`, `break` or `fail`.
     fn leaves(statement: &Statement) -> bool {
         match &statement.kind {
             StatementKind::Return(_) | StatementKind::Break | StatementKind::Fail(_) => true,
@@ -1827,19 +1827,19 @@ impl<'a> Checker<'a> {
                 }
                 StatementKind::Fail(self.failure(name.text))
             }
-            syntax::StatementKind::Instead(value) => {
-                let Some(&wanted) = self.context.instead_types.last() else {
+            syntax::StatementKind::Use(value) => {
+                let Some(&wanted) = self.context.use_types.last() else {
                     // trace: Unio D40
                     self.refuse_why(
                         place,
-                        "this `instead` isn't inside an `otherwise` case",
-                        "`instead` gives the value an `otherwise` case carries on with.",
+                        "this `use` isn't inside an `otherwise` case",
+                        "`use` gives the value an `otherwise` case carries on with.",
                     );
                     return None;
                 };
                 let checked = self.expression(value, Some(wanted));
                 self.expect(&checked, wanted, "the call it stands in for");
-                StatementKind::Instead(checked)
+                StatementKind::Use(checked)
             }
         };
         Some(Statement { kind, place })
@@ -2054,8 +2054,8 @@ impl<'a> Checker<'a> {
             // trace: Unio D173
             self.refuse_why(
                 place,
-                format!("`{name}` is being gone through by a `for each`, so it can't change here"),
-                "what a `for each` goes through can't change inside it.",
+                format!("`{name}` is being gone through by a `for_each`, so it can't change here"),
+                "what a `for_each` goes through can't change inside it.",
             );
             return false;
         }
@@ -2074,7 +2074,7 @@ impl<'a> Checker<'a> {
             }
             VariableKind::LoopItem | VariableKind::LoopPosition => (
                 format!("line {} makes it for each pass of the loop", made_place.line),
-                "a `for each`'s names are read-only.",
+                "a `for_each`'s names are read-only.",
             ),
             VariableKind::CaseValue => {
                 (format!("line {} takes it out of a case", made_place.line), "a case's values are read-only.")
@@ -2449,11 +2449,11 @@ impl<'a> Checker<'a> {
     fn return_statement(&mut self, value: Option<&syntax::Expression<'a>>, place: Place) -> Option<StatementKind> {
         let Some(procedure) = self.context.procedure else {
             // trace: D67
-            self.refuse_why(place, "`return` hands a value to a caller, and the top level has none", TOP_LEVEL);
+            self.refuse_why(place, "`ret` hands a value to a caller, and the top level has none", TOP_LEVEL);
             return None;
         };
         let result = self.program.procedure(procedure).map_or(ERROR, |procedure| procedure.result);
-        let disagree = "every `return` in a procedure must agree.";
+        let disagree = "every `ret` in a procedure must agree.";
         let written = self.procedure_syntax.get(procedure.0 as usize).is_some_and(|syntax| syntax.result.is_some());
         if let Some(value) = value
             && !written
@@ -2466,7 +2466,7 @@ impl<'a> Checker<'a> {
             let mut message = Message::refused(
                 value.place,
                 format!(
-                    "this `return` gives back {}, but the procedure's header has no `-> Type`",
+                    "this `ret` gives back {}, but the procedure's header has no `-> Type`",
                     self.describe(checked.type_id)
                 ),
             )
@@ -2480,7 +2480,7 @@ impl<'a> Checker<'a> {
         }
         if let Some(value) = value {
             if self.context.returned_value == Some(false) {
-                self.refuse_why(value.place, "this `return` gives a value, but an earlier one gives none", disagree);
+                self.refuse_why(value.place, "this `ret` gives a value, but an earlier one gives none", disagree);
                 return None;
             }
             self.context.returned_value = Some(true);
@@ -2499,14 +2499,14 @@ impl<'a> Checker<'a> {
                 let wanted = self.describe(result);
                 self.refuse_why(
                     value.place,
-                    format!("this `return` gives {found}, but the procedure gives {wanted}"),
+                    format!("this `ret` gives {found}, but the procedure gives {wanted}"),
                     disagree,
                 );
             }
             Some(StatementKind::Return(Some(checked)))
         } else {
             if self.context.returned_value == Some(true) || !self.program.types.unify(result, NOTHING) {
-                self.refuse_why(place, "this `return` gives no value, but the procedure gives one", disagree);
+                self.refuse_why(place, "this `ret` gives no value, but the procedure gives one", disagree);
                 return None;
             }
             self.context.returned_value = Some(false);
@@ -2596,7 +2596,7 @@ impl<'a> Checker<'a> {
                 checked.type_id,
                 Requirement::Iterable { item: item_type },
                 source.place,
-                "`for each` goes through a list, an array, a dictionary or a `range[…]`",
+                "`for_each` goes through a list, an array, a dictionary or a `range[…]`",
             ),
         }
         let root = Self::root_variable(&checked);
@@ -2742,7 +2742,7 @@ impl<'a> Checker<'a> {
         };
         let known = !case_types.is_empty();
         // A `mut` name could be given a new value inside a case while that case's values are still in use, so the
-        // matched name can't change inside the `match`, as what a `for each` goes through can't.
+        // matched name can't change inside the `match`, as what a `for_each` goes through can't.
         let root = Self::root_variable(&checked);
         let mut arms: Vec<MatchArm> = Vec::new();
         for case in cases {
@@ -2911,7 +2911,7 @@ fn block_can_fail(block: &[syntax::Statement]) -> bool {
 fn statement_can_fail(statement: &syntax::Statement) -> bool {
     match &statement.kind {
         syntax::StatementKind::Fail(_) => true,
-        syntax::StatementKind::Name { value, .. } | syntax::StatementKind::Instead(value) => expression_can_fail(value),
+        syntax::StatementKind::Name { value, .. } | syntax::StatementKind::Use(value) => expression_can_fail(value),
         syntax::StatementKind::Change { place, value } => expression_can_fail(place) || expression_can_fail(value),
         syntax::StatementKind::Expression(expression) => expression_can_fail(expression),
         syntax::StatementKind::If { branches, otherwise } => {
@@ -3017,10 +3017,10 @@ pub(crate) mod tests {
         assert!(whats("proc tick[unused amount: Whole]\n    show_msg(\"x\")\nend\n").is_empty());
         assert!(whats("proc tick\n    show_msg(\"x\")\nend\ntick()\n").is_empty());
         assert_eq!(
-            whats("for each round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n"),
+            whats("for_each round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n"),
             vec!["refused: `round` is never used"]
         );
-        assert!(whats("for each unused round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n").is_empty());
+        assert!(whats("for_each unused round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n").is_empty());
         let event =
             "one_of Event\n    healed[amount: Whole, by: Text]\nend\nevent = Event.healed[amount: 1, by: \"Mia\"]\n";
         assert!(whats(&format!("{event}match event\n    case healed[by]\n        show_msg(by)\nend\n")).is_empty());
@@ -3044,49 +3044,49 @@ pub(crate) mod tests {
     // trace: D68, Unio D9, D57, D149
     #[test]
     fn d68_returns_and_ifs_that_leave() {
-        let guard = "proc pick[n: Whole] -> Whole\n    if n > 0\n        return 1\n    end\n    return 2\nend\n";
+        let guard = "proc pick[n: Whole] -> Whole\n    if n > 0\n        ret 1\n    end\n    ret 2\nend\n";
         assert_eq!(whats(guard), vec!["refused: this line follows an `if` that can leave"]);
-        let after = "proc pick[n: Whole] -> Whole\n    return n\n    show_msg(\"x\")\nend\n";
+        let after = "proc pick[n: Whole] -> Whole\n    ret n\n    show_msg(\"x\")\nend\n";
         assert_eq!(whats(after), vec!["refused: this line can never run"]);
-        let bare = "proc tick[n: Whole]\n    show_msg(be.Text(n))\n    return\nend\n";
+        let bare = "proc tick[n: Whole]\n    show_msg(be.Text(n))\n    ret\nend\n";
         assert_eq!(
             whats(bare),
-            vec!["refused: this `return` is the procedure's last line, where the procedure ends anyway"]
+            vec!["refused: this `ret` is the procedure's last line, where the procedure ends anyway"]
         );
-        let forever = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            return n\n        else\n            n = n + 1\n        end\n    end\nend\n";
+        let forever = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            ret n\n        else\n            n = n + 1\n        end\n    end\nend\n";
         assert_eq!(
             whats(forever),
-            vec!["refused: `first_big` gives a value, but it can reach its `end` without a `return`"]
+            vec!["refused: `first_big` gives a value, but it can reach its `end` without a `ret`"]
         );
-        let fine = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            return n\n        else\n            n = n + 1\n        end\n    end\n    return n\nend\n";
+        let fine = "proc first_big[start: Whole] -> Whole\n    mut n = start\n    while true\n        if n > 100\n            ret n\n        else\n            n = n + 1\n        end\n    end\n    ret n\nend\n";
         assert!(whats(fine).is_empty(), "{:?}", whats(fine));
     }
 
     // trace: D69
     #[test]
     fn d69_a_for_each_over_a_top_level_name() {
-        let changes = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    for each e in enemies\n        hurt(e)\n    end\nend\n";
+        let changes = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    for_each e in enemies\n        hurt(e)\n    end\nend\n";
         assert_eq!(
             whats(changes),
-            vec!["refused: `hurt` can change `enemies`, which this `for each` is going through"]
+            vec!["refused: `hurt` can change `enemies`, which this `for_each` is going through"]
         );
-        let copied = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    now = enemies\n    for each e in now\n        hurt(e)\n    end\nend\n";
+        let copied = "mut enemies = [1, 2]\nproc hurt[n: Whole]\n    enemies.add(n)\nend\nproc all\n    now = enemies\n    for_each e in now\n        hurt(e)\n    end\nend\n";
         assert!(whats(copied).is_empty(), "{:?}", whats(copied));
     }
 
     // trace: D70, D71
     #[test]
     fn d70_dropped_values_and_d71_no_shadowing() {
-        let call = "proc two -> Whole\n    return 2\nend\ntwo()\n";
+        let call = "proc two -> Whole\n    ret 2\nend\ntwo()\n";
         assert_eq!(whats(call), vec!["refused: this call gives `Whole`, but nothing uses it"]);
-        assert!(whats("proc two -> Whole\n    return 2\nend\nunused dropped = two()\n").is_empty());
+        assert!(whats("proc two -> Whole\n    ret 2\nend\nunused dropped = two()\n").is_empty());
         assert_eq!(whats("score = 1\nscore + 1\n"), vec!["refused: this line works out `Whole`, but nothing uses it"]);
-        let parameter = "results = [3]\nproc best[results: List<Whole>] -> Whole\n    return results.len\nend\nshow_msg(be.Text(results.len))\n";
+        let parameter = "results = [3]\nproc best[results: List<Whole>] -> Whole\n    ret results.len\nend\nshow_msg(be.Text(results.len))\n";
         assert_eq!(
             whats(parameter),
             vec!["refused: `results` is already a top-level name, so a parameter can't be named `results`"]
         );
-        let procedure = "proc roll -> Whole\n    return 4\nend\nroll = roll()\nshow_msg(be.Text(roll))\n";
+        let procedure = "proc roll -> Whole\n    ret 4\nend\nroll = roll()\nshow_msg(be.Text(roll))\n";
         assert_eq!(
             whats(procedure).first().map(String::as_str),
             Some("refused: `roll` is already a procedure, so nothing else can be named `roll`")
@@ -3182,18 +3182,16 @@ pub(crate) mod tests {
         );
         assert_eq!(whats("proc add[a, b]\n    show_msg(\"x\")\nend\n"), vec!["refused: the parameter `a` has no type"]);
         assert_eq!(
-            whats("proc double[n: Whole]\n    return n * 2\nend\n"),
-            vec!["refused: this `return` gives back `Whole`, but the procedure's header has no `-> Type`"]
+            whats("proc double[n: Whole]\n    ret n * 2\nend\n"),
+            vec!["refused: this `ret` gives back `Whole`, but the procedure's header has no `-> Type`"]
         );
-        assert!(
-            whats("proc add[a, b : Whole] -> Whole\n    return a + b\nend\nshow_msg(\"{add(1, 2)}\")\n").len() == 1
-        );
+        assert!(whats("proc add[a, b : Whole] -> Whole\n    ret a + b\nend\nshow_msg(\"{add(1, 2)}\")\n").len() == 1);
         assert_eq!(
-            whats("proc add[a, b: Whole] -> Whole\n    return a + b\nend\n"),
+            whats("proc add[a, b: Whole] -> Whole\n    ret a + b\nend\n"),
             vec!["refused: this `:` gives a group of parameters their type, so it has a space on each side"]
         );
         assert!(
-            whats("proc add[a, b : Whole] -> Whole\n    return a + b\nend\nsum = add(1, 2)\nshow_msg(\"{sum}\")\n")
+            whats("proc add[a, b : Whole] -> Whole\n    ret a + b\nend\nsum = add(1, 2)\nshow_msg(\"{sum}\")\n")
                 .is_empty()
         );
     }
@@ -3202,18 +3200,18 @@ pub(crate) mod tests {
     #[test]
     fn d06_every_return_must_agree() {
         let messages = whats(
-            "proc pick[n: Whole] -> Whole\n    if n > 0\n        return 1\n    else\n        return \"none\"\n    end\nend\n",
+            "proc pick[n: Whole] -> Whole\n    if n > 0\n        ret 1\n    else\n        ret \"none\"\n    end\nend\n",
         );
-        assert_eq!(messages, vec!["refused: this `return` gives `Text`, but the procedure gives `Whole`"]);
+        assert_eq!(messages, vec!["refused: this `ret` gives `Text`, but the procedure gives `Whole`"]);
     }
 
     // trace: D44, Unio D23
     #[test]
     fn d44_a_failure_must_be_dealt_with() {
-        let source = "proc risky[n: Whole] -> Whole ! [too_big]\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2)\nshow_msg(\"{x}\")\n";
+        let source = "proc risky[n: Whole] -> Whole ! [too_big]\n    if n > 1\n        fail too_big\n    else\n        ret n\n    end\nend\nx = risky(2)\nshow_msg(\"{x}\")\n";
         assert_eq!(whats(source), vec!["refused: this can fail with `too_big`, and nothing deals with the failure"]);
         // trace: D84. A procedure that can fail says so in its header.
-        let unwritten = "proc risky[n: Whole] -> Whole\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2) ?? 0\nshow_msg(\"{x}\")\n";
+        let unwritten = "proc risky[n: Whole] -> Whole\n    if n > 1\n        fail too_big\n    else\n        ret n\n    end\nend\nx = risky(2) ?? 0\nshow_msg(\"{x}\")\n";
         assert_eq!(whats(unwritten), vec!["refused: `risky` can fail with `too_big`, but its header doesn't say so"]);
     }
 }

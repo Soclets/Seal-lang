@@ -951,7 +951,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     entry.value.place,
                     "this splits a text by an empty text",
-                    "an empty text is never found between two pieces; `for each` goes through a text's characters, as `for each letter in name`.",
+                    "an empty text is never found between two pieces; `for_each` goes through a text's characters, as `for_each letter in name`.",
                 );
                 return Self::error(place);
             }

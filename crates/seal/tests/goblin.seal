@@ -7,7 +7,7 @@ proc on_hit[amount: Whole]
 end
 
 proc hp_left[unit: Text] -> Text
-    return "{hp}{unit}"
+    ret "{hp}{unit}"
 end
 
 proc heal[amount, times : Whole]
@@ -25,7 +25,7 @@ proc handle[event: Event] -> Whole
             hp = hp + amount
             show_msg("{by} healed {amount}")
     end
-    return hp
+    ret hp
 end
 
 proc patrol[guard: Whole]
@@ -54,20 +54,20 @@ proc hoard[item: Text]
 end
 
 proc overflow[n: Whole] -> Whole
-    return n * 9223372036854775807
+    ret n * 9223372036854775807
 end
 
 proc strongest[id: Whole] -> Text
     enemy = enemy_info(id)
-    return enemy.name
+    ret enemy.name
 end
 
 proc add_goblin[start_hp: Whole] -> Whole
-    return spawn(Enemy[name: "Goblin", hp: start_hp])
+    ret spawn(Enemy[name: "Goblin", hp: start_hp])
 end
 
 proc target[fallback: Whole] -> Whole
-    return nearest_enemy() ?? fallback
+    ret nearest_enemy() ?? fallback
 end
 
 proc save_game[slot: Whole] ! [no_slot]
@@ -84,5 +84,5 @@ proc on_tick
 end
 
 proc full_hp -> Whole
-    return 30
+    ret 30
 end

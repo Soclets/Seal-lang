@@ -12,9 +12,9 @@ end
 
 proc energy[bodies: List<Body>] -> Float
     mut total = 0.0
-    for each body at pos i in bodies
+    for_each body at pos i in bodies
         total = total + 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz)
-        for each other at pos j in bodies
+        for_each other at pos j in bodies
             if j > i
                 dx = body.x - other.x
                 dy = body.y - other.y
@@ -23,15 +23,15 @@ proc energy[bodies: List<Body>] -> Float
             end
         end
     end
-    return total
+    ret total
 end
 
 proc advance[bodies: List<Body>, dt: Float] -> List<Body>
     mut moved = bodies
     count = moved.len
-    for each i in range[from: 1, to: count]
+    for_each i in range[from: 1, to: count]
         mut a = moved[pos: i]
-        for each j in range[from: i + 1, before: count + 1]
+        for_each j in range[from: i + 1, before: count + 1]
             mut b = moved[pos: j]
             dx = a.x - b.x
             dy = a.y - b.y
@@ -51,7 +51,7 @@ proc advance[bodies: List<Body>, dt: Float] -> List<Body>
         a.z = a.z + dt * a.vz
         moved[pos: i] = a
     end
-    return moved
+    ret moved
 end
 
 proc run[steps: Whole] -> Float
@@ -74,7 +74,7 @@ proc run[steps: Whole] -> Float
     mut px = 0.0
     mut py = 0.0
     mut pz = 0.0
-    for each body in bodies
+    for_each body in bodies
         px = px + body.vx * body.mass
         py = py + body.vy * body.mass
         pz = pz + body.vz * body.mass
@@ -89,5 +89,5 @@ proc run[steps: Whole] -> Float
         bodies = advance(bodies, ~0.01)
         step = step + 1
     end
-    return energy(bodies)
+    ret energy(bodies)
 end
