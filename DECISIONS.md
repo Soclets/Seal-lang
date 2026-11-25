@@ -3693,3 +3693,35 @@ really?  Idk, man", "What does `total.secs` do", "What is `mins`", "Feels more l
 says the unit, and also can become another unit.", "So, first of all, what should we call it? Translation?", "Diff
 between conversion?", "yex" (to measuring), then, asked "should measuring be written `total in secs`, giving the plain
 number?", the owner chose: "yea"
+
+## D123. A script declares its own units with `group.unit`
+
+2026-11-25.
+
+**Chosen.** A unit group is a named set (D110), declared as Cyborg declares its unit families (Cyborg D109), in Seal's
+form:
+
+```
+group.unit money
+    ::cents base
+    ::dollars = 100 cents
+end
+
+price = 3 dollars + 50 cents      // 350 cents
+show_msg("{price in dollars}")    // 3.5
+```
+
+- **Members are written `::name`,** as a handler group's are (D110), and reached as `money::cents` only to settle a
+  clash (D112).
+- **Exactly one member is marked `base`,** Cyborg's mark; each other is defined as so many of an earlier member, so
+  conversions between them are exact. An inexact ratio is written with `~`.
+- `.point` works on these units as on Seal's own (D121).
+
+**Weighed.**
+- The base as the member with no `=`, as the design session first wrote it. Cyborg's `base` shows it at a glance.
+- Cyborg's `fam.unit` and members in full, as `money::cents`. Seal keeps `fam` for a word and its kinds (D110).
+
+**Why this won.** Cyborg's design, in the shape Seal gives every named set.
+
+**Tankun's words.** "You saw Cyborg's already, right?", then, asked "Should a script declare its own units with
+`group.unit`, members as `::name`, the base marked `base`, and the others defined from it?", the owner chose: "yea"
