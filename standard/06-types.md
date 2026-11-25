@@ -29,7 +29,9 @@ examples in Seal's syntax (README).
 - **Where it always fits, a number becomes the bigger type by itself:** a `Whole` into a `Decimal` or `HugeDecimal`,
   a `HugeWhole` into a `HugeDecimal`, and a `Decimal` into a `HugeDecimal`. Every other way is written with `be.` and
   can fail, and a `Float` mixes quietly with none of them (D116).
-- **A number written with a point is a `Decimal` or `HugeDecimal` where one is wanted,** exactly as written (D116).
+- **A number written with a point is a `Decimal` or `HugeDecimal` where one is wanted,** exactly as written, the other
+  side of an operator included, so `gold + 0.5` and `gold > 0.5` just work with `gold` a `Decimal`; likewise a whole
+  number too big for a `Whole` beside a `HugeWhole` (D116, D119).
 - **Text counts graphemes by default,** what a person sees as one character: `.len` counts them, and `[pos:]`,
   `[offset:]` and `for each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
   UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).

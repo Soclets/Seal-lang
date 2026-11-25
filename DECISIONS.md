@@ -3575,3 +3575,21 @@ host's `show_msg.same_line`, since it's an instruction to a door, not a characte
 **Tankun's words.** has code, "`.same_line` is what I mean. It's just that `same_line` was before eveyrthing became
 fmr", then, asked "Should `{newln}` and `{tab}` give a line break and a tab inside text, with `.same_line` staying the
 host's narrowing?", the owner chose: "yea"
+
+## D119. A number written beside a `Decimal` or `HugeWhole` takes that type
+
+2026-11-25.
+
+**Chosen.** Where D115 and D116 say a written number takes the type "where one is wanted", the other side of an
+operator counts: in `gold + 0.5`, `price * 1.1` and `gold > 0.5`, with `gold` a `Decimal`, each `0.5` and `1.1` is a
+`Decimal`, exactly as written, and a whole number too big for a `Whole` beside a `HugeWhole` is a `HugeWhole`.
+
+**Weighed.**
+- Only names, fields and parameters wanting a type. `gold + 0.5` would then be a `Decimal` and a `Float`, which never
+  mix, and every money sum would need `be.Decimal(…)` around plain numbers.
+
+**Why this won.** It's what "wanted" was always meant to cover.
+
+**Tankun's words.** Asked "Should a number written next to a `Decimal` or `HugeWhole` take that type from it?", Tankun
+answered: "Sherlock, what the fuck is it supposed to be?", then: "No, I fucking mean your fucking question", meaning
+the answer was plainly yes.
