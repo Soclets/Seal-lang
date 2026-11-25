@@ -96,8 +96,10 @@ total = 2 secs + 500 ms                  // 2500 ms
 - **Where a unit is expected, a plain number is refused,** with the unit added as the fix, so a door taking a time
   can't be given a bare `2` (D111).
 - **Units have short names,** as `secs` and `ms`, since their group says what they measure (D111).
-- **Everything else follows Cyborg's units,** decided there: derived units, angles, points and spans, prefixes and
-  showing a unit (D111).
+- **A unit is an amount, a span, unless it's marked a point,** with the narrowing `.point`, as `px.point` for a place
+  on screen or `secs.point` for a moment. A point plus a span is a point, a point minus a point is a span, and two
+  points added are refused (D121).
+- **Prefixes and showing a unit follow Cyborg's units** where Seal hasn't decided its own (D111).
 
 Seal's own unit groups are (D113):
 

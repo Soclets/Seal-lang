@@ -3628,3 +3628,34 @@ Whether Seal has Cyborg's points and spans is decided separately.
 
 **Tankun's words.** "What", then, shown the three rules again, as converting by itself, `per` anywhere, and no points
 and spans for now, and asked "Should Seal's units work this way?", the owner chose: "yes, but no to 3"
+
+## D121. A unit is a span unless it's marked a point with `.point`
+
+2026-11-25.
+
+**Chosen.** Seal has points and spans, lighter than Cyborg's: a value with a unit is an amount, a span, unless its
+unit is narrowed with `.point`, "a point kind of" that unit, counted from a fixed place:
+
+```
+x: Float[unit: px.point] = 100.0     // a place on screen
+step = 5.0 px                        // an amount
+x = x + step                         // place + amount = place
+gap = enemy_x - x                    // place - place = amount
+started: Float[unit: secs.point] = now()
+```
+
+- **A point plus or minus a span is a point; a point minus a point is a span; two points added are refused,** the
+  classic slip of adding one position to another.
+- **Code that never writes `.point` never meets it:** `3 secs` and `5 px` are spans, as people think of them.
+- With a group written, it's `distance::px.point` (Cyborg D488: `.` goes into the unit, `::` reaches into the group).
+
+**Weighed.**
+- No points and spans, as the design session proposed for now. Tankun chose to have them.
+- Cyborg's way, where every value of a split family says `.point` or `.span` (Cyborg D249, D254). Heavy for a script.
+- `.at`, `.place`, `.pos` or `.moment` for the name. Each fits space or time but not both, or clashes with `at` in
+  `for each … at pos`; "a point on the map" and "a point in time" both read right.
+
+**Why this won.** It catches adding two places together, and costs nothing to anyone who doesn't use it.
+
+**Tankun's words.** "yes, but no to 3" (quoted in D120), "Is it narrowing?", "Why `point` name?", then, asked "Should
+units be spans by default, with points marked `.point` and following those three rules?", the owner chose: "yea"
