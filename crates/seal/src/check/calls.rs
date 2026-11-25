@@ -70,7 +70,6 @@ impl Checker<'_> {
             return Self::error(place);
         }
         match word {
-            "fmt" => self.fmt(&path, arguments, place),
             "sqrt" => {
                 let Some(value) = self.single_argument("sqrt", &path, 1, arguments, place) else {
                     return Self::error(place);
@@ -340,8 +339,8 @@ impl Checker<'_> {
         } else {
             let before = self.messages.len();
             let parameters: Vec<TypeId> =
-                signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type, place)).collect();
-            let result = self.host_type(&signature.result, place);
+                signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type)).collect();
+            let result = self.host_type(&signature.result);
             if self.messages.len() == before {
                 self.door_types.insert(door, (parameters.clone(), result));
             }
@@ -374,134 +373,6 @@ impl Checker<'_> {
             checked.push(value);
         }
         Expression { kind: ExpressionKind::DoorCall { door, arguments: checked }, type_id: result, place }
-    }
-
-    /// `fmt("…")` fills in the names in its braces and gives a `Text` (D12, D28).
-    fn fmt(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
-        let Some(argument) = self.single_argument("fmt", path, 1, arguments, place) else { return Self::error(place) };
-        let syntax::ExpressionKind::Text(text) = &argument.kind else {
-            self.refuse_why(
-                argument.place,
-                "`fmt` takes its text written out in quotes",
-                "the names in `fmt`'s braces are checked when the script loads, so the text has to be there to read.",
-            );
-            self.expression(argument, None);
-            return Self::error(place);
-        };
-        let characters: Vec<char> = text.chars().collect();
-        let column_of = |index: usize| argument.place.column + 1 + u32::try_from(index).unwrap_or(0);
-        let mut parts: Vec<Expression> = Vec::new();
-        let mut plain = String::new();
-        let mut index = 0;
-        while let Some(&character) = characters.get(index) {
-            match character {
-                // trace: D63, Unio D30. `\{` is a brace, `\"` a quote and `\\` a backslash.
-                '\\' => {
-                    plain.extend(characters.get(index + 1));
-                    index += 2;
-                }
-                '{' => {
-                    let Some(length) =
-                        characters.get(index..).and_then(|rest| rest.iter().position(|&next| next == '}'))
-                    else {
-                        self.not_designed(
-                            Place::new(argument.place.line, column_of(index), 1),
-                            "a `{` with no `}` after it in `fmt` text",
-                        );
-                        return Self::error(place);
-                    };
-                    let inside: String = characters.get(index + 1..index + length).unwrap_or(&[]).iter().collect();
-                    let brace_place =
-                        Place::new(argument.place.line, column_of(index), u32::try_from(length + 1).unwrap_or(1));
-                    if !plain.is_empty() {
-                        parts.push(Expression {
-                            kind: ExpressionKind::Text(std::mem::take(&mut plain)),
-                            type_id: TEXT,
-                            place,
-                        });
-                    }
-                    if let Some(part) = self.brace(&inside, brace_place) {
-                        parts.push(part);
-                    }
-                    index += length + 1;
-                }
-                // A `}` with no open `{` is just a character (D63, Unio D30).
-                other => {
-                    plain.push(other);
-                    index += 1;
-                }
-            }
-        }
-        if !plain.is_empty() || parts.is_empty() {
-            parts.push(Expression { kind: ExpressionKind::Text(plain), type_id: TEXT, place });
-        }
-        Expression { kind: ExpressionKind::Join(parts), type_id: TEXT, place }
-    }
-
-    /// What's inside one pair of `fmt`'s braces: a name, which may be followed by its fields and facts (D28).
-    fn brace(&mut self, inside: &str, place: Place) -> Option<Expression> {
-        let is_name = |word: &str| {
-            !word.is_empty()
-                && word.starts_with(|first: char| first.is_ascii_lowercase())
-                && word
-                    .chars()
-                    .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
-        };
-        if inside.is_empty() {
-            self.not_designed(place, "empty braces in `fmt` text");
-            return None;
-        }
-        if inside.contains("places:") {
-            self.not_designed(place, "`places:` in `fmt`'s braces");
-            return None;
-        }
-        if !inside.split('.').all(is_name) {
-            // trace: D12, D28
-            self.refuse_why(
-                place,
-                format!("`{{{inside}}}` isn't a name with its fields and facts"),
-                "`fmt`'s braces hold a name, which may be followed by its fields and facts, never a calculation or a call.",
-            );
-            return None;
-        }
-        let mut column = place.column + 1;
-        let mut built: Option<syntax::Expression> = None;
-        for word in inside.split('.') {
-            let width = u32::try_from(word.len()).unwrap_or(1);
-            let word_place = Place::new(place.line, column, width);
-            built = Some(match built {
-                None => syntax::Expression {
-                    id: u32::MAX,
-                    kind: syntax::ExpressionKind::Name(word.to_owned()),
-                    place: word_place,
-                },
-                Some(receiver) => {
-                    let whole = receiver.place.to(word_place);
-                    syntax::Expression {
-                        id: u32::MAX,
-                        kind: syntax::ExpressionKind::Member {
-                            receiver: Box::new(receiver),
-                            name: syntax::Word { text: word.to_owned(), place: word_place },
-                        },
-                        place: whole,
-                    }
-                }
-            });
-            column += width + 1;
-        }
-        let built = built?;
-        if !self.is_value(&built) {
-            let first = inside.split('.').next().unwrap_or(inside);
-            self.refuse_why(
-                place,
-                format!("there's no name `{first}` here"),
-                "a name in `fmt`'s braces is checked when the script loads.",
-            );
-            return None;
-        }
-        let checked = self.expression(&built, None);
-        self.require(checked.type_id, Requirement::Showable, place, "`fmt`'s braces show a value as text");
-        Some(checked)
     }
 
     /// `be.Text`, `be.Whole` and its narrowings, and `be.Float` (D22, Unio D22, D153, D178).

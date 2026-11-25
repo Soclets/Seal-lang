@@ -1641,6 +1641,7 @@ impl<'p> Compiler<'p> {
             .iter()
             .map(|part| match &part.kind {
                 ExpressionKind::Text(text) => Piece::Constant(self.text(text)),
+                ExpressionKind::ShowPlaces { value, places } => Piece::Places(self.value(value), *places),
                 _ => Piece::Register(self.value(part), part.type_id),
             })
             .collect()
@@ -1653,11 +1654,14 @@ impl<'p> Compiler<'p> {
             .iter()
             .map(|piece| match *piece {
                 Piece::Constant(text) => JoinPiece::Constant(text),
+                Piece::Places(register, places) => JoinPiece::Places(register, places),
                 Piece::Register(register, piece_type) => match self.kind(piece_type) {
                     Type::Whole => JoinPiece::Whole(register),
                     Type::Bool => JoinPiece::Bool(register),
                     Type::Float => JoinPiece::Float(register),
-                    _ => JoinPiece::Text(register),
+                    Type::Text => JoinPiece::Text(register),
+                    // trace: D100. Any other value shows as it's written in Seal.
+                    _ => JoinPiece::Value(register, self.program.types.resolve(piece_type).0),
                 },
             })
             .collect();
@@ -2199,6 +2203,13 @@ impl<'p> Compiler<'p> {
             ExpressionKind::Binary { operator, left, right } => {
                 self.binary(*operator, left, right, expression, to);
                 false
+            }
+            ExpressionKind::ShowPlaces { value, places } => {
+                let from = self.value(value);
+                self.place = expression.place;
+                let site = self.join_site(&[Piece::Places(from, *places)]);
+                self.emit(Instruction::JoinPieces { to, site });
+                true
             }
             ExpressionKind::Join(parts) => {
                 if let [only] = parts.as_slice()
@@ -2781,6 +2792,8 @@ impl<'p> Compiler<'p> {
 enum Piece {
     Register(Register, TypeId),
     Constant(u32),
+    /// A `Float` shown to so many digits after its point (D94).
+    Places(Register, u8),
 }
 
 /// How many times an expression looks `key` up in `dict`, and how many other times it uses `dict` at all.
@@ -2822,6 +2835,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
         | ExpressionKind::Repeat { value: inner, .. }
@@ -2906,6 +2920,7 @@ fn size(expression: &Expression) -> usize {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner) => add(inner),
         ExpressionKind::Item { receiver: first, index: second, .. }
@@ -2951,6 +2966,7 @@ fn mentions(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
         | ExpressionKind::Repeat { value: inner, .. }

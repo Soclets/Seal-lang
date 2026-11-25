@@ -1,7 +1,7 @@
 //! Reading lines of tokens into a syntax tree.
 //!
-//! Blocks have no `:` on their opening line (D9), a body indented one level deeper, and a plain `end` at the opening
-//! line's depth (D20).
+//! Blocks have no `:` on their opening line (D9), a body indented one level deeper, and a bare `end` at the opening
+//! line's depth, which may carry a checked note naming its block (D20, D102).
 
 use super::lexer::{Gap, Keyword, Line, Symbol, Token, TokenKind, lex};
 use super::tree::{
@@ -21,8 +21,10 @@ const LEVEL: u32 = 4;
 const MAX_BLOCK_DEPTH: u32 = 48;
 const MAX_EXPRESSION_DEPTH: u32 = 160;
 
-struct Parser {
+struct Parser<'a> {
     lines: Vec<Line>,
+    /// The script as written, for fixes that show a whole line put right.
+    source: &'a str,
     line_index: usize,
     /// The index of the next token in the current line.
     position: usize,
@@ -36,6 +38,8 @@ struct Opener {
     word: &'static str,
     place: Place,
     indentation: u32,
+    /// What the note after its `end` says, when one is written: what the block is, with its name (D102).
+    note: String,
 }
 
 /// A line indented by anything but 4 spaces a level is refused, with the line indented right as the fix (D63, Unio
@@ -56,7 +60,8 @@ fn wrong_indentation(line: &Line, wanted: u32) -> Message {
 /// Returns the first thing that can't be read, as a message.
 pub fn parse(source: &str) -> Result<Script, Message> {
     let lines = lex(source)?;
-    let mut parser = Parser { lines, line_index: 0, position: 0, next_id: 0, block_depth: 0, expression_depth: 0 };
+    let mut parser =
+        Parser { lines, source, line_index: 0, position: 0, next_id: 0, block_depth: 0, expression_depth: 0 };
     let mut items = Vec::new();
     while parser.line_index < parser.lines.len() {
         let indentation = parser.indentation();
@@ -66,10 +71,10 @@ pub fn parse(source: &str) -> Result<Script, Message> {
         }
         items.push(parser.item()?);
     }
-    Ok(Script { items, expression_count: parser.next_id })
+    Ok(Script { items, expression_count: parser.next_id, source: source.to_owned() })
 }
 
-impl Parser {
+impl Parser<'_> {
     // ---- tokens ----
 
     fn line(&self) -> Option<&Line> {
@@ -265,30 +270,69 @@ impl Parser {
             .with_why("every block closes with `end`, at the depth of the line that opened it.")
     }
 
-    /// Reads the `end` that closes `opener`'s block.
+    /// Reads the `end` that closes `opener`'s block, with its note when one is written (D102).
     fn end_of(&mut self, opener: &Opener) -> Result<Place, Message> {
         let at_depth = self.line().is_some_and(|line| line.indentation == opener.indentation);
         if !at_depth || self.first_keyword() != Some(Keyword::End) {
             return Err(self.no_end(opener));
         }
         let place = self.expect_keyword(Keyword::End)?;
+        if let Some(Token { kind: TokenKind::Note(note), place: note_place, .. }) = self.peek() {
+            if *note != opener.note {
+                // trace: D102. The note is checked, so it can't go stale.
+                return Err(Message::refused(
+                    *note_place,
+                    format!(
+                        "this `end` closes `{}` on line {}, so its note is `\\\\ {}`",
+                        opener.note, opener.place.line, opener.note
+                    ),
+                )
+                .with_fix(format!("{}end \\\\ {}", " ".repeat(opener.indentation as usize), opener.note))
+                .with_because(format!("line {} opens the block", opener.place.line), opener.place)
+                .with_why("an `end`'s note names the block it closes, so it can't go stale."));
+            }
+            self.advance();
+        }
         self.end_line()?;
         Ok(place)
     }
 
     fn opener(&self, word: &'static str) -> Opener {
-        Opener { word, place: self.line_place(), indentation: self.indentation() }
+        Opener { word, place: self.line_place(), indentation: self.indentation(), note: word.to_owned() }
+    }
+
+    /// The script's line as written, by its number.
+    fn physical_line(&self, number: u32) -> String {
+        let line = self.source.split('\n').nth(number.saturating_sub(1) as usize).unwrap_or("");
+        line.strip_suffix('\r').unwrap_or(line).to_owned()
+    }
+
+    /// trace: D63, D91. A `///` comment goes only before a declaration.
+    fn refuse_doc(&self, place: Place) -> Message {
+        let _ = self;
+        Message::refused(place, "this `///` has no declaration after it")
+            .with_why("a `///` comment describes the declaration on the line after it.")
     }
 
     // ---- the top level ----
 
     fn item(&mut self) -> Result<Item, Message> {
         match self.first_keyword() {
-            Some(Keyword::Proc) => Ok(Item::Procedure(self.procedure()?)),
+            Some(Keyword::Proc) => Ok(Item::Procedure(self.procedure(false)?)),
             Some(Keyword::Fam) => Ok(Item::Family(self.family()?)),
             Some(Keyword::Record) => Ok(Item::Record(self.record()?)),
             Some(Keyword::OneOf) => Ok(Item::OneOf(self.one_of()?)),
-            _ => Ok(Item::Statement(self.statement()?)),
+            _ => {
+                let documented = self.line().and_then(|line| line.documented);
+                let statement = self.statement()?;
+                // trace: D91. A top-level name is a declaration, and can carry a `///` comment.
+                if let Some(doc) = documented
+                    && !matches!(statement.kind, StatementKind::Name { .. })
+                {
+                    return Err(self.refuse_doc(doc));
+                }
+                Ok(Item::Statement(statement))
+            }
         }
     }
 
@@ -301,12 +345,18 @@ impl Parser {
         Ok(path)
     }
 
-    /// trace: D21, D41, D42, D45
+    /// A procedure: `proc name[parameters] -> Type ! [failures]` and its body, or a family's member, written the same
+    /// way without `proc` (D21, D41, D42, D45, D81, D84, D88, D97).
     #[allow(clippy::too_many_lines)] // the first line, then the `labels` and `defaults` lines, read in order
-    fn procedure(&mut self) -> Result<Procedure, Message> {
-        let opener = self.opener("proc");
-        self.expect_keyword(Keyword::Proc)?;
+    fn procedure(&mut self, member: bool) -> Result<Procedure, Message> {
+        let mut opener = self.opener("proc");
+        if !member {
+            self.expect_keyword(Keyword::Proc)?;
+        }
         let path = self.path()?;
+        let name = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+        // trace: D102. A procedure's note is `proc` and its name; a member's is its own name.
+        opener.note = if member { name.clone() } else { format!("proc {name}") };
         if self.at_symbol(Symbol::OpenRound) {
             // trace: Unio D166
             return Err(Message::refused(self.here(), "a procedure's parameters go in `[ ]`, not `( )`")
@@ -317,32 +367,63 @@ impl Parser {
         if self.at_symbol(Symbol::OpenSquare) {
             self.advance();
             if self.at_symbol(Symbol::CloseSquare) {
-                let name = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+                let written = if member { name.clone() } else { format!("proc {name}") };
                 return Err(Message::refused(
                     self.here(),
-                    format!("a procedure that takes nothing has no `[ ]`: it's written `proc {name}`"),
+                    format!("a procedure that takes nothing has no `[ ]`: it's written `{written}`"),
                 )
                 .with_why("`[ ]` describes the values a procedure takes, and this one takes none."));
             }
+            // The names still waiting for the type of their group (D88).
+            let mut waiting: Vec<Parameter> = Vec::new();
             loop {
                 // trace: D61
                 let unused = self.at_keyword(Keyword::Unused);
                 if unused {
                     self.advance();
                 }
-                let name = self.expect_name("a parameter's name")?;
-                let written_type = if self.at_symbol(Symbol::Colon) {
+                let parameter_name = self.expect_name("a parameter's name")?;
+                if self.at_symbol(Symbol::Colon) {
+                    let colon = self.peek().map_or(Place::default(), |token| token.place);
+                    let spaced = matches!(self.peek().map(|token| token.gap), Some(Gap::Spaces(1)));
                     self.advance();
-                    Some(self.type_expression()?)
+                    let written_type = self.type_expression()?;
+                    let group = !waiting.is_empty();
+                    if group != spaced {
+                        // trace: D88. A group's `:` has a space on each side; a single name's has none before it.
+                        let mut fixed: Vec<char> = self.physical_line(colon.line).chars().collect();
+                        let at = colon.column.saturating_sub(1) as usize;
+                        let what = if group {
+                            fixed.insert(at.min(fixed.len()), ' ');
+                            "this `:` gives a group of parameters their type, so it has a space on each side"
+                        } else {
+                            if at > 0 && at <= fixed.len() {
+                                fixed.remove(at - 1);
+                            }
+                            "this `:` gives one parameter its type, so it has no space before it"
+                        };
+                        return Err(Message::refused(colon, what)
+                            .with_fix(fixed.into_iter().collect::<String>())
+                            .with_why("parameters sharing a type are grouped as `[hp, amount : Whole]`, with a space on each side of the group's `:`; a single name's type is written `amount: Whole`."));
+                    }
+                    for mut waiting_parameter in waiting.drain(..) {
+                        waiting_parameter.written_type = Some(written_type.clone());
+                        parameters.push(waiting_parameter);
+                    }
+                    parameters.push(Parameter { name: parameter_name, written_type: Some(written_type), unused });
                 } else {
-                    None
-                };
-                parameters.push(Parameter { name, written_type, unused });
+                    waiting.push(Parameter { name: parameter_name, written_type: None, unused });
+                }
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
                     break;
                 }
+            }
+            if let Some(untyped) = waiting.first() {
+                // trace: D81. Every parameter writes its type.
+                return Err(Message::refused(untyped.name.place, format!("the parameter `{}` has no type", untyped.name.text))
+                    .with_why("a procedure's header writes each parameter's type, as `amount: Whole`, or a group's, as `[hp, amount : Whole]`."));
             }
             self.expect_symbol(Symbol::CloseSquare)?;
         }
@@ -372,8 +453,26 @@ impl Parser {
         self.end_line()?;
         let mut labels = Vec::new();
         let mut defaults = Vec::new();
+        let mut labels_any_order = false;
         if self.in_body(&opener)? && self.first_keyword() == Some(Keyword::Labels) {
             self.advance();
+            // trace: D87. `labels.any_order` lets the labelled arguments go in any order.
+            if self.at_symbol(Symbol::Dot) {
+                self.advance();
+                match self.peek_kind() {
+                    Some(TokenKind::Name(narrowing)) if narrowing == "any_order" => {
+                        self.advance();
+                        labels_any_order = true;
+                    }
+                    _ => {
+                        let found = self.here();
+                        return Err(Message::refused(found, "`labels` has one narrowing, `labels.any_order`")
+                            .with_why(
+                                "`labels.any_order [ … ]` lets a call write the labelled arguments in any order.",
+                            ));
+                    }
+                }
+            }
             self.expect_symbol(Symbol::OpenSquare)?;
             loop {
                 let parameter = self.expect_name("a parameter's name")?;
@@ -394,7 +493,7 @@ impl Parser {
                 loop {
                     let label = self.expect_name("a label")?;
                     self.expect_symbol(Symbol::Colon)?;
-                    let value = self.operand()?;
+                    let value = self.full_expression()?;
                     defaults.push(DefaultDeclaration { label, value });
                     if self.at_symbol(Symbol::Comma) {
                         self.advance();
@@ -408,31 +507,54 @@ impl Parser {
         }
         let body = self.body(&opener)?;
         let end_place = self.end_of(&opener)?;
-        Ok(Procedure { path, parameters, result, failures, labels, defaults, body, place: opener.place, end_place })
+        Ok(Procedure {
+            path,
+            parameters,
+            result,
+            failures,
+            labels,
+            labels_any_order,
+            defaults,
+            body,
+            place: opener.place,
+            end_place,
+        })
     }
 
-    /// trace: D43
+    /// trace: D43, D97
     fn family(&mut self) -> Result<Family, Message> {
-        let opener = self.opener("fam");
+        let mut opener = self.opener("fam");
         self.expect_keyword(Keyword::Fam)?;
         self.expect_symbol(Symbol::Dot)?;
         if !self.at_keyword(Keyword::Proc) {
             if matches!(self.peek_kind(), Some(TokenKind::Name(name)) if name == "handler") {
-                return Err(Message::not_designed_yet(self.here(), "`fam.handler`, which comes with handlers (D43),"));
+                // trace: D110. Handlers live in a `group.handler`, since they aren't kinds of a word.
+                return Err(Message::refused(self.here(), "handlers live in a `group.handler`, not a family")
+                    .with_why("a family is a word and its kinds; a handler group is a named set, reached with `::`."));
             }
             return Err(self.unexpected("`proc`"));
         }
         self.advance();
         let word = self.expect_name("the family's word")?;
+        opener.note = format!("fam.proc {}", word.text);
         self.end_line()?;
         let mut members = Vec::new();
         while self.in_body(&opener)? {
-            if self.first_keyword() != Some(Keyword::Proc) {
+            if self.first_keyword() == Some(Keyword::Proc) {
+                // trace: D97. The family's first line already says its members are procedures.
+                let place = self.line_place();
+                let line = self.physical_line(place.line);
+                let fixed = line.replacen("proc ", "", 1);
+                return Err(Message::refused(place, "a family's member is written without `proc`")
+                    .with_fix(fixed)
+                    .with_why("the family's first line, `fam.proc`, already says its members are procedures."));
+            }
+            if !matches!(self.peek_kind(), Some(TokenKind::Name(_))) {
                 return Err(Message::refused(self.line_place(), "a `fam.proc` block holds only procedures")
                     .with_why("a family holds only the kind of thing it's declared for."));
             }
             self.block_depth += 1;
-            members.push(self.procedure()?);
+            members.push(self.procedure(true)?);
             self.block_depth -= 1;
         }
         self.end_of(&opener)?;
@@ -448,9 +570,10 @@ impl Parser {
 
     /// trace: D27
     fn record(&mut self) -> Result<RecordDeclaration, Message> {
-        let opener = self.opener("record");
+        let mut opener = self.opener("record");
         self.expect_keyword(Keyword::Record)?;
         let name = self.expect_type_name()?;
+        opener.note = format!("record {}", name.text);
         self.end_line()?;
         let mut fields = Vec::new();
         while self.in_body(&opener)? {
@@ -463,9 +586,10 @@ impl Parser {
 
     /// trace: D35, D36
     fn one_of(&mut self) -> Result<OneOfDeclaration, Message> {
-        let opener = self.opener("one_of");
+        let mut opener = self.opener("one_of");
         self.expect_keyword(Keyword::OneOf)?;
         let name = self.expect_type_name()?;
+        opener.note = format!("one_of {}", name.text);
         self.end_line()?;
         let mut cases = Vec::new();
         while self.in_body(&opener)? {
@@ -552,6 +676,20 @@ impl Parser {
     #[allow(clippy::too_many_lines)] // one case per kind of statement
     fn statement(&mut self) -> Result<Statement, Message> {
         let place = self.line_place();
+        if self.block_depth > 0
+            && let Some(doc) = self.line().and_then(|line| line.documented)
+        {
+            // trace: D91. Inside a block, only a name could be a declaration, and none of D91's are made there.
+            let makes_a_name = matches!(self.first_keyword(), Some(Keyword::Mut | Keyword::Unused))
+                || matches!(
+                    (self.peek_kind(), self.peek_at(1).map(|token| &token.kind)),
+                    (Some(TokenKind::Name(_)), Some(TokenKind::Symbol(Symbol::Equals | Symbol::Colon)))
+                );
+            if makes_a_name {
+                return Err(Message::not_designed_yet(doc, "a `///` before a name made inside a block"));
+            }
+            return Err(self.refuse_doc(doc));
+        }
         let kind = match self.first_keyword() {
             Some(keyword @ (Keyword::Mut | Keyword::Unused)) => {
                 self.advance();
@@ -606,7 +744,12 @@ impl Parser {
                 return Ok(Statement { kind: StatementKind::Instead(value), place });
             }
             Some(keyword @ (Keyword::Proc | Keyword::Fam | Keyword::Record | Keyword::OneOf)) => {
-                return Err(Message::not_designed_yet(place, format!("a `{}` inside a block", keyword.word())));
+                // trace: D93
+                return Err(Message::refused(
+                    place,
+                    format!("a `{}` is declared at the top level, not inside a block", keyword.word()),
+                )
+                .with_why("procedures, families, records and `one_of`s are declared at a script's top level only."));
             }
             Some(keyword @ (Keyword::Labels | Keyword::Defaults)) => {
                 // trace: D41, D42
@@ -974,25 +1117,55 @@ impl Parser {
         Ok(self.binary(operator, left, right, at))
     }
 
-    /// `&` joins text. Next to unbracketed maths it's refused, since maths doesn't say which goes first (Unio D72).
+    /// trace: D77. Text is joined only by filling it in with braces, so `&` is refused, with the braces form as the
+    /// fix when the pieces are texts and names.
     fn join(&mut self) -> Result<Expression, Message> {
-        let mut left = self.additive()?;
+        let first = self.additive()?;
+        if !self.at_symbol(Symbol::Ampersand) {
+            return Ok(first);
+        }
+        let at = self.here();
+        let mut pieces = vec![first];
         while self.at_symbol(Symbol::Ampersand) {
             self.deeper()?;
-            let at = self.here();
             self.advance();
-            let right = self.additive()?;
-            for side in [&left, &right] {
-                if let ExpressionKind::Binary { operator, .. } = &side.kind
-                    && operator.is_maths()
-                {
-                    return Err(Message::refused(side.place, "maths next to `&` needs `( )` around it")
-                        .with_why("maths doesn't say whether `&` or the sum goes first, so brackets do."));
-                }
-            }
-            left = self.binary(BinaryOperator::Join, left, right, at);
+            pieces.push(self.additive()?);
         }
-        Ok(left)
+        let mut message = Message::refused(at, "`&` doesn't join text; text is joined by filling it in with braces")
+            .with_why("text is joined only with braces, as in `\"Score: {score}\"`, which looks like what it shows.");
+        let mut filled = String::new();
+        let mut fits = true;
+        for piece in &pieces {
+            match &piece.kind {
+                ExpressionKind::Text(text) => filled.push_str(text),
+                _ => match braced(piece) {
+                    Some(name) => {
+                        filled.push('{');
+                        filled.push_str(&name);
+                        filled.push('}');
+                    }
+                    None => fits = false,
+                },
+            }
+        }
+        let (start, end) = (pieces.first().map(|piece| piece.place), pieces.last().map(|piece| piece.place));
+        if fits
+            && let (Some(start), Some(end)) = (start, end)
+            && start.line == end.line
+        {
+            let line: Vec<char> = self.physical_line(start.line).chars().collect();
+            let from = start.column.saturating_sub(1) as usize;
+            let to = (end.column + end.width).saturating_sub(1) as usize;
+            if from <= to && to <= line.len() {
+                let fixed: String = line.get(..from).unwrap_or(&[]).iter().collect::<String>()
+                    + "\""
+                    + &filled
+                    + "\""
+                    + &line.get(to..).unwrap_or(&[]).iter().collect::<String>();
+                message = message.with_fix(fixed);
+            }
+        }
+        Err(message)
     }
 
     fn additive(&mut self) -> Result<Expression, Message> {
@@ -1236,6 +1409,16 @@ impl Parser {
         }
         let close = self.expect_symbol(Symbol::CloseSquare)?;
         Ok(self.expression(ExpressionKind::List(items), open.to(close)))
+    }
+}
+
+/// A name with its fields and facts, as braces can hold it (D28, D75).
+fn braced(expression: &Expression) -> Option<String> {
+    match &expression.kind {
+        ExpressionKind::Name(name) => Some(name.clone()),
+        ExpressionKind::Member { receiver, name } => Some(format!("{}.{}", braced(receiver)?, name.text)),
+        ExpressionKind::Group(inner) => braced(inner),
+        _ => None,
     }
 }
 

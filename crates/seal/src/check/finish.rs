@@ -102,6 +102,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
         | ExpressionKind::Repeat { value: inner, .. }
@@ -478,20 +479,15 @@ impl Checker<'_> {
                     );
                 }
             },
-            Requirement::Showable => {
-                if !matches!(kind, Type::Whole | Type::Float | Type::Bool | Type::Text) {
-                    self.not_designed(place, format!("showing {found} in `fmt`'s braces"));
+            Requirement::Textable => {
+                if matches!(kind, Type::Text) {
+                    self.refuse_why(
+                        place,
+                        "this is already a `Text`, so `be.Text` does nothing",
+                        "converting a value to the type it already is, is refused.",
+                    );
                 }
             }
-            Requirement::Textable => match kind {
-                Type::Whole | Type::Float | Type::Bool => {}
-                Type::Text => self.refuse_why(
-                    place,
-                    "this is already a `Text`, so `be.Text` does nothing",
-                    "converting a value to the type it already is, is refused.",
-                ),
-                _ => self.not_designed(place, format!("converting {found} to text")),
-            },
             Requirement::Member { name, result } => {
                 let member = match &kind {
                     Type::Record(record) => self
@@ -591,8 +587,7 @@ impl Checker<'_> {
     fn candidates(&mut self, requirement: &Requirement) -> Option<Vec<TypeId>> {
         match requirement {
             Requirement::Number | Requirement::Ordered => Some(vec![WHOLE, FLOAT]),
-            Requirement::Comparable | Requirement::Showable => Some(vec![WHOLE, FLOAT, BOOL, TEXT]),
-            Requirement::Textable => Some(vec![WHOLE, FLOAT, BOOL]),
+            Requirement::Comparable => Some(vec![WHOLE, FLOAT, BOOL, TEXT]),
             Requirement::Joinable => Some(vec![TEXT, WHOLE, BOOL]),
             Requirement::Member { name, .. } => {
                 if name == "len" {
@@ -605,7 +600,7 @@ impl Checker<'_> {
                     .collect();
                 Some(records.into_iter().map(|record| self.program.types.intern(Type::Record(record))).collect())
             }
-            Requirement::Indexable { .. } | Requirement::Iterable { .. } => None,
+            Requirement::Textable | Requirement::Indexable { .. } | Requirement::Iterable { .. } => None,
         }
     }
 
@@ -822,9 +817,28 @@ impl Checker<'_> {
         messages.append(&mut handling.messages);
         messages.append(&mut loops.messages);
 
-        // trace: D44: written failures must match what the body does.
+        // trace: D84. A procedure that can fail writes `! [ … ]` in its header, matching what the body does exactly.
         for (procedure, written) in self.program.procedures.iter().zip(&self.written_failures) {
-            let Some(written) = written else { continue };
+            let list = procedure
+                .failures
+                .iter()
+                .map(|&failure| facts.program.failure_name(failure).to_owned())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let header = super::header_with(&self.source_line(procedure.place.line), "", Some(&format!(" ! [{list}]")));
+            let Some(written) = written else {
+                if !procedure.failures.is_empty() {
+                    messages.push(
+                        Message::refused(
+                            procedure.place,
+                            format!("`{}` can fail with {}, but its header doesn't say so", procedure.name, facts.names(&procedure.failures)),
+                        )
+                        .with_fix(header)
+                        .with_why("a procedure that can fail lists its failures in its header, after `!`, so every caller knows what can come back."),
+                    );
+                }
+                continue;
+            };
             let mut written_ids: Vec<FailureId> =
                 written.iter().filter_map(|word| facts.known_failure(&word.text)).collect();
             written_ids.sort();
@@ -836,9 +850,15 @@ impl Checker<'_> {
                 } else {
                     format!("its body can fail with {}", facts.names(&procedure.failures))
                 };
+                let fix = if procedure.failures.is_empty() {
+                    super::header_with(&self.source_line(procedure.place.line), "", Some(""))
+                } else {
+                    header
+                };
                 messages.push(
                     Message::refused(place, format!("`{}`'s written failures don't match: {body}", procedure.name))
-                        .with_why("failures written after `!` must match what the body does."),
+                        .with_fix(fix)
+                        .with_why("the failures after `!` are exactly what the body can fail with: every `fail`, and every failure passed up with `?`."),
                 );
             }
         }

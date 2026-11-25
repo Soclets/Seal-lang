@@ -45,6 +45,8 @@ pub enum Keyword {
     Be,
     Div,
     Rem,
+    /// `comment name` opens a block comment, so a name can't be `comment` (D91).
+    Comment,
 }
 
 impl Keyword {
@@ -87,6 +89,7 @@ impl Keyword {
             "be" => Keyword::Be,
             "div" => Keyword::Div,
             "rem" => Keyword::Rem,
+            "comment" => Keyword::Comment,
             _ => return None,
         })
     }
@@ -138,6 +141,7 @@ impl Keyword {
             Keyword::Be => "be",
             Keyword::Div => "div",
             Keyword::Rem => "rem",
+            Keyword::Comment => "comment",
         }
     }
 }
@@ -222,6 +226,8 @@ pub enum TokenKind {
     /// Text in double quotes, without the quotes (D16, Unio D21).
     Text(String),
     Symbol(Symbol),
+    /// The note after `end \\`, naming the block the `end` closes, with single spaces between its words (D102).
+    Note(String),
 }
 
 impl TokenKind {
@@ -241,6 +247,7 @@ impl TokenKind {
             }
             TokenKind::Text(_) => "text".to_owned(),
             TokenKind::Symbol(symbol) => format!("`{}`", symbol.text()),
+            TokenKind::Note(note) => format!("`\\\\ {note}`"),
         }
     }
 }
@@ -271,6 +278,8 @@ pub struct Line {
     pub tokens: Vec<Token>,
     /// The place of the whole first physical line, for messages about the line itself.
     pub place: Place,
+    /// Where the `///` comment right before the line starts, when it has one (D63, D91).
+    pub documented: Option<Place>,
 }
 
 struct Lexer {
@@ -284,6 +293,8 @@ struct Lexer {
     type_depth: u32,
     /// Spacing mistakes found while reading the statement's lines, beyond the gaps between its tokens.
     mistakes: Vec<SpacingMistake>,
+    /// The `///` comment waiting for the line it describes.
+    documented: Option<Place>,
 }
 
 /// Splits a script's text into logical lines of tokens.
@@ -301,6 +312,7 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         open_brackets: Vec::new(),
         type_depth: 0,
         mistakes: Vec::new(),
+        documented: None,
     };
     let mut physical: Vec<&str> = source.split('\n').collect();
     // A file's last line break ends its last line; it doesn't start an empty one.
@@ -312,10 +324,12 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         *line = line.strip_suffix('\r').unwrap_or(line);
     }
     let mut blank_run = 0u32;
-    // The open block comment: its depth and where it starts (D63).
-    let mut comment_block: Option<(usize, Place)> = None;
+    // The open block comment: its depth, its name and where it starts (D63, D102).
+    let mut comment_block: Option<(usize, String, Place)> = None;
     // The first `///` line still waiting for its declaration (D63, Unio D74).
     let mut pending_doc: Option<Place> = None;
+    // Comment lines waiting for the line after them, which says how they're indented (D91, Unio D145).
+    let mut pending_comments: Vec<(u32, usize)> = Vec::new();
     let doc_without_declaration = |place: Place| {
         Message::refused(place, "this `///` has no declaration after it")
             .with_why("a `///` comment describes the declaration on the line after it.")
@@ -327,9 +341,32 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         characters.clear();
         characters.extend(text.chars());
         let leading = characters.iter().take_while(|&&character| character == ' ').count();
-        if let Some((depth, _)) = comment_block {
-            // Everything inside a block comment is ignored; a plain `end` at its own depth closes it.
-            if leading == depth && characters.get(leading..) == Some(&['e', 'n', 'd']) {
+        if let Some((depth, name, _)) = &comment_block {
+            // Everything inside a block comment is ignored; an `end` at its own depth closes it, and the note after
+            // it, when written, names the comment (D102).
+            if leading == *depth
+                && let Some(rest) = characters.get(leading..)
+                && rest.starts_with(&['e', 'n', 'd'])
+                && (rest.len() == 3 || rest.get(3) == Some(&' '))
+            {
+                let after: String = rest.get(3..).unwrap_or(&[]).iter().collect();
+                if !after.is_empty() {
+                    let wanted = format!("comment {name}");
+                    let written = after.trim_start().strip_prefix("\\\\").map(str::trim);
+                    if written != Some(wanted.as_str()) {
+                        let column = column_of(leading + 4);
+                        return Err(Message::refused(
+                            Place::new(
+                                number,
+                                column,
+                                u32::try_from(after.len()).unwrap_or(1).saturating_sub(1).max(1),
+                            ),
+                            format!("this `end` closes `comment {name}`, so its note is `\\\\ {wanted}`"),
+                        )
+                        .with_fix(format!("{}end \\\\ {wanted}", " ".repeat(leading)))
+                        .with_why("an `end`'s note names the block it closes, so it can't go stale."));
+                    }
+                }
                 comment_block = None;
             }
             continue;
@@ -347,7 +384,11 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
             }
             blank_run += 1;
             if !lexer.open_brackets.is_empty() {
-                return Err(Message::not_designed_yet(Place::new(number, 1, 1), "a blank line inside an open bracket"));
+                // trace: D93. A statement spread over lines stays in one piece.
+                return Err(Message::refused(Place::new(number, 1, 1), "this blank line is inside an open bracket")
+                    .with_why(
+                        "a statement carries on over lines only inside its brackets, with no blank line between them.",
+                    ));
             }
             if blank_run > 1 {
                 // trace: D63, Unio D97, D101
@@ -391,34 +432,53 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         }
         let continued = !lexer.open_brackets.is_empty();
         let rest = characters.get(leading..).unwrap_or(&[]);
-        // trace: D63, Unio D74. A line that's only a comment.
+        // trace: D63, D91, Unio D74. A line that's only a comment, inside an open bracket too.
         if rest.starts_with(&['/', '/']) {
             let place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
-            if continued {
-                return Err(Message::not_designed_yet(place, "a comment inside an open bracket"));
-            }
             if rest.starts_with(&['/', '/', '/']) && rest.get(3) != Some(&'/') {
+                if continued {
+                    return Err(Message::refused(place, "this `///` is inside an open bracket")
+                        .with_why("a `///` comment describes the declaration on the line after it."));
+                }
                 pending_doc.get_or_insert(place);
             } else if let Some(doc) = pending_doc {
                 return Err(doc_without_declaration(doc));
             }
-            check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+            if continued {
+                // A comment line inside a statement keeps the statement's own spacing mistakes waiting.
+            } else {
+                check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+            }
+            pending_comments.push((number, leading));
             continue;
         }
-        // trace: D20, D63. `comment name` on its own line opens a block comment.
-        if !continued && is_comment_opener(rest) {
+        // trace: D20, D63, D102. `comment name` on its own line opens a block comment.
+        if !continued && let Some(name) = comment_opener(rest) {
             if let Some(doc) = pending_doc {
                 return Err(doc_without_declaration(doc));
             }
+            check_comment_indentation(&mut pending_comments, leading, rest)?;
             check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
-            comment_block = Some((leading, Place::new(number, column_of(leading), 7)));
+            comment_block = Some((leading, name, Place::new(number, column_of(leading), 7)));
             continue;
         }
-        if let Some(doc) = pending_doc.take() {
-            check_documented(rest, doc)?;
-        }
+        check_comment_indentation(&mut pending_comments, leading, rest)?;
+        lexer.documented = pending_doc.take().or(lexer.documented);
         let width = u32::try_from(characters.len()).unwrap_or(u32::MAX);
-        if !continued {
+        if continued {
+            // trace: D106. A statement's later lines are indented one level deeper than its first.
+            let wanted = lexer.current_indentation + 4;
+            if u32::try_from(leading).ok() != Some(wanted) {
+                return Err(Message::refused(
+                    Place::new(number, 1, u32::try_from(leading).unwrap_or(1).max(1)),
+                    format!(
+                        "this line carries on a statement, so it's indented {wanted} spaces, one level deeper than the statement's first line"
+                    ),
+                )
+                .with_indentation_fix(wanted)
+                .with_why("a statement's later lines are indented one level, 4 spaces, deeper than its first."));
+            }
+        } else {
             lexer.current_indentation = u32::try_from(leading).unwrap_or(u32::MAX);
             lexer.current_place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
         }
@@ -427,7 +487,7 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
             lexer.finish_line(&physical)?;
         }
     }
-    if let Some((_, place)) = comment_block {
+    if let Some((_, _, place)) = comment_block {
         return Err(Message::refused(place, "this `comment` is never closed with `end`")
             .with_why("a block comment closes with `end`, at the depth of its `comment` line."));
     }
@@ -440,6 +500,31 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
     Ok(lexer.lines)
 }
 
+/// Checks the comment lines waiting for this one: each is indented like it, or one level in when it's an `end`, an
+/// `elif` or an `else`, which close what the comment is about (D91, Unio D145).
+fn check_comment_indentation(pending: &mut Vec<(u32, usize)>, leading: usize, rest: &[char]) -> Result<(), Message> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let length = rest.iter().take_while(|character| character.is_ascii_alphanumeric() || **character == '_').count();
+    let word = rest.get(..length).unwrap_or(&[]);
+    let closes = [&['e', 'n', 'd'][..], &['e', 'l', 'i', 'f'], &['e', 'l', 's', 'e']].contains(&word);
+    let wanted = if closes { leading + 4 } else { leading };
+    for (line, indentation) in pending.drain(..) {
+        if indentation != wanted {
+            return Err(Message::refused(
+                Place::new(line, 1, u32::try_from(indentation).unwrap_or(1).max(1)),
+                format!("this comment is indented {indentation} spaces, where the line after it puts it at {wanted}"),
+            )
+            .with_indentation_fix(u32::try_from(wanted).unwrap_or(0))
+            .with_why(
+                "a comment on its own line is indented like the line after it, or one level in before `end`, `elif` or `else`.",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// One gap that isn't the fixed spacing: where it starts, how many spaces it has, and how many it should have.
 #[derive(Clone, Copy, Debug)]
 struct SpacingMistake {
@@ -449,35 +534,14 @@ struct SpacingMistake {
     wanted: u32,
 }
 
-/// Whether a line, past its indentation, is `comment name` and nothing else (D63).
-fn is_comment_opener(rest: &[char]) -> bool {
-    let Some(name) = rest.strip_prefix(&['c', 'o', 'm', 'm', 'e', 'n', 't', ' ']) else { return false };
-    name.first().is_some_and(|first| first.is_ascii_lowercase() || *first == '_')
+/// The comment's name, when a line, past its indentation, is `comment name` and nothing else (D63).
+fn comment_opener(rest: &[char]) -> Option<String> {
+    let name = rest.strip_prefix(&['c', 'o', 'm', 'm', 'e', 'n', 't', ' '])?;
+    let well_formed = name.first().is_some_and(|first| first.is_ascii_lowercase() || *first == '_')
         && name
             .iter()
-            .all(|&character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
-}
-
-/// Checks that the line after a `///` comment is a declaration (D63, Unio D74). Which declarations take one isn't
-/// decided beyond the ones every example shows, so the rest stop as not designed yet.
-fn check_documented(rest: &[char], doc: Place) -> Result<(), Message> {
-    let line: String = rest.iter().collect();
-    let word: String =
-        line.chars().take_while(|&character| character.is_ascii_alphanumeric() || character == '_').collect();
-    let after = line.chars().nth(word.len());
-    if matches!(word.as_str(), "proc" | "record" | "one_of") || line.starts_with("fam.proc ") {
-        return Ok(());
-    }
-    let makes_a_name = matches!(word.as_str(), "mut" | "unused")
-        || (!Keyword::is_keyword(&word) && !word.is_empty() && after != Some('('));
-    if makes_a_name {
-        return Err(Message::not_designed_yet(
-            doc,
-            "a `///` before anything but a procedure, a family, a record or a `one_of`",
-        ));
-    }
-    Err(Message::refused(doc, "this `///` has no declaration after it")
-        .with_why("a `///` comment describes the declaration on the line after it."))
+            .all(|&character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_');
+    well_formed.then(|| name.iter().collect())
 }
 
 fn column_of(index: usize) -> u32 {
@@ -490,7 +554,8 @@ impl Lexer {
         let tokens = std::mem::replace(&mut self.current, Vec::with_capacity(12));
         check_spacing(&tokens, &std::mem::take(&mut self.mistakes), physical)?;
         self.type_depth = 0;
-        self.lines.push(Line { indentation: self.current_indentation, tokens, place: self.current_place });
+        let documented = self.documented.take();
+        self.lines.push(Line { indentation: self.current_indentation, tokens, place: self.current_place, documented });
         Ok(())
     }
 
@@ -545,7 +610,38 @@ impl Lexer {
             let place_of = |length: usize| Place::new(number, column, u32::try_from(length).unwrap_or(u32::MAX));
             match character_here {
                 '\t' => {
-                    return Err(Message::not_designed_yet(place_of(1), "a tab"));
+                    // trace: D63. A tab can't be told from spaces.
+                    return Err(Message::refused(place_of(1), "this line has a tab in it")
+                        .with_why("spacing is written with spaces, since a tab can't be told from them."));
+                }
+                '\\' if characters.get(index + 1) == Some(&'\\') => {
+                    // trace: D102. After `end`, `\\` starts a note naming the block it closes.
+                    let after_end =
+                        matches!(self.current.as_slice(), [Token { kind: TokenKind::Keyword(Keyword::End), .. }]);
+                    if !after_end {
+                        return Err(Message::refused(place_of(2), "`\\\\` outside text starts a note after `end`")
+                            .with_why("an `end` can carry a note naming its block, as `end \\\\ proc on_hit`; nothing else uses `\\\\`."));
+                    }
+                    let mut rest: String = characters.get(index + 2..).unwrap_or(&[]).iter().collect();
+                    // A comment after the note runs to the end of the line, as after any code.
+                    if let Some(comment) = rest.find(" //") {
+                        rest.truncate(comment);
+                    }
+                    let spaces_before = rest.chars().take_while(|&character| character == ' ').count();
+                    let words: Vec<&str> = rest.split(' ').filter(|word| !word.is_empty()).collect();
+                    let note = words.join(" ");
+                    if spaces_before != 1 || rest.trim_start().len() != note.len() {
+                        let note_column = column + 2;
+                        self.mistakes.push(SpacingMistake {
+                            line: number,
+                            column: note_column,
+                            actual: u32::try_from(spaces_before).unwrap_or(0),
+                            wanted: 1,
+                        });
+                    }
+                    let length = 2 + rest.len();
+                    self.push(TokenKind::Note(note), place_of(length), gap);
+                    index += length;
                 }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let mut end = index;
@@ -583,18 +679,25 @@ impl Lexer {
                                     text.push(next);
                                     end += 1;
                                 }
-                                _ => {
-                                    return Err(Message::not_designed_yet(
-                                        Place::new(number, column_of(end), 1),
-                                        "a `\\` in text before anything but `\"`, `\\` or `{`",
+                                next => {
+                                    // trace: D92. A habit from another language mustn't turn into a stray letter.
+                                    let shown = next.map_or_else(String::new, ToString::to_string);
+                                    return Err(Message::refused(
+                                        Place::new(number, column_of(end), 2),
+                                        format!("`\\{shown}` isn't something text can hold"),
+                                    )
+                                    .with_why(
+                                        "in text, `\\` goes only before `\"`, `\\` or `{`; a line break is `{newln}` and a tab `{tab}`, so `\\n` isn't a new line in Seal.",
                                     ));
                                 }
                             },
                             Some('\t') => {
-                                return Err(Message::not_designed_yet(
+                                // trace: D92
+                                return Err(Message::refused(
                                     Place::new(number, column_of(end), 1),
-                                    "a tab inside text",
-                                ));
+                                    "this text has a tab character in it",
+                                )
+                                .with_why("a tab can't be told from spaces, so a tab in text is written `{tab}`."));
                             }
                             Some(&other) => text.push(other),
                         }
@@ -612,13 +715,8 @@ impl Lexer {
                                 return Err(Message::not_designed_yet(place_of(2), "a comment inside an open bracket"));
                             }
                             match gap {
-                                Gap::Spaces(0) => {
-                                    return Err(Message::not_designed_yet(
-                                        place_of(2),
-                                        "a `//` comment touching what's before it",
-                                    ));
-                                }
-                                Gap::Spaces(actual) if actual > 1 => self.mistakes.push(SpacingMistake {
+                                // trace: D91. One space before a `//` after code.
+                                Gap::Spaces(actual) if actual != 1 => self.mistakes.push(SpacingMistake {
                                     line: number,
                                     column: column - actual,
                                     actual,
@@ -684,10 +782,12 @@ impl Lexer {
                                 .with_why("Seal's names are plain words."));
                         }
                         (other, _) if !other.is_ascii() => {
-                            return Err(Message::not_designed_yet(
+                            // trace: D93. Letters beyond plain English go only in text, for now.
+                            return Err(Message::refused(
                                 place_of(1),
-                                format!("`{other}` outside text, a character beyond plain English ones,"),
-                            ));
+                                format!("`{other}` is beyond the plain English letters a script is written in"),
+                            )
+                            .with_why("outside text, a script is written in plain English letters, digits and symbols, for now."));
                         }
                         (other, _) => {
                             return Err(Message::refused(place_of(1), format!("`{other}` can't be read here")));
@@ -734,7 +834,18 @@ fn word_token(word: &str, place: Place) -> Result<TokenKind, Message> {
     let first = word.chars().next().unwrap_or('_');
     if first.is_ascii_uppercase() {
         if word.contains('_') {
-            return Err(Message::not_designed_yet(place, "a `_` in a type's name"));
+            // trace: D93
+            let fixed: String = word
+                .split('_')
+                .map(|part| {
+                    let mut letters = part.chars();
+                    letters
+                        .next()
+                        .map_or_else(String::new, |first| first.to_ascii_uppercase().to_string() + letters.as_str())
+                })
+                .collect();
+            return Err(Message::refused(place, format!("a type's name has no `_`, so `{word}` is written `{fixed}`"))
+                .with_why("a type's name joins its words with capitals, as `HighScore`."));
         }
         return Ok(TokenKind::TypeName(word.to_owned()));
     }
@@ -806,7 +917,11 @@ fn number_token(number: u32, characters: &[char], start: usize) -> Result<(Token
     }
     let whole_part: &str = text.split('.').next().unwrap_or("");
     if whole_part.len() > 1 && whole_part.starts_with('0') {
-        return Err(Message::not_designed_yet(place, "a number written with a leading zero"));
+        // trace: D93
+        let trimmed = whole_part.trim_start_matches('0');
+        let shown = if trimmed.is_empty() { "0" } else { trimmed };
+        return Err(Message::refused(place, format!("a number has no leading zero, so this is written `{shown}`"))
+            .with_why("a number is written without zeros in front, as `7`, not `007`."));
     }
     if is_float {
         Ok((TokenKind::Float { text, approximate }, length))
@@ -839,11 +954,20 @@ pub fn cook_text(written: &str) -> String {
 /// under each gap and the whole corrected line as the fix (Unio D100).
 fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) -> Result<(), Message> {
     let mut mistakes = found.to_vec();
+    let header = header_brackets(tokens);
     for (index, pair) in tokens.windows(2).enumerate() {
         let [before, after] = pair else { continue };
         let Gap::Spaces(actual) = after.gap else {
             continue;
         };
+        // trace: D88. A parameter group's `:` has a space on each side; the parser tells a group's `:` from a single
+        // name's, so here either spacing passes.
+        if after.kind == TokenKind::Symbol(Symbol::Colon)
+            && header.is_some_and(|(open, close)| open < index + 1 && index + 1 < close)
+            && actual == 1
+        {
+            continue;
+        }
         // `div.floor` and its like are operators, with a space on each side like any other (Unio D70, D98).
         let after_operator = ends_with_rounding(tokens.get(..=index).unwrap_or(&[]));
         let wanted = if after_operator { 1 } else { wanted_spaces(&before.kind, &after.kind) };
@@ -875,6 +999,42 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
             "spacing is fixed, so every script reads alike: one space around operators and after `,` and `:`, and \
              none inside brackets or at a line's end.",
         ))
+}
+
+/// Where a procedure's header line has its parameters' `[ ]`, by the tokens' places in the line: a line that's `proc`
+/// and a name, or a family member's name, followed by `[ … ]` and nothing but `->` or `!` after it (D21, D88, D97).
+fn header_brackets(tokens: &[Token]) -> Option<(usize, usize)> {
+    let mut index =
+        usize::from(matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::Proc))));
+    if !matches!(tokens.get(index).map(|token| &token.kind), Some(TokenKind::Name(_))) {
+        return None;
+    }
+    index += 1;
+    while matches!(tokens.get(index).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Dot)))
+        && matches!(tokens.get(index + 1).map(|token| &token.kind), Some(TokenKind::Name(_)))
+    {
+        index += 2;
+    }
+    if tokens.get(index).map(|token| &token.kind) != Some(&TokenKind::Symbol(Symbol::OpenSquare)) {
+        return None;
+    }
+    let open = index;
+    let mut depth = 0u32;
+    for (at, token) in tokens.iter().enumerate().skip(open) {
+        match token.kind {
+            TokenKind::Symbol(Symbol::OpenSquare | Symbol::OpenRound) => depth += 1,
+            TokenKind::Symbol(Symbol::CloseSquare | Symbol::CloseRound) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let after = tokens.get(at + 1).map(|token| &token.kind);
+                    let header = matches!(after, None | Some(TokenKind::Symbol(Symbol::Arrow | Symbol::Bang)));
+                    return header.then_some((open, at));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Whether the tokens end with `div.floor`, `div.trunc`, `rem.floor` or `rem.trunc` (Unio D70, D71).
@@ -926,7 +1086,7 @@ mod tests {
     // trace: D8
     #[test]
     fn d08_a_line_carries_on_inside_an_open_bracket() {
-        let lines = lex("total = (first +\n         second)\nmut x = 1\n").unwrap_or_default();
+        let lines = lex("total = (first +\n    second)\nmut x = 1\n").unwrap_or_default();
         assert_eq!(lines.len(), 2);
     }
 
@@ -983,13 +1143,33 @@ mod tests {
         assert_eq!(kind("comment never\na = 1"), Some(MessageKind::Refused));
         assert_eq!(kind("\ta = 1"), Some(MessageKind::Refused));
         assert_eq!(kind("a = 1 \r b"), Some(MessageKind::NotDesignedYet));
+        // trace: D91, D106, Unio D145
+        assert_eq!(kind("x = 1// hi"), Some(MessageKind::Refused));
+        assert_eq!(kind("total = (1 +\n    // the second\n    2)"), None);
+        assert_eq!(kind("total = (1 +\n        2)"), Some(MessageKind::Refused));
+        assert_eq!(kind("    // misplaced\nx = 1"), Some(MessageKind::Refused));
+        assert_eq!(kind("if x\n    y = 1\n    // the end of the way\nend"), None);
+    }
+
+    // trace: D102
+    #[test]
+    fn d102_an_end_may_carry_a_note() {
+        assert_eq!(kinds("end \\\\ if"), vec![TokenKind::Keyword(Keyword::End), TokenKind::Note("if".into())]);
+        assert_eq!(
+            kinds("end \\\\ proc on_hit // done"),
+            vec![TokenKind::Keyword(Keyword::End), TokenKind::Note("proc on_hit".into())]
+        );
+        assert!(lex("x = 1 \\\\ no").is_err());
+        assert_eq!(kinds("comment old\n    stuff\nend \\\\ comment old\na = 1"), kinds("a = 1"));
+        assert!(lex("comment old\n    stuff\nend \\\\ comment other\n").is_err());
     }
 
     // trace: D63
     #[test]
     fn d63_a_backslash_makes_the_next_character_literal() {
         assert_eq!(cook_text(r#"She said \"hi\" and \\ left \{"#), "She said \"hi\" and \\ left {");
+        // trace: D92
         let kind = lex(r#"a = "new\nline""#).err().map(|message| message.kind);
-        assert_eq!(kind, Some(MessageKind::NotDesignedYet));
+        assert_eq!(kind, Some(MessageKind::Refused));
     }
 }

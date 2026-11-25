@@ -6,6 +6,6 @@ proc fib[n: Whole] -> Whole
     end
 end
 
-proc run[n] -> Whole
+proc run[n: Whole] -> Whole
     return fib(n)
 end

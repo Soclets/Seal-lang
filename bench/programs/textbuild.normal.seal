@@ -1,8 +1,8 @@
-proc run[count] -> Text
+proc run[count: Whole] -> Text
     mut text = ""
     mut number = 0
     while number < count
-        text = text & number & ","
+        text = "{text}{number},"
         number = number + 1
     end
     return text

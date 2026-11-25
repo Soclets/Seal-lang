@@ -12,7 +12,7 @@ proc build[depth: Whole] -> Tree
     end
 end
 
-proc run[rounds] -> Whole
+proc run[rounds: Whole] -> Whole
     mut made = 0
     for each unused round in range[from: 1, to: rounds]
         unused tree = build(10)

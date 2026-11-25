@@ -1,6 +1,7 @@
 # Seal's implementation: progress
 
-Kept by the building session ("seal claude"). After a compaction, read this, `test-status.json` and `git log` to carry on.
+Kept by the building session: "seal claude" built D1 to D73; "seal opus claude" carries it on from 2026-11-25. After a
+compaction, read this, `test-status.json` and `git log` to carry on.
 
 **The one command** for the whole build, lint and test run: `cargo run -j 3 --release -p seal-check-all`. It checks
 formatting, lints with warnings as errors, builds, runs the packages' own tests, runs the fuzzer and the comparison
@@ -36,6 +37,33 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
 - [x] **C6. Performance work.** Every goal of D57 is met, Normal against Normal. See "Benchmarks" and
   `bench/RESULTS.md`.
 
+## Plan from 2026-11-25 (seal opus claude): D74 to D118
+
+Baseline before any change: every one of the 15 tests failed (they're in today's spellings), one unit test failed, and
+all 401 Ralph comparisons differed (Ralph reads only Unio's new spellings). The benchmarks were re-run on the old
+build: `bench/RESULTS.md` as of that run.
+
+Each checkpoint ends with something running, committed and pushed, the benchmarks re-run when it touched the reader,
+checker, compiler or VM.
+
+- [x] **C7. Today's spellings.** Bare `end` with a checked `\\` note (D102); family members without `proc` (D97);
+  header types required (D81), `! [ … ]` required and exact (D84), grouped parameters (D88); every text fills its
+  braces, `fmt` and `&` go (D75, D77); `{newln}` and `{tab}` (D118). Every test passes again; the benchmark programs
+  are rewritten in today's spellings. Every D57 goal still met; most programs got faster (see "Benchmarks").
+- [ ] **C8. The smaller decisions.** D79, D80, D82, D83, D85, D86, D87, D89 to D96, D99 to D101, D103 to D106: each
+  stop the code had becomes the decided refusal or feature, `==` on bigger values (D95), a `range` as a list (D99),
+  every value shown as written (D100), `places:` (D94), `be.Bool` (D101).
+- [x] **C9. The translator writes Unio's current spellings** (Unio D190 to D203) and the comparison with Ralph runs
+  again: 404 the same, 0 different, from seed 1, with 4 of the 15 tests compared.
+- [ ] **C10. Handlers** (D97, D98, D110): `group.handler`, `::name`, `handles [ … ]`, `??` with a handler, `include`,
+  `*`, parameters.
+- [ ] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
+  (D109), `lerp` (D114), each correctly rounded (D50).
+- [ ] **C12. Units** (D111 to D113), once the design session has answered how Cyborg's units work in Seal.
+- [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116), timed in the benchmarks.
+- [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
+  and sent to the design session.
+
 ## Decisions built since D58
 
 Each arrived while building; each is built, tested, fuzzed and pushed.
@@ -63,6 +91,35 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   never end is refused. Freeing a deep value never nests in the host's stack.
 - **D73** A list moves freely into a `len.max` at least as big; into a smaller one it can fail with `full`. A list
   literal longer than its `len.max`, and a key written twice in a `Dict` literal, are refused.
+
+## Decisions built since D73
+
+- **D74** `record` stays: nothing to change.
+- **D75, D77** Every text fills its braces; `fmt` and `&` go. `&` is refused, and so is `+` on text, with the braces
+  form as the fix when the pieces are texts and names. Braces fill in place as `&` did: `text = "{text}…"` joins onto
+  the text in place.
+- **D81** Every parameter writes its type, and a procedure giving back a value writes `-> Type`; a `return` with a
+  value in a header without one is refused, with the header put right as the fix. Names inside bodies still take
+  their type from their value.
+- **D84** A procedure that can fail writes `! [ … ]`, exactly as its body fails; the fix is the header put right.
+- **D85** A host opens its records and `one_of`s: a door's types with the door, and others with `Doors::add_type`.
+  A script uses them by name; declaring one is refused.
+- **D88** Parameter groups, `[hp, amount : Whole]`; a group's `:` without its spaces, or a single name's with them,
+  is refused with the respaced header as the fix. The lexer lets a spaced `:` through only inside a header's `[ ]`.
+- **D91** `x = 1// hi` is a spacing mistake; comment lines inside brackets are fine; a comment line is indented like
+  the line after it, or one level in before `end`, `elif` or `else` (Unio D145); `comment` is a keyword; `///` goes
+  before a top-level name, a field, a case, a procedure, a family, a record or a `one_of`.
+- **D92, D93** The old stops become refusals: `\` before other characters, tabs, empty braces, a procedure named
+  after a built-in or door, declarations inside blocks, `_` in a type's name, leading zeros, letters beyond plain
+  English, blank lines inside brackets.
+- **D94** `{speed, places: 2}`, rounded from the `Float`'s exact value, ties away from zero, no minus on zero.
+- **D97** A family's members are written without `proc`; `proc` inside a family is refused with the fix.
+- **D100** Every value shows as it's written: lists, arrays, `Dict`s, records, `one_of`s, `Maybe`s, text in quotes
+  with `"`, `\`, `{`, line breaks and tabs written as a script would. Showing walks the value without nesting in the
+  host's stack and stops at the memory cap.
+- **D102** Bare `end`, with an optional `\\ note` checked against the block it closes, block comments included.
+- **D106** A statement's later lines are indented one level deeper than its first.
+- **D118** `{newln}` and `{tab}`; `newln` and `tab` can't be names. Outside braces they stop as not designed yet.
 
 ## How it's built (the building session's design)
 
@@ -98,6 +155,9 @@ The VM, and its optimizations (Building rule 5):
   be the same, as `for each j in range[from: i + 1, …]` does.
 - **A `mut` record of plain numbers kept in registers**, written back in one step.
 - **Small procedures written out in place** of a call to them.
+- **Rare, big instructions live outside the loop.** Joining text is a function of its own, never inlined: with it
+  inside the loop, the loop's machine code got worse for everything, `fib` 18% slower on the same bytecode. Kept
+  out, `fib` is 6% faster than before, and a join costs about 3 ns more (one call).
 - **The host's side:** a script's compiled form is kept by its doors and shared by every script loaded from the same
   text; plain numbers cross a door or a host call as their bare bits; a finished call's room is reused; a paused task
   is resumed where it sits.
@@ -109,7 +169,12 @@ The VM, and its optimizations (Building rule 5):
 
 ## Benchmarks
 
-`bench/RESULTS.md` has every number. In short, judged Normal against Normal (D58):
+`bench/RESULTS.md` has every number. After C7 (2026-11-25), Normal: `fib` 52.1 ms (was 55.5), n-body 66.0 ms (67.6),
+spectral-norm 19.2 ms (21.7), fannkuch 113 ms (120), word count 24.4 ms (25.9), text building 335 µs (287), binary-trees
+114.5 ms (115.2), patrol run 2.10 ms (2.08). Loading a 12-line script from a text of its own is about 10.2 µs (9.7):
+the reader keeps the script's text for the fixes it shows, and checks comment lines' indentation (D91).
+
+In short, judged Normal against Normal (D58):
 
 - **Faster than Luau's interpreter:** met on all eight as the benchmarks are defined: `fib`, n-body, spectral-norm,
   fannkuch, word count, text building, binary-trees, and the patrolling scripts as a whole run (1,000 scripts loaded

@@ -1,8 +1,8 @@
 // Purpose: joining text. One text grows by two characters, `count` times.
-proc run[count] -> Text
+proc run[count: Whole] -> Text
     mut text = ""
     for each unused piece in range[from: 1, to: count]
-        text = text & "ab"
+        text = "{text}ab"
     end
     return text
 end

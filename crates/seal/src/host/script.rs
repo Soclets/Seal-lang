@@ -249,7 +249,7 @@ impl Script {
         let _ = name;
         let tree = parse(source).map_err(|message| vec![message])?;
         let signatures = doors.signatures();
-        let program = check(&tree, &signatures)?;
+        let program = check(&tree, &signatures, &doors.types())?;
         compile_as(&program, &signatures, plain).map_err(|message| vec![message])
     }
 

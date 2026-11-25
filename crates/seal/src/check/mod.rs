@@ -18,8 +18,8 @@ use tree::{
 };
 use types::{BOOL, CaseType, ERROR, FLOAT, NOTHING, OneOfType, RecordType, TEXT, Type, TypeId, WHOLE};
 
-/// The words Seal provides itself (D11, D12, D22). A script's own names can't take them.
-const BUILT_IN_WORDS: [&str; 4] = ["fmt", "range", "sqrt", "be"];
+/// The words Seal provides itself (D11, D22, D118). A script's own names can't take them.
+const BUILT_IN_WORDS: [&str; 5] = ["range", "sqrt", "be", "newln", "tab"];
 
 /// The types Seal provides itself (D16, D32, D38).
 const BUILT_IN_TYPES: [&str; 8] = ["Whole", "Float", "Bool", "Text", "List", "Array", "Dict", "Maybe"];
@@ -59,8 +59,6 @@ enum Requirement {
     Comparable,
     /// What `&` joins: `Text`, `Whole` or `Bool` (D29).
     Joinable,
-    /// What `fmt`'s braces show: `Whole`, `Float`, `Bool` or `Text` (D12).
-    Showable,
     /// What `be.Text` converts: `Whole`, `Float` or `Bool`.
     Textable,
     /// Has the field or fact `name`, of type `result` (D27, Unio D79).
@@ -104,6 +102,12 @@ struct Context {
 
 pub(crate) struct Checker<'a> {
     doors: &'a [DoorSignature],
+    /// The records and `one_of`s the host opens, used with nothing declared (D85).
+    host_types: &'a [HostType],
+    /// Their names.
+    host_type_names: HashSet<String>,
+    /// The script as it's written, for fixes that show a whole line put right.
+    script: &'a syntax::Script,
     /// Each door's types in the script's terms, worked out the first time the door is used.
     door_types: HashMap<u32, (Vec<TypeId>, TypeId)>,
     messages: Vec<Message>,
@@ -144,9 +148,16 @@ pub(crate) struct Checker<'a> {
 /// # Errors
 ///
 /// Returns every message, when the script is refused or uses something not designed or not built yet.
-pub fn check(script: &syntax::Script, doors: &[DoorSignature]) -> Result<Program, Vec<Message>> {
+pub fn check(
+    script: &syntax::Script,
+    doors: &[DoorSignature],
+    host_types: &[HostType],
+) -> Result<Program, Vec<Message>> {
     let mut checker = Checker {
         doors,
+        host_types,
+        host_type_names: HashSet::new(),
+        script,
         door_types: HashMap::new(),
         messages: Vec::new(),
         program: Program { types: types::TypeTable::new(), ..Program::default() },
@@ -253,7 +264,61 @@ impl<'a> Checker<'a> {
 
     // ---- declarations ----
 
+    /// trace: D85. The host's records and `one_of`s are there before the script's own, named as the host names them.
+    fn declare_host_types(&mut self) {
+        for host in self.host_types {
+            match host {
+                HostType::Record { name, .. } => {
+                    let index = u32::try_from(self.program.types.records.len()).unwrap_or(u32::MAX);
+                    self.program.types.records.push(RecordType { name: name.clone(), fields: Vec::new() });
+                    self.record_names.insert(name.clone(), index);
+                }
+                HostType::OneOf { name, .. } => {
+                    let index = u32::try_from(self.program.types.one_ofs.len()).unwrap_or(u32::MAX);
+                    self.program.types.one_ofs.push(OneOfType { name: name.clone(), cases: Vec::new() });
+                    self.one_of_names.insert(name.clone(), index);
+                }
+                _ => continue,
+            }
+            if let HostType::Record { name, .. } | HostType::OneOf { name, .. } = host {
+                self.host_type_names.insert(name.clone());
+            }
+        }
+        for host in self.host_types {
+            match host {
+                HostType::Record { name, fields } => {
+                    let fields: Vec<(String, TypeId)> =
+                        fields.iter().map(|(field, inner)| (field.clone(), self.host_type(inner))).collect();
+                    if let Some(&index) = self.record_names.get(name)
+                        && let Some(record) = self.program.types.records.get_mut(index as usize)
+                    {
+                        record.fields = fields;
+                    }
+                }
+                HostType::OneOf { name, cases } => {
+                    let cases: Vec<CaseType> = cases
+                        .iter()
+                        .map(|(case, fields)| CaseType {
+                            name: case.clone(),
+                            fields: fields
+                                .iter()
+                                .map(|(field, inner)| (field.clone(), self.host_type(inner)))
+                                .collect(),
+                        })
+                        .collect();
+                    if let Some(&index) = self.one_of_names.get(name)
+                        && let Some(one_of) = self.program.types.one_ofs.get_mut(index as usize)
+                    {
+                        one_of.cases = cases;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn declare_types(&mut self, script: &'a syntax::Script) {
+        self.declare_host_types();
         let mut records = Vec::new();
         let mut one_ofs = Vec::new();
         for item in &script.items {
@@ -262,6 +327,15 @@ impl<'a> Checker<'a> {
                 syntax::Item::OneOf(one_of) => &one_of.name,
                 _ => continue,
             };
+            if self.host_type_names.contains(&name.text) {
+                // trace: D71, D85
+                self.refuse_why(
+                    name.place,
+                    format!("`{}` is one of the host's types, so the script can't declare it", name.text),
+                    "the host opens its own types for a script, which uses them by name, as it uses a door.",
+                );
+                continue;
+            }
             if BUILT_IN_TYPES.contains(&name.text.as_str()) {
                 self.refuse_why(
                     name.place,
@@ -652,12 +726,21 @@ impl<'a> Checker<'a> {
         let name = procedure.name();
         let name_place = procedure.path.first().map_or(procedure.place, |word| word.place);
         let word = procedure.path.first().map(|word| word.text.clone()).unwrap_or_default();
+        // trace: D71, D93. One spelling means one thing, so a procedure can't take a built-in's or a door's name.
         if BUILT_IN_WORDS.contains(&word.as_str()) {
-            self.not_designed(name_place, format!("a procedure named after the built-in `{word}`"));
+            self.refuse_why(
+                name_place,
+                format!("`{word}` is one of Seal's own words, so a procedure can't be named `{word}`"),
+                NO_SHADOWING,
+            );
             return;
         }
         if self.doors.iter().any(|door| door.name.split('.').next() == Some(word.as_str())) {
-            self.not_designed(name_place, format!("a procedure named after the host's door `{word}`"));
+            self.refuse_why(
+                name_place,
+                format!("`{word}` is one of the host's doors, so a procedure can't be named `{word}`"),
+                NO_SHADOWING,
+            );
             return;
         }
         if let Some(&earlier) = self.procedure_names.get(&name) {
@@ -682,9 +765,10 @@ impl<'a> Checker<'a> {
                     "each parameter has a name of its own.",
                 );
             }
+            // trace: D81. Every parameter writes its type; the parser refuses one that doesn't.
             let type_id = match &parameter.written_type {
                 Some(written) => self.written_type(written),
-                None => self.program.types.fresh(),
+                None => ERROR,
             };
             parameters.push(self.new_variable(Variable {
                 name: parameter.name.text.clone(),
@@ -699,9 +783,10 @@ impl<'a> Checker<'a> {
                 place: parameter.name.place,
             }));
         }
+        // trace: D81. A procedure that gives back a value writes `-> Type`; one that doesn't gives nothing.
         let result = match &procedure.result {
             Some(written) => self.written_type(written),
-            None => self.program.types.fresh(),
+            None => NOTHING,
         };
         let mut labels: Vec<Option<String>> = vec![None; parameters.len()];
         for declaration in &procedure.labels {
@@ -1844,6 +1929,30 @@ impl<'a> Checker<'a> {
         };
         let result = self.program.procedure(procedure).map_or(ERROR, |procedure| procedure.result);
         let disagree = "every `return` in a procedure must agree.";
+        let written = self.procedure_syntax.get(procedure.0 as usize).is_some_and(|syntax| syntax.result.is_some());
+        if let Some(value) = value
+            && !written
+        {
+            // trace: D81. The header says what a procedure gives back.
+            let checked = self.expression(value, None);
+            let found = self.program.types.written(checked.type_id);
+            let header =
+                self.procedure_syntax.get(procedure.0 as usize).map_or(Place::default(), |syntax| syntax.place);
+            let mut message = Message::refused(
+                value.place,
+                format!(
+                    "this `return` gives back {}, but the procedure's header has no `-> Type`",
+                    self.describe(checked.type_id)
+                ),
+            )
+            .with_because(format!("line {} is the header", header.line), header)
+            .with_why("a procedure that gives back a value says so in its header, with `-> Type`.");
+            if !self.program.types.is_error(checked.type_id) && self.program.types.is_settled(checked.type_id) {
+                message = message.with_fix(header_with(&self.source_line(header.line), &format!(" -> {found}"), None));
+            }
+            self.messages.push(message);
+            return None;
+        }
         if let Some(value) = value {
             if self.context.returned_value == Some(false) {
                 self.refuse_why(value.place, "this `return` gives a value, but an earlier one gives none", disagree);
@@ -2145,7 +2254,7 @@ impl<'a> Checker<'a> {
     }
 
     /// Turns a host's type into the script's. A record or a `one_of` must be declared by the script, the same way.
-    fn host_type(&mut self, host: &HostType, place: Place) -> TypeId {
+    fn host_type(&mut self, host: &HostType) -> TypeId {
         match host {
             HostType::Nothing => NOTHING,
             HostType::Whole => WHOLE,
@@ -2153,80 +2262,46 @@ impl<'a> Checker<'a> {
             HostType::Bool => BOOL,
             HostType::Text => TEXT,
             HostType::List(item) => {
-                let item = self.host_type(item, place);
+                let item = self.host_type(item);
                 self.program.types.list(item)
             }
             HostType::Dict(key, value) => {
-                let key = self.host_type(key, place);
-                let value = self.host_type(value, place);
+                let key = self.host_type(key);
+                let value = self.host_type(value);
                 self.program.types.dict(key, value)
             }
             HostType::Maybe(inner) => {
-                let inner = self.host_type(inner, place);
+                let inner = self.host_type(inner);
                 self.program.types.maybe(inner)
             }
-            HostType::Record { name, fields } => {
-                let Some(&record) = self.record_names.get(name) else {
-                    self.not_designed(
-                        place,
-                        format!("using the host's record `{name}` without declaring it in the script"),
-                    );
-                    return ERROR;
-                };
-                let host_fields: Vec<(String, TypeId)> =
-                    fields.iter().map(|(field, host)| (field.clone(), self.host_type(host, place))).collect();
-                let declared = self.program.types.records.get(record as usize).map(|record| record.fields.clone());
-                if !self.same_fields(declared.as_deref().unwrap_or(&[]), &host_fields) {
-                    self.refuse_why(
-                        place,
-                        format!("the script's record `{name}` doesn't have the fields the host's `{name}` has"),
-                        "a record crosses a door as the host's struct, field for field.",
-                    );
-                    return ERROR;
+            // trace: D85. The host's types were declared from its own description before anything else.
+            HostType::Record { name, .. } => match self.record_names.get(name) {
+                Some(&record) if self.host_type_names.contains(name) => self.program.types.intern(Type::Record(record)),
+                _ => {
+                    self.messages.push(Message::internal(format!("the host's record `{name}` wasn't opened")));
+                    ERROR
                 }
-                self.program.types.intern(Type::Record(record))
-            }
-            HostType::OneOf { name, cases } => {
-                let Some(&one_of) = self.one_of_names.get(name) else {
-                    self.not_designed(
-                        place,
-                        format!("using the host's `one_of` `{name}` without declaring it in the script"),
-                    );
-                    return ERROR;
-                };
-                let declared = self
-                    .program
-                    .types
-                    .one_ofs
-                    .get(one_of as usize)
-                    .map(|one_of| one_of.cases.clone())
-                    .unwrap_or_default();
-                let mut same = declared.len() == cases.len();
-                for (declared_case, (case_name, fields)) in declared.iter().zip(cases) {
-                    let host_fields: Vec<(String, TypeId)> =
-                        fields.iter().map(|(field, host)| (field.clone(), self.host_type(host, place))).collect();
-                    same &= declared_case.name == *case_name && self.same_fields(&declared_case.fields, &host_fields);
+            },
+            HostType::OneOf { name, .. } => match self.one_of_names.get(name) {
+                Some(&one_of) if self.host_type_names.contains(name) => self.program.types.intern(Type::OneOf(one_of)),
+                _ => {
+                    self.messages.push(Message::internal(format!("the host's `one_of` `{name}` wasn't opened")));
+                    ERROR
                 }
-                if !same {
-                    self.refuse_why(
-                        place,
-                        format!("the script's `one_of` `{name}` doesn't have the cases the host's `{name}` has"),
-                        "a `one_of` crosses a door as the host's enum, case for case.",
-                    );
-                    return ERROR;
-                }
-                self.program.types.intern(Type::OneOf(one_of))
-            }
+            },
         }
     }
+}
 
-    fn same_fields(&mut self, declared: &[(String, TypeId)], host: &[(String, TypeId)]) -> bool {
-        declared.len() == host.len()
-            && declared.iter().zip(host).all(|((declared_name, declared_type), (host_name, host_type))| {
-                declared_name == host_name
-                    && self.program.types.resolve(*declared_type) == self.program.types.resolve(*host_type)
-            })
-    }
+/// A procedure's header line with something added after its name and parameters: `-> Type` before any `! [ … ]`,
+/// or `! [ … ]` in place of the one written, at the line's end (D81, D84).
+pub(super) fn header_with(line: &str, result: &str, failures: Option<&str>) -> String {
+    let (head, written_failures) = match line.find(" ! [") {
+        Some(at) => (line.get(..at).unwrap_or(line), line.get(at..).unwrap_or("")),
+        None => (line, ""),
+    };
+    let failures = failures.map_or_else(|| written_failures.to_owned(), str::to_owned);
+    format!("{head}{result}{failures}")
 }
 
 /// The name a change starts from, where it's written, and the steps after it with their places (D62).
@@ -2325,7 +2400,7 @@ pub(crate) mod tests {
 
     pub(crate) fn check_source(source: &str) -> Result<Program, Vec<Message>> {
         let script = crate::syntax::parser::parse(source).map_err(|message| vec![message])?;
-        check(&script, &test_doors())
+        check(&script, &test_doors(), &[])
     }
 
     fn whats(source: &str) -> Vec<String> {
@@ -2341,8 +2416,11 @@ pub(crate) mod tests {
     // trace: D60, D61
     #[test]
     fn d61_unread_parameters_and_loop_names_take_unused() {
-        assert_eq!(whats("proc tick[amount]\n    show_msg(\"x\")\nend\n"), vec!["refused: `amount` is never used"]);
-        assert!(whats("proc tick[unused amount]\n    show_msg(\"x\")\nend\n").is_empty());
+        assert_eq!(
+            whats("proc tick[amount: Whole]\n    show_msg(\"x\")\nend\n"),
+            vec!["refused: `amount` is never used"]
+        );
+        assert!(whats("proc tick[unused amount: Whole]\n    show_msg(\"x\")\nend\n").is_empty());
         assert!(whats("proc tick\n    show_msg(\"x\")\nend\ntick()\n").is_empty());
         assert_eq!(
             whats("for each round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n"),
@@ -2490,29 +2568,43 @@ pub(crate) mod tests {
     fn d02_an_unused_name_is_refused() {
         assert_eq!(whats("mut tries = 0\ntires = tries + 1\n"), vec!["refused: `tires` is never used"]);
         assert_eq!(
-            whats("lives = 3\nlives = 4\nshow_msg(\"\" & lives)\n"),
+            whats("lives = 3\nlives = 4\nshow_msg(\"{lives}\")\n"),
             vec!["refused: `lives` can't be given a new value"]
         );
     }
 
-    // trace: D5
+    // trace: D81, D88
     #[test]
-    fn d05_parameter_types_are_worked_out_from_the_body() {
+    fn d81_a_procedure_header_writes_its_types() {
         assert_eq!(
-            whats("mut score = 0\nproc on_hit[points]\n    score = score + points\nend\nshow_msg(\"\" & score)\n"),
+            whats(
+                "mut score = 0\nproc on_hit[points: Whole]\n    score = score + points\nend\nshow_msg(\"{score}\")\n"
+            ),
             Vec::<String>::new()
         );
+        assert_eq!(whats("proc add[a, b]\n    show_msg(\"x\")\nend\n"), vec!["refused: the parameter `a` has no type"]);
         assert_eq!(
-            whats("proc add[a, b]\n    return a + b\nend\n"),
-            vec!["refused: `a` and `b` could be a `Whole` or a `Float`, and `add`'s body doesn't say which"]
+            whats("proc double[n: Whole]\n    return n * 2\nend\n"),
+            vec!["refused: this `return` gives back `Whole`, but the procedure's header has no `-> Type`"]
+        );
+        assert!(
+            whats("proc add[a, b : Whole] -> Whole\n    return a + b\nend\nshow_msg(\"{add(1, 2)}\")\n").len() == 1
+        );
+        assert_eq!(
+            whats("proc add[a, b: Whole] -> Whole\n    return a + b\nend\n"),
+            vec!["refused: this `:` gives a group of parameters their type, so it has a space on each side"]
+        );
+        assert!(
+            whats("proc add[a, b : Whole] -> Whole\n    return a + b\nend\nsum = add(1, 2)\nshow_msg(\"{sum}\")\n")
+                .is_empty()
         );
     }
 
-    // trace: D6
+    // trace: D6, D81
     #[test]
     fn d06_every_return_must_agree() {
         let messages = whats(
-            "proc pick[n: Whole]\n    if n > 0\n        return 1\n    else\n        return \"none\"\n    end\nend\n",
+            "proc pick[n: Whole] -> Whole\n    if n > 0\n        return 1\n    else\n        return \"none\"\n    end\nend\n",
         );
         assert_eq!(messages, vec!["refused: this `return` gives `Text`, but the procedure gives `Whole`"]);
     }
@@ -2520,7 +2612,10 @@ pub(crate) mod tests {
     // trace: D44, Unio D23
     #[test]
     fn d44_a_failure_must_be_dealt_with() {
-        let source = "proc risky[n: Whole]\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2)\nshow_msg(\"\" & x)\n";
+        let source = "proc risky[n: Whole] -> Whole ! [too_big]\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2)\nshow_msg(\"{x}\")\n";
         assert_eq!(whats(source), vec!["refused: this can fail with `too_big`, and nothing deals with the failure"]);
+        // trace: D84. A procedure that can fail says so in its header.
+        let unwritten = "proc risky[n: Whole] -> Whole\n    if n > 1\n        fail too_big\n    else\n        return n\n    end\nend\nx = risky(2) ?? 0\nshow_msg(\"{x}\")\n";
+        assert_eq!(whats(unwritten), vec!["refused: `risky` can fail with `too_big`, but its header doesn't say so"]);
     }
 }

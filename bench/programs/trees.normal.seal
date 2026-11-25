@@ -20,7 +20,7 @@ proc count[tree: Tree] -> Whole
     end
 end
 
-proc run[max_depth] -> Whole
+proc run[max_depth: Whole] -> Whole
     stretch = build(max_depth + 1)
     mut total = count(stretch)
     long_lived = build(max_depth)

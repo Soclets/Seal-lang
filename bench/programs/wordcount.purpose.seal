@@ -1,10 +1,10 @@
 // Purpose: a `Dict` with text keys. 1,000 keys are made once, then each is looked up and counted `rounds` times.
-proc run[rounds] -> Whole
+proc run[rounds: Whole] -> Whole
     mut keys: List<Text> = []
     mut counts: Dict<key: Text, value: Whole> = [:]
     for each i in range[from: 1, to: 1000]
-        keys.add("key" & i)
-        counts[key: "key" & i] = 0
+        keys.add("key{i}")
+        counts[key: "key{i}"] = 0
     end
     for each unused round in range[from: 1, to: rounds]
         for each key in keys

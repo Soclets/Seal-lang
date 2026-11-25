@@ -8,6 +8,8 @@ pub struct Script {
     pub items: Vec<Item>,
     /// How many expressions the script has; each has an `id` below this.
     pub expression_count: u32,
+    /// The script as written, for fixes that show a whole line put right.
+    pub source: String,
 }
 
 #[derive(Clone, Debug)]
@@ -35,10 +37,21 @@ pub struct Procedure {
     pub result: Option<TypeExpression>,
     pub failures: Option<Vec<Word>>,
     pub labels: Vec<LabelDeclaration>,
+    /// Written `labels.any_order`: the labelled arguments go in any order (D87).
+    pub labels_any_order: bool,
     pub defaults: Vec<DefaultDeclaration>,
     pub body: Block,
     pub place: Place,
     pub end_place: Place,
+}
+
+impl Script {
+    /// The script's line as written, by its number, counting from 1.
+    #[must_use]
+    pub fn line(&self, number: u32) -> &str {
+        let line = self.source.split('\n').nth(number.saturating_sub(1) as usize).unwrap_or("");
+        line.strip_suffix('\r').unwrap_or(line)
+    }
 }
 
 impl Procedure {

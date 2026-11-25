@@ -145,6 +145,48 @@ pub fn float_to_text(value: f64) -> String {
     text
 }
 
+/// A `Float` rounded to `places` digits after its point for showing, with no `~` (D94, Unio D175): to the nearest,
+/// a tie going away from zero (Unio D178), and with no minus when it rounds to zero (Unio D176).
+#[must_use]
+pub fn float_with_places(value: f64, places: u8) -> String {
+    // Every `Float` is exactly a decimal with at most 1074 digits after its point, so this is its exact value.
+    let exact = format!("{:.1100}", value.abs());
+    let (whole, fraction) = exact.split_once('.').unwrap_or((&exact, ""));
+    let places = usize::from(places);
+    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(places)).map(|digit| digit - b'0').collect();
+    let next = fraction.as_bytes().get(places).map_or(0, |digit| digit - b'0');
+    if next >= 5 {
+        // Every digit after the kept ones is looked at once: a 5 or more is at least half, and a tie goes up too.
+        let mut carry = true;
+        for digit in digits.iter_mut().rev() {
+            if !carry {
+                break;
+            }
+            if *digit == 9 {
+                *digit = 0;
+            } else {
+                *digit += 1;
+                carry = false;
+            }
+        }
+        if carry {
+            digits.insert(0, 1);
+        }
+    }
+    let whole_length = digits.len() - places;
+    let mut text = String::with_capacity(digits.len() + 2);
+    if value < 0.0 && digits.iter().any(|&digit| digit != 0) {
+        text.push('-');
+    }
+    for (index, digit) in digits.iter().enumerate() {
+        if index == whole_length {
+            text.push('.');
+        }
+        text.push(char::from(b'0' + digit));
+    }
+    text
+}
+
 /// The whole number `be.Whole` reads from text (Unio D95, D143): spaces and tabs around it are ignored, a `+` or
 /// `-` in front and leading zeros are fine, and anything else, or a number that doesn't fit, fails.
 #[must_use]
@@ -193,6 +235,17 @@ mod tests {
     use super::*;
 
     // trace: Unio D155, D181, D182, D183
+    #[test]
+    fn d94_places_rounds_ties_away_from_zero() {
+        assert_eq!(float_with_places(0.125, 2), "0.13");
+        assert_eq!(float_with_places(0.5, 3), "0.500");
+        assert_eq!(float_with_places(2.5, 0), "3");
+        assert_eq!(float_with_places(-0.001, 2), "0.00");
+        assert_eq!(float_with_places(-0.006, 2), "-0.01");
+        assert_eq!(float_with_places(9.999, 2), "10.00");
+        assert_eq!(float_with_places(0.1 + 0.2, 2), "0.30");
+    }
+
     #[test]
     fn unio_d155_floats_show_their_tilde() {
         assert_eq!(float_to_text(0.1 + 0.2), "~0.30000000000000004");

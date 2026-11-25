@@ -1,4 +1,4 @@
-proc run[n] -> Whole
+proc run[n: Whole] -> Whole
     mut perm1: List<Whole> = []
     mut count: List<Whole> = []
     mut fill = 0

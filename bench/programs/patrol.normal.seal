@@ -1,4 +1,4 @@
-proc patrol[guard]
+proc patrol[guard: Whole]
     while true
         walk_to(guard, x: 10)
         wait(seconds: 2)
@@ -7,6 +7,6 @@ proc patrol[guard]
     end
 end
 
-proc step[guard]
+proc step[guard: Whole]
     walk_to(guard, x: 1)
 end

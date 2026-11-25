@@ -16,7 +16,7 @@ fn main() -> ExitCode {
     };
     let compiled = seal::syntax::parser::parse(&source)
         .map_err(|message| vec![message])
-        .and_then(|tree| seal::check::check(&tree, &[]))
+        .and_then(|tree| seal::check::check(&tree, &[], &[]))
         .and_then(|program| seal::compile::compiler::compile(&program, &[]).map_err(|message| vec![message]));
     match compiled {
         Ok(compiled) => {

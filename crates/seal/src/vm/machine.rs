@@ -6,12 +6,14 @@
 use super::crossing::{CrossingError, plain_slot, plain_value, to_slot, to_value};
 use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
+use super::show::show;
 use crate::check::tree::Rounding;
+use crate::check::types::TypeId;
 use crate::compile::bytecode::{
-    BULK_UNIT, Compiled, Crossing, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry,
+    BULK_UNIT, Compiled, Crossing, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry, Register,
 };
 use crate::host::Value;
-use crate::number::{float_to_text, float_to_whole, text_to_whole};
+use crate::number::{float_to_text, float_to_whole, float_with_places, text_to_whole};
 use crate::text::{grapheme_at, grapheme_count, graphemes};
 
 /// What a stack slot costs against the memory cap: the slot itself, and its share of the record of calls.
@@ -214,6 +216,140 @@ fn text_list(heap: &mut Heap, pieces: &[String], work: usize, layouts: &[Layout]
         }
     }
     heap.allocate(Object::List { items, references: true }, size)
+}
+
+/// Joins a text from its pieces into register `to`, or onto the text already there when `appending` (D75, D94,
+/// D100). It's kept apart from [`run`]'s loop, whose speed depends on how little code sits in it.
+#[inline(never)]
+fn join_pieces(
+    registers: &mut [u64],
+    heap: &mut Heap,
+    compiled: &Compiled,
+    to: Register,
+    site: u32,
+    appending: bool,
+) -> Result<(), Stop> {
+    let broken = |detail: &'static str| Stop::Internal(detail.to_owned());
+    let get = |registers: &[u64], register: Register| {
+        registers.get(usize::from(register)).copied().ok_or_else(|| broken("a register outside its frame"))
+    };
+    let Some(pieces) = compiled.joins.get(site as usize) else {
+        return Err(broken("a join that isn't there"));
+    };
+    // How long the pieces are together, so the text is given its room once.
+    let mut extra = 0usize;
+    for piece in pieces {
+        extra = extra.saturating_add(match *piece {
+            JoinPiece::Constant(text) => compiled.texts.get(text as usize).map_or(0, String::len),
+            JoinPiece::Text(register) => heap.text(get(registers, register)?)?.len(),
+            JoinPiece::Whole(register) => {
+                let value = get(registers, register)?.cast_signed();
+                value.unsigned_abs().checked_ilog10().map_or(1, |digits| digits as usize + 1) + usize::from(value < 0)
+            }
+            JoinPiece::Bool(_) => 5,
+            JoinPiece::Float(_) => 24,
+            JoinPiece::Places(_, places) => 24 + usize::from(places),
+            JoinPiece::Value(..) => 16,
+        });
+    }
+    // The text being built is held here, outside the heap, while the pieces are read from the heap.
+    let (target, mut built, old_room) = if appending {
+        // Made this register's own first, so it can change (copy-on-write, D15).
+        let mut target = get(registers, to)?;
+        if !heap.has_one_holder(target) {
+            target = heap.make_own(target, &compiled.layouts)?;
+            if let Some(slot) = registers.get_mut(usize::from(to)) {
+                *slot = target;
+            }
+        }
+        match heap.take(target)? {
+            Object::Text(text) => {
+                let room = text.capacity();
+                (target, text, room)
+            }
+            other => {
+                heap.put_back(target, other);
+                return Err(broken("a handle that should lead to text"));
+            }
+        }
+    } else {
+        (0, heap.spare_text(extra), 0)
+    };
+    let original = built.len();
+    let needed = original.saturating_add(extra);
+    if appending && needed > built.capacity() {
+        // Doubling, so joining onto a text many times costs a fixed amount per byte on average.
+        let room = needed.max(built.capacity().saturating_mul(2)).max(16);
+        if let Err(error) = heap.charge(room - old_room) {
+            heap.put_back(target, Object::Text(built));
+            return Err(Stop::from(error));
+        }
+        built.reserve_exact(room - original);
+    }
+    let written = write_pieces(pieces, registers, heap, compiled, appending.then_some((target, original)), &mut built);
+    if let Err(stop) = written {
+        if appending {
+            heap.put_back(target, Object::Text(built));
+        }
+        return Err(stop);
+    }
+    heap.work = heap.work.saturating_add(built.len().saturating_sub(original) as u64);
+    if appending {
+        heap.put_back(target, Object::Text(built));
+    } else {
+        let room = built.capacity();
+        let handle = heap.allocate(Object::Text(built), room)?;
+        match registers.get_mut(usize::from(to)) {
+            Some(slot) => *slot = handle,
+            None => return Err(broken("a register outside its frame")),
+        }
+    }
+    Ok(())
+}
+
+/// Writes each piece of a join onto `built`. When joining onto a text in place, `onto` is that text's handle and how
+/// long it was, since its own start is what's joined if it's a piece too.
+fn write_pieces(
+    pieces: &[JoinPiece],
+    registers: &[u64],
+    heap: &Heap,
+    compiled: &Compiled,
+    onto: Option<(u64, usize)>,
+    built: &mut String,
+) -> Result<(), Stop> {
+    let get = |register: Register| {
+        registers
+            .get(usize::from(register))
+            .copied()
+            .ok_or_else(|| Stop::Internal("a register outside its frame".to_owned()))
+    };
+    for piece in pieces {
+        match *piece {
+            JoinPiece::Constant(text) => built.push_str(compiled.texts.get(text as usize).map_or("", String::as_str)),
+            JoinPiece::Text(register) => {
+                let source = get(register)?;
+                match onto {
+                    // A text joined onto itself: its own start is what's joined.
+                    Some((target, original)) if source == target => {
+                        let own = built.get(..original).unwrap_or("").to_owned();
+                        built.push_str(&own);
+                    }
+                    _ => built.push_str(heap.text(source)?),
+                }
+            }
+            JoinPiece::Whole(register) => append_whole(built, get(register)?.cast_signed()),
+            JoinPiece::Bool(register) => built.push_str(if get(register)? == 0 { "false" } else { "true" }),
+            JoinPiece::Float(register) => built.push_str(&float_to_text(f64::from_bits(get(register)?))),
+            JoinPiece::Places(register, places) => {
+                built.push_str(&float_with_places(f64::from_bits(get(register)?), places));
+            }
+            JoinPiece::Value(register, type_id) => {
+                let room = heap.room_left();
+                show(get(register)?, TypeId(type_id), &compiled.types, heap, &compiled.layouts, room, built)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The place in a list a script's `pos:` or `offset:` means, when the list has it.
@@ -1018,85 +1154,9 @@ pub fn run(
 
             Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
                 let appending = matches!(instruction, Instruction::AppendPieces { .. });
-                let Some(pieces) = compiled.joins.get(site as usize) else {
-                    return Err(broken("a join that isn't there", pc));
-                };
-                // How long the pieces are together, so the text is given its room once.
-                let mut extra = 0usize;
-                for piece in pieces {
-                    extra = extra.saturating_add(match *piece {
-                        JoinPiece::Constant(text) => compiled.texts.get(text as usize).map_or(0, String::len),
-                        JoinPiece::Text(register) => heap_try!(heap.text(get!(register))).len(),
-                        JoinPiece::Whole(register) => {
-                            let value = whole!(register);
-                            value.unsigned_abs().checked_ilog10().map_or(1, |digits| digits as usize + 1)
-                                + usize::from(value < 0)
-                        }
-                        JoinPiece::Bool(_) => 5,
-                        JoinPiece::Float(_) => 24,
-                    });
-                }
-                // The text being built is held here, outside the heap, while the pieces are read from the heap.
-                let (target, mut built, old_room) = if appending {
-                    let target = own!(to);
-                    match heap_try!(heap.take(target)) {
-                        Object::Text(text) => {
-                            let room = text.capacity();
-                            (target, text, room)
-                        }
-                        other => {
-                            heap.put_back(target, other);
-                            return Err(broken("a handle that should lead to text", pc));
-                        }
-                    }
-                } else {
-                    (0, heap.spare_text(extra), 0)
-                };
-                let original = built.len();
-                let needed = original.saturating_add(extra);
-                if appending && needed > built.capacity() {
-                    // Doubling, so joining onto a text many times costs a fixed amount per byte on average.
-                    let room = needed.max(built.capacity().saturating_mul(2)).max(16);
-                    if let Err(error) = heap.charge(room - old_room) {
-                        heap.put_back(target, Object::Text(built));
-                        return Err((Stop::from(error), pc));
-                    }
-                    built.reserve_exact(room - original);
-                }
-                for piece in pieces {
-                    match *piece {
-                        JoinPiece::Constant(text) => {
-                            built.push_str(compiled.texts.get(text as usize).map_or("", String::as_str));
-                        }
-                        JoinPiece::Text(register) => {
-                            let source = get!(register);
-                            if appending && source == target {
-                                // A text joined onto itself: its own start is what's joined.
-                                let own = built.get(..original).unwrap_or("").to_owned();
-                                built.push_str(&own);
-                            } else {
-                                match heap.text(source) {
-                                    Ok(source) => built.push_str(source),
-                                    Err(error) => {
-                                        if appending {
-                                            heap.put_back(target, Object::Text(built));
-                                        }
-                                        return Err((Stop::from(error), pc));
-                                    }
-                                }
-                            }
-                        }
-                        JoinPiece::Whole(register) => append_whole(&mut built, whole!(register)),
-                        JoinPiece::Bool(register) => built.push_str(if get!(register) == 0 { "false" } else { "true" }),
-                        JoinPiece::Float(register) => built.push_str(&float_to_text(float!(register))),
-                    }
-                }
-                heap.work = heap.work.saturating_add(extra as u64);
-                if appending {
-                    heap.put_back(target, Object::Text(built));
-                } else {
-                    let room = built.capacity();
-                    set!(to, heap_try!(heap.allocate(Object::Text(built), room)));
+                // Joining is kept out of the loop's own code, so the loop's hot paths aren't crowded by it.
+                if let Err(stop) = join_pieces(registers, heap, compiled, to, site, appending) {
+                    return Err((stop, pc));
                 }
                 count_work!();
             }

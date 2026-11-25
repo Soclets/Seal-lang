@@ -6,7 +6,7 @@ record Point
     vy: Float
 end
 
-proc run[steps] -> Float
+proc run[steps: Whole] -> Float
     mut point = Point[x: 0.0, y: 0.0, vx: 1.0, vy: 0.5]
     for each unused step in range[from: 1, to: steps]
         point.vx = point.vx * ~0.999 + ~0.001

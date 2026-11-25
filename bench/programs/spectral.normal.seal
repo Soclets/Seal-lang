@@ -26,7 +26,7 @@ proc times_transposed[u: List<Float>, size: Whole] -> List<Float>
     return out
 end
 
-proc run[size] -> Float
+proc run[size: Whole] -> Float
     mut u: List<Float> = []
     mut filled = 0
     while filled < size

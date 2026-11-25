@@ -1,9 +1,10 @@
 //! The Unio translator: turns the parts Seal shares with Unio into a Unio program, for checking against Ralph (D19).
 //!
-//! It adds what Seal leaves out, `$`, `let` or `var`, `;` and `:`, each block's own `end`, and written types, and
-//! wraps the top level in `proc.main`. The test host's doors `show_msg` and `ask` become Unio's built-ins. It's
-//! built on the library's own checking, so both agree on what a script means; anything Unio doesn't have, such as
-//! records, a `Dict`, `match`, `fail` or a pause, is reported as not shared.
+//! It writes Unio's current spellings (Unio D190 to D203): `let` or `var` with every type written, `;`, each block's
+//! own `end`, `eq` and `not_eq`, `else if`, and text filled in with braces holding only names, and it wraps the top
+//! level in `proc.main`. The test host's doors `show_msg` and `ask` become Unio's built-ins. It's built on the
+//! library's own checking, so both agree on what a script means; anything Unio doesn't have, such as records, a
+//! `Dict`, `match`, `fail` or a pause, is reported as not shared.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic)]
@@ -16,7 +17,7 @@ use seal::check::tree::{
 };
 use seal::check::types::{Type, TypeId};
 use seal::number::float_to_text;
-use seal::syntax::tree::PositionKind;
+use seal::syntax::tree::{BinaryOperator, PositionKind};
 use seal::{DoorSignature, Message};
 
 /// Why a script has no Unio twin.
@@ -51,7 +52,7 @@ fn not_shared<T>(what: &str) -> Translated<T> {
 /// Gives back why not, when the script is refused or uses something Unio doesn't have.
 pub fn translate(source: &str, doors: &[DoorSignature]) -> Translated<String> {
     let tree = seal::syntax::parser::parse(source).map_err(|message| Untranslatable::Refused(vec![message]))?;
-    let program = seal::check::check(&tree, doors).map_err(Untranslatable::Refused)?;
+    let program = seal::check::check(&tree, doors, &[]).map_err(Untranslatable::Refused)?;
     let mut translator = Translator { program: &program, doors, out: String::new(), depth: 0 };
     if program.variables.iter().any(|variable| variable.captured) {
         return not_shared("a top-level name used by a procedure");
@@ -60,7 +61,7 @@ pub fn translate(source: &str, doors: &[DoorSignature]) -> Translated<String> {
         translator.procedure(procedure)?;
         translator.out.push('\n');
     }
-    translator.line("proc.main:");
+    translator.line("proc.main");
     translator.depth += 1;
     translator.block(&program.top_level)?;
     translator.depth -= 1;
@@ -99,8 +100,9 @@ impl Translator<'_> {
         })
     }
 
+    /// A name, as Unio writes it: a plain word with no mark (Unio D192).
     fn name(&self, variable: VariableId) -> String {
-        format!("${}", self.program.variable(variable).map_or("unknown", |variable| variable.name.as_str()))
+        self.program.variable(variable).map_or("unknown", |variable| variable.name.as_str()).to_owned()
     }
 
     fn procedure(&mut self, procedure: &Procedure) -> Translated<()> {
@@ -120,10 +122,10 @@ impl Translator<'_> {
         if !procedure.parameters.is_empty() {
             header.push(']');
         }
+        // trace: Unio D190, D199. `-> Type` gives the result, and an opening line ends with nothing.
         if !matches!(self.program.types.get(procedure.result), Type::Nothing) {
-            let _ = write!(header, " returns {}", self.written_type(procedure.result)?);
+            let _ = write!(header, " -> {}", self.written_type(procedure.result)?);
         }
-        header.push(':');
         self.line(&header);
         self.depth += 1;
         let labels: Vec<String> = procedure
@@ -134,8 +136,9 @@ impl Translator<'_> {
                 label.as_ref().map(|label| format!("{} as {label}", self.name(parameter)))
             })
             .collect();
+        // trace: Unio D195. The `labels` line puts its pairs in `[ ]`.
         if !labels.is_empty() {
-            self.line(&format!("labels {};", labels.join(", ")));
+            self.line(&format!("labels [{}];", labels.join(", ")));
         }
         self.block(&procedure.body)?;
         self.depth -= 1;
@@ -188,18 +191,18 @@ impl Translator<'_> {
             StatementKind::If { branches, otherwise } => {
                 for (position, (condition, body)) in branches.iter().enumerate() {
                     let word = if position == 0 { "if" } else { "else if" };
-                    let text = format!("{word} {}:", self.value(condition)?);
+                    let text = format!("{word} {}", self.value(condition)?);
                     self.line(&text);
                     self.body(body)?;
                 }
                 if let Some(body) = otherwise {
-                    self.line("else:");
+                    self.line("else");
                     self.body(body)?;
                 }
                 self.line("end if");
             }
             StatementKind::While { condition, body } => {
-                let text = format!("while {}:", self.value(condition)?);
+                let text = format!("while {}", self.value(condition)?);
                 self.line(&text);
                 self.body(body)?;
                 self.line("end while");
@@ -217,7 +220,7 @@ impl Translator<'_> {
                 if let Some(step) = step {
                     let _ = write!(range, ", step_by: {}", self.value(step)?);
                 }
-                let text = format!("for each {} in {range}]:", self.name(*item));
+                let text = format!("for each {} in {range}]", self.name(*item));
                 self.line(&text);
                 self.body(body)?;
                 self.line("end for");
@@ -232,7 +235,7 @@ impl Translator<'_> {
                 if matches!(self.program.types.get(source.type_id), Type::Text) {
                     return not_shared("going through a text");
                 }
-                let text = format!("for each {}{at} in {}:", self.name(*item), self.value(source)?);
+                let text = format!("for each {}{at} in {}", self.name(*item), self.value(source)?);
                 self.line(&text);
                 self.body(body)?;
                 self.line("end for");
@@ -372,8 +375,7 @@ impl Translator<'_> {
                 }
             }
             ExpressionKind::Bool(value) => value.to_string(),
-            // Unio writes a quote or a backslash inside text the same way, with a `\\` before it (Unio D30).
-            ExpressionKind::Text(text) => format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")),
+            ExpressionKind::Text(text) => filled(&[Piece::Text(text.clone())])?,
             ExpressionKind::Variable(variable) => self.name(*variable),
             ExpressionKind::Member { receiver, name } => {
                 if name != "len" {
@@ -403,30 +405,35 @@ impl Translator<'_> {
             ExpressionKind::Not(value) => format!("not {}", self.operand(value)?),
             ExpressionKind::Binary { operator, left, right } => {
                 // Unio leaves comparing two texts open (its chapter 5); Seal's D64 decides it for Seal alone.
-                if matches!(self.program.types.get(left.type_id), Type::Text) {
-                    return not_shared("comparing two texts");
+                if !matches!(self.program.types.get(left.type_id), Type::Whole | Type::Float | Type::Bool) {
+                    return not_shared("comparing two values that aren't numbers or `Bool`s");
                 }
-                format!("{} {} {}", self.operand(left)?, operator.text(), self.operand(right)?)
+                // trace: Unio D190. `eq` and `not_eq` compare.
+                let operator = match operator {
+                    BinaryOperator::Equal => "eq",
+                    BinaryOperator::NotEqual => "not_eq",
+                    other => other.text(),
+                };
+                format!("{} {operator} {}", self.operand(left)?, self.operand(right)?)
             }
             ExpressionKind::Join(parts) => {
-                let mut written = Vec::new();
+                // trace: Unio D200, D201, D202. Text is joined by filling it in, and braces hold only a name.
+                let mut pieces: Vec<Piece> = Vec::new();
                 for part in parts {
-                    // Unio's `&` joins text only, so every other piece says `be.Text` (Unio D28).
-                    written.push(if matches!(self.program.types.get(part.type_id), Type::Text) {
-                        self.operand(part)?
-                    } else {
-                        let call = Expression {
-                            kind: ExpressionKind::Convert {
-                                conversion: Conversion::ToText,
-                                value: Box::new(part.clone()),
-                            },
-                            type_id: expression.type_id,
-                            place: part.place,
-                        };
-                        self.operand(&call)?
-                    });
+                    match &part.kind {
+                        ExpressionKind::Text(text) => pieces.push(Piece::Text(text.clone())),
+                        ExpressionKind::Variable(variable)
+                            if matches!(
+                                self.program.types.get(part.type_id),
+                                Type::Whole | Type::Float | Type::Bool | Type::Text
+                            ) =>
+                        {
+                            pieces.push(Piece::Name(self.name(*variable)));
+                        }
+                        _ => return not_shared("a value in braces that isn't a plain name"),
+                    }
                 }
-                written.join(" & ")
+                filled(&pieces)?
             }
             ExpressionKind::List(items) => {
                 let items: Translated<Vec<String>> = items.iter().map(|item| self.value(item)).collect();
@@ -470,6 +477,7 @@ impl Translator<'_> {
             ExpressionKind::BuildCase { .. } | ExpressionKind::MaybeOr { .. } => {
                 return not_shared("a `one_of` or a `Maybe`");
             }
+            ExpressionKind::ShowPlaces { .. } => return not_shared("`places:` in braces"),
             ExpressionKind::Try(_) | ExpressionKind::Otherwise { .. } => {
                 return not_shared("a procedure that fails on purpose");
             }
@@ -480,6 +488,41 @@ impl Translator<'_> {
             | ExpressionKind::Error => return not_shared("something the translator can't write"),
         })
     }
+}
+
+/// One piece of a text being filled in: text as it is, or a name in braces.
+enum Piece {
+    Text(String),
+    Name(String),
+}
+
+/// A text filled in from its pieces, as Unio writes it: in quotes, with a `\\` before a quote, a backslash or a brace
+/// (Unio D30, D200). A line break or a tab has no way to be written in Unio yet, so text holding one isn't shared.
+fn filled(pieces: &[Piece]) -> Translated<String> {
+    let mut written = String::from("\"");
+    for piece in pieces {
+        match piece {
+            Piece::Name(name) => {
+                written.push('{');
+                written.push_str(name);
+                written.push('}');
+            }
+            Piece::Text(text) => {
+                for character in text.chars() {
+                    match character {
+                        '"' | '\\' | '{' => {
+                            written.push('\\');
+                            written.push(character);
+                        }
+                        '\n' | '\t' => return not_shared("a line break or a tab in text"),
+                        other => written.push(other),
+                    }
+                }
+            }
+        }
+    }
+    written.push('"');
+    Ok(written)
 }
 
 /// What a script sees of the test host's doors (tests/README.md), which is what the translator checks against.
@@ -513,11 +556,11 @@ mod tests {
     // trace: D19
     #[test]
     fn d19_a_script_becomes_the_same_unio_program() {
-        let source = "mut tries = 0\nwhile tries < 3\n    tries = tries + 1\nend\nshow_msg(\"Tries: \" & tries)\n";
+        let source = "mut tries = 0\nwhile tries != 3\n    tries = tries + 1\nend\nshow_msg(\"Tries: {tries}\")\n";
         let unio = translate(source, &test_host_doors());
         assert_eq!(
             unio,
-            Ok("proc.main:\n    var $tries: Whole = 0;\n    while $tries < 3:\n        $tries = $tries + 1;\n    end while\n    show_msg(\"Tries: \" & be.Text($tries));\nend proc.main\n"
+            Ok("proc.main\n    var tries: Whole = 0;\n    while tries not_eq 3\n        tries = tries + 1;\n    end while\n    show_msg(\"Tries: {tries}\");\nend proc.main\n"
                 .to_owned())
         );
     }
@@ -527,12 +570,12 @@ mod tests {
     fn d19_three_calls_in_a_chain_become_a_slide() {
         let source = "points = 2.5\npoints |> sqrt |> be.Text |> show_msg\n";
         let unio = translate(source, &test_host_doors()).unwrap_or_default();
-        assert!(unio.contains("$points |> sqrt |> be.Text |> show_msg;"), "{unio}");
+        assert!(unio.contains("points |> sqrt |> be.Text |> show_msg;"), "{unio}");
     }
 
     #[test]
     fn d19_what_unio_lacks_is_not_shared() {
-        let source = "mut stock: Dict<key: Text, value: Whole> = [\"sword\": 1]\nstock[key: \"axe\"] = 2\nshow_msg(fmt(\"{stock.len}\"))\n";
+        let source = "mut stock: Dict<key: Text, value: Whole> = [\"sword\": 1]\nstock[key: \"axe\"] = 2\nshow_msg(\"{stock.len}\")\n";
         assert!(matches!(translate(source, &test_host_doors()), Err(Untranslatable::NotShared(_))));
     }
 }

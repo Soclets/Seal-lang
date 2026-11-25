@@ -1,5 +1,5 @@
 {
-  "passed": 14,
+  "passed": 15,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -8,13 +8,14 @@
     "d022_loops": { "status": "pass" },
     "d027_records": { "status": "pass" },
     "d028_fmt_facts": { "status": "pass" },
-    "d029_and_joins": { "status": "pass" },
     "d032_dict": { "status": "pass" },
     "d035_one_of_match": { "status": "pass" },
     "d038_maybe": { "status": "pass" },
     "d042_labels_defaults": { "status": "pass" },
     "d043_families": { "status": "pass" },
     "d044_fail": { "status": "pass" },
-    "d049_wait": { "status": "pass" }
+    "d049_wait": { "status": "pass" },
+    "d077_braces_join": { "status": "pass" },
+    "d102_closer_notes": { "status": "pass" }
   }
 }

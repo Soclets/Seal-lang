@@ -167,15 +167,33 @@ impl Generator {
         self.dialect == Dialect::Seal
     }
 
-    /// Writes a line, now and then with a comment on the line before it or after its statement (D63).
+    /// Writes a line, now and then with a comment on the line before it or after its statement (D63). A comment
+    /// before `end`, `elif` or `else` is indented one level in, with the block it ends (D91, Unio D145).
     fn line(&mut self, text: &str) {
         if self.random.chance(1, 30) {
-            self.plain_line("// a note");
+            let closes =
+                ["end", "elif", "else"].iter().any(|word| text == *word || text.starts_with(&format!("{word} ")));
+            if closes {
+                self.depth += 1;
+                self.plain_line("// a note");
+                self.depth -= 1;
+            } else {
+                self.plain_line("// a note");
+            }
         }
         if self.random.chance(1, 30) {
             self.plain_line(&format!("{text} // a note"));
         } else {
             self.plain_line(text);
+        }
+    }
+
+    /// Closes a block with `end`, now and then with its checked note in Seal's own dialect (D102).
+    fn end(&mut self, note: &str) {
+        if self.seal() && self.random.chance(1, 4) {
+            self.line(&format!("end \\\\ {note}"));
+        } else {
+            self.line("end");
         }
     }
 
@@ -454,15 +472,6 @@ impl Generator {
                     return self.text_literal();
                 }
                 match self.random.below(6) {
-                    0 | 1 => {
-                        let right_kind =
-                            *self.random.pick(&[Kind::Text, Kind::Whole, Kind::Bool]).unwrap_or(&Kind::Text);
-                        format!(
-                            "{} & {}",
-                            self.join_operand(Kind::Text, level - 1),
-                            self.join_operand(right_kind, level - 1)
-                        )
-                    }
                     2 => {
                         let from = if self.seal() {
                             *self.random.pick(&[Kind::Whole, Kind::Float, Kind::Bool]).unwrap_or(&Kind::Whole)
@@ -471,7 +480,7 @@ impl Generator {
                         };
                         format!("be.Text({})", self.argument(from, level))
                     }
-                    3 => self.fmt_text(),
+                    0 | 1 | 3 => self.filled_text(),
                     4 => match self.read_name(Kind::TextList) {
                         Some(list) => format!("{list}[pos: {}]", self.value(Kind::Whole, 0)),
                         None => self.text_literal(),
@@ -591,38 +600,51 @@ impl Generator {
         }
     }
 
-    /// A value as one side of `&`: maths beside `&` needs brackets (Unio D72).
-    fn join_operand(&mut self, kind: Kind, level: usize) -> String {
-        let value = self.value(kind, level);
-        let plain = value.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
-            || (value.starts_with('"') && value.ends_with('"') && value.matches('"').count() == 2);
-        if plain { value } else { format!("({value})") }
-    }
-
-    /// `fmt("…")` with names that exist in its braces (D12, D28).
-    fn fmt_text(&mut self) -> String {
-        let mut text = String::from("fmt(\"");
+    /// Text with names that exist filled into its braces (D75, D77): in Seal's own dialect a name may be followed by
+    /// its fields and facts, or be any value at all, shown as it's written (D28, D100); Unio's braces hold only a
+    /// plain number, `Bool` or text's name (Unio D200, D202).
+    fn filled_text(&mut self) -> String {
+        let mut text = String::from("\"");
         for _ in 0..=self.random.below(3) {
-            text.push_str(self.random.pick(&["value ", "is ", "", "got: ", "= "]).copied().unwrap_or(""));
-            let kind = *self
-                .random
-                .pick(&[Kind::Whole, Kind::Text, Kind::Bool, Kind::Float, Kind::WholeList, Kind::Record])
-                .unwrap_or(&Kind::Whole);
+            text.push_str(self.random.pick(&["value ", "is ", "", "got: ", "= ", "\\{x} "]).copied().unwrap_or(""));
+            let kinds: &[Kind] = if self.seal() {
+                &[
+                    Kind::Whole,
+                    Kind::Text,
+                    Kind::Bool,
+                    Kind::Float,
+                    Kind::WholeList,
+                    Kind::Record,
+                    Kind::Dict,
+                    Kind::Spot,
+                    Kind::Tree,
+                    Kind::Event,
+                ]
+            } else {
+                &[Kind::Whole, Kind::Text, Kind::Bool]
+            };
+            let kind = *self.random.pick(kinds).unwrap_or(&Kind::Whole);
             if let Some(name) = self.read_name(kind) {
                 match kind {
-                    Kind::WholeList => {
+                    Kind::WholeList if self.random.chance(1, 2) => {
                         let _ = write!(text, "{{{name}.len}} ");
                     }
-                    Kind::Record => {
+                    Kind::Record if self.random.chance(1, 2) => {
                         let _ = write!(text, "{{{name}.hp}} ");
+                    }
+                    Kind::Float if self.random.chance(1, 3) => {
+                        let _ = write!(text, "{{{name}, places: {}}} ", self.random.below(4));
                     }
                     _ => {
                         let _ = write!(text, "{{{name}}} ");
                     }
                 }
             }
+            if self.seal() && self.random.chance(1, 8) {
+                text.push_str(self.random.pick(&["{newln}", "{tab}"]).copied().unwrap_or(""));
+            }
         }
-        text.push_str("\")");
+        text.push('"');
         text
     }
 
@@ -661,21 +683,20 @@ impl Generator {
 
     fn show(&mut self, kind: Kind, name: &str) -> String {
         match kind {
-            Kind::Whole | Kind::Bool if self.seal() && self.random.chance(1, 2) => {
-                format!("show_msg(\"{name}: \" & {name})")
-            }
-            Kind::Whole | Kind::Bool | Kind::Text | Kind::Float => format!("show_msg(fmt(\"{name}: {{{name}}}\"))"),
+            // trace: D100. Every value shows as it's written in Seal.
+            _ if self.seal() && self.random.chance(1, 2) => format!("show_msg(\"{name}: {{{name}}}\")"),
             Kind::WholeList | Kind::TextList | Kind::Dict | Kind::Grid | Kind::Packs | Kind::Spots => {
-                format!("show_msg(fmt(\"{name} has {{{name}.len}}\"))")
+                format!("show_msg(\"{name} has {{{name}.len}}\")")
             }
             Kind::Pack => {
-                format!("show_msg(fmt(\"{name}: {{{name}.items.len}} {{{name}.tags.len}} {{{name}.stock.len}}\"))")
+                format!("show_msg(\"{name}: {{{name}.items.len}} {{{name}.tags.len}} {{{name}.stock.len}}\")")
             }
-            Kind::Crate => format!("show_msg(fmt(\"{name}: {{{name}.pack.items.len}} {{{name}.spot.x}}\"))"),
-            Kind::Tree => format!("show_msg(\"{name}: \" & tree_size({name}))"),
-            Kind::Record => format!("show_msg(fmt(\"{name}: {{{name}.name}} {{{name}.hp}}\"))"),
-            Kind::Spot => format!("show_msg(fmt(\"{name}: {{{name}.x}} {{{name}.y}}\"))"),
-            Kind::Event | Kind::Maybe => String::new(),
+            Kind::Crate => format!("show_msg(\"{name}: {{{name}.pack.items.len}} {{{name}.spot.x}}\")"),
+            Kind::Record => format!("show_msg(\"{name}: {{{name}.name}} {{{name}.hp}}\")"),
+            Kind::Spot => format!("show_msg(\"{name}: {{{name}.x}} {{{name}.y}}\")"),
+            Kind::Whole | Kind::Bool | Kind::Text | Kind::Float | Kind::Tree | Kind::Event | Kind::Maybe => {
+                format!("show_msg(\"{name}: {{{name}}}\")")
+            }
         }
     }
 
@@ -747,18 +768,18 @@ impl Generator {
         }
         // Every name made is read, so that none is refused as never used.
         for (name, _) in &kept {
-            self.line(&format!("show_msg(\"kept \" & be.Text({name}))"));
+            self.line(&format!("show_msg(\"kept {{{name}}}\")"));
         }
         self.depth -= 1;
-        self.line("end");
+        self.end("for");
         self.depth -= 1;
-        self.line("end");
+        self.end("for");
         let spot = self.fresh();
         self.line(&format!("for each {spot} in {spots}"));
         self.depth += 1;
-        self.line(&format!("show_msg(fmt(\"{{{spot}.x}} {{{spot}.y}}\"))"));
+        self.line(&format!("show_msg(\"{{{spot}.x}} {{{spot}.y}}\")"));
         self.depth -= 1;
-        self.line("end");
+        self.end("for");
     }
 
     /// A change that reaches through fields and places of a `mut` name, or a method at the end of such a way (D62).
@@ -825,10 +846,7 @@ impl Generator {
         for name in scope.iter().filter(|name| !name.read) {
             match name.kind {
                 Kind::Event => self.match_event(&name.text, false),
-                Kind::Maybe => {
-                    let fallback = self.whole_literal();
-                    self.line(&format!("show_msg(\"{0}: \" & ({0} ?? {fallback}))", name.text));
-                }
+                Kind::Maybe => self.line(&format!("show_msg(\"{0}: {{{0}}}\")", name.text)),
                 kind => {
                     let shown = self.show(kind, &name.text);
                     self.line(&shown);
@@ -855,8 +873,8 @@ impl Generator {
             self.depth += 1;
             match case {
                 "idle" => self.line("show_msg(\"idle\")"),
-                "hurt[amount]" => self.line("show_msg(fmt(\"hurt {amount}\"))"),
-                _ => self.line("show_msg(fmt(\"{by} healed {amount}\"))"),
+                "hurt[amount]" => self.line("show_msg(\"hurt {amount}\")"),
+                _ => self.line("show_msg(\"{by} healed {amount}\")"),
             }
             self.depth -= 1;
             if with_bodies && self.budget > 0 {
@@ -886,7 +904,7 @@ impl Generator {
             }
         }
         self.depth -= 1;
-        self.line("end");
+        self.end("match");
     }
 
     #[allow(clippy::too_many_lines)] // one case per kind of statement
@@ -940,7 +958,7 @@ impl Generator {
                     self.line("else");
                     self.block(1);
                 }
-                self.line("end");
+                self.end("if");
             }
             12 if nested => {
                 let counter = self.fresh();
@@ -957,7 +975,7 @@ impl Generator {
                 self.line(&format!("{counter} = {counter} + 1"));
                 self.depth -= 1;
                 self.freeze(&counter, false);
-                self.line("end");
+                self.end("while");
             }
             13 if nested && self.seal() => {
                 let item = self.fresh();
@@ -1109,7 +1127,7 @@ impl Generator {
                         self.depth += 1;
                         self.line("show_msg(\"too low\")");
                         self.depth -= 2;
-                        self.line("end");
+                        self.end("otherwise");
                     } else {
                         self.line(&call);
                     }
@@ -1158,10 +1176,10 @@ impl Generator {
             self.depth += 1;
             self.line("break");
             self.depth -= 1;
-            self.line("end");
+            self.end("if");
         }
         self.depth -= 1;
-        self.line("end");
+        self.end("for");
     }
 
     #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `return`, written in order
@@ -1198,6 +1216,8 @@ impl Generator {
         // A procedure that pauses takes one `Whole`, which is what the fuzzer's host calls every procedure with.
         let pauses = self.seal() && self.random.chance(1, 4);
         let parameters = if pauses { vec![Kind::Whole] } else { parameters };
+        // A procedure that fails on purpose does so when its first parameter says so, so it takes one.
+        let fails = fails && !parameters.is_empty();
         let info = ProcedureInfo { name: name.clone(), parameters: parameters.clone(), result, fails, pauses };
         self.scopes.push(Vec::new());
         let mut header = format!("proc {name}");
@@ -1205,21 +1225,28 @@ impl Generator {
         for (index, kind) in parameters.iter().enumerate() {
             let parameter = self.fresh();
             header.push_str(if index > 0 { ", " } else { "[" });
+            // trace: D88. Now and then a parameter shares the next one's type, written once for the group.
+            let grouped = self.seal() && parameters.get(index + 1) == Some(kind) && self.random.chance(1, 3);
+            let typed = if grouped { String::new() } else { format!(": {}", kind.written()) };
             // Now and then a parameter after the first is never read, and says so (D61); the body can't reach it.
             if index > 0 && self.seal() && self.random.chance(1, 6) {
-                let _ = write!(header, "unused {parameter}: {}", kind.written());
+                let _ = write!(header, "unused {parameter}{typed}");
                 continue;
             }
-            let _ = write!(header, "{parameter}: {}", kind.written());
+            let _ = write!(header, "{parameter}{typed}");
             names.push((parameter, *kind));
         }
         if !parameters.is_empty() {
             header.push(']');
         }
-        if let Some(result) = result
-            && (!self.seal() || self.random.chance(1, 2))
-        {
+        // A group's type comes after the group, with a space on each side of its `:` (D88).
+        header = respace_groups(&header);
+        // trace: D81, D84. The header writes what the procedure gives back and how it can fail.
+        if let Some(result) = result {
             let _ = write!(header, " -> {}", result.written());
+        }
+        if fails {
+            header.push_str(" ! [too_low]");
         }
         // Now and then a procedure says what it's for (D63).
         if self.random.chance(1, 6) {
@@ -1270,7 +1297,7 @@ impl Generator {
             self.mark_read(&parameter);
             match kind {
                 Kind::Event => self.match_event(&parameter, false),
-                Kind::Maybe => self.line(&format!("show_msg(\"m: \" & ({parameter} ?? 0))")),
+                Kind::Maybe => self.line(&format!("show_msg(\"m: {{{parameter}}}\")")),
                 kind => {
                     let shown = self.show(kind, &parameter);
                     self.line(&shown);
@@ -1287,10 +1314,10 @@ impl Generator {
         }
         if fails {
             self.depth -= 1;
-            self.line("end");
+            self.end("if");
         }
         self.depth -= 1;
-        self.line("end");
+        self.end(&format!("proc {name}"));
         self.scopes = outer;
         self.scopes.pop();
         self.in_procedure = None;
@@ -1326,7 +1353,7 @@ impl Generator {
 }
 
 /// The words and symbols of Seal, for scripts made of nothing but them.
-pub const VOCABULARY: [&str; 76] = [
+pub const VOCABULARY: [&str; 80] = [
     "mut",
     "unused",
     "if",
@@ -1403,10 +1430,35 @@ pub const VOCABULARY: [&str; 76] = [
     "&",
     "|>",
     "??",
+    "\\\\",
+    "\"{newln}\"",
+    "\"{x, places: 2}\"",
+    "labels",
 ];
 
 /// The symbols that sit tight against their neighbours.
 pub const TIGHT: [&str; 10] = ["(", ")", "[", "]", ",", ":", ".", "?", "<", ">"];
+
+/// A header written with grouped names, `[a, b: Whole]`, put right as D88 has it: `[a, b : Whole]`, a group's `:`
+/// spaced, and a single name's not.
+fn respace_groups(header: &str) -> String {
+    let Some((name, rest)) = header.split_once('[') else { return header.to_owned() };
+    let Some(inside) = rest.strip_suffix(']') else { return header.to_owned() };
+    let mut written = Vec::new();
+    let mut group: Vec<&str> = Vec::new();
+    for part in inside.split(", ") {
+        match part.split_once(": ") {
+            Some((last, kind)) if group.is_empty() => written.push(format!("{last}: {kind}")),
+            Some((last, kind)) => {
+                group.push(last);
+                written.push(format!("{} : {kind}", group.join(", ")));
+                group.clear();
+            }
+            None => group.push(part),
+        }
+    }
+    format!("{name}[{}]", written.join(", "))
+}
 
 /// A script that's only random words and symbols: almost always refused, and never allowed to do worse.
 #[must_use]

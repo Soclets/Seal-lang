@@ -102,6 +102,8 @@ fn open_doors() -> Result<(Doors, Shared), seal::Message> {
             _ => Err(SaveFailure::NoSlot),
         }
     })?;
+    // A type only the host's calls into the script use is opened by itself (D85).
+    doors.add_type::<Event>()?;
     Ok((doors, world))
 }
 
@@ -234,7 +236,7 @@ fn d14_a_script_past_its_step_budget_stops_and_the_host_carries_on() -> Result<(
     };
     assert_eq!(message.kind, MessageKind::LimitReached);
     assert_eq!(message.what.as_deref(), Some("the script ran out of steps"));
-    assert_eq!(message.place.line, 55);
+    assert_eq!(message.place.line, 44);
     // A stopped script is over: every later call says why (D54).
     assert!(matches!(script.call::<()>("on_hit", (1,)), Err(Error::Stopped(_))));
     assert!(script.stopped().is_some());
@@ -262,7 +264,7 @@ fn d17_a_failed_check_stops_the_script_at_its_exact_line() -> Result<(), Box<dyn
     let Err(Error::Stopped(message)) = script.call::<i64>("overflow", (2,)) else { panic!("the sum should overflow") };
     assert_eq!(
         message.text(),
-        "check failed: goblin.seal:68:12, line 68 column 12\n 68 |     return n * 9223372036854775807\n    |            ^^^^^^^^^^^^^^^^^^^^^^^\n \
+        "check failed: goblin.seal:57:12, line 57 column 12\n 57 |     return n * 9223372036854775807\n    |            ^^^^^^^^^^^^^^^^^^^^^^^\n \
          what:    the result is too big for a `Whole`\n when:    `2 * 9223372036854775807`\n \
          why:     a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.\n"
     );
@@ -293,7 +295,7 @@ fn d24_a_doors_name_follows_seals_spelling() {
     assert!(doors.add("get_service", |name: String| name).is_ok());
     assert!(doors.add("get_service.cached", |name: String| name).is_ok());
     assert!(doors.add("get_service", |name: String| name).is_err());
-    let unknown = Script::load("a.seal", "x = get_service.fresh(\"a\")\nshow(x)\n", &doors, LIMITS);
+    let unknown = Script::load("a.seal", "x = get_service.fresh(\"a\")\nshow_msg(x)\n", &doors, LIMITS);
     let Err(Error::Refused(messages)) = unknown else { panic!("an unknown narrowing is refused") };
     // trace: D13: the door's real narrowings are listed.
     assert!(messages.text().contains("`get_service`'s narrowings are `get_service.cached`."), "{messages}");

@@ -80,6 +80,18 @@ impl Heap {
         self.in_use
     }
 
+    /// The script's memory cap (D14).
+    #[must_use]
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+
+    /// How many bytes the script may still take before its cap.
+    #[must_use]
+    pub fn room_left(&self) -> usize {
+        self.cap.saturating_sub(self.in_use)
+    }
+
     /// The most the script has held at once.
     #[must_use]
     pub fn most(&self) -> usize {

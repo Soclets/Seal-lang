@@ -1,10 +1,11 @@
-proc run[words] -> Whole
+proc run[words: Whole] -> Whole
     mut counts: Dict<key: Text, value: Whole> = [:]
     mut seed = 42
     mut made = 0
     while made < words
         seed = (seed * 1664525 + 1013904223) rem.floor 4294967296
-        word = "word" & (seed div.floor 65536 rem.floor 5000)
+        number = seed div.floor 65536 rem.floor 5000
+        word = "word{number}"
         counts[key: word] = (counts[key: word] ?? 0) + 1
         made = made + 1
     end

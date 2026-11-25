@@ -211,6 +211,8 @@ const KEPT_SCRIPTS: usize = 64;
 #[derive(Default)]
 struct Inner {
     doors: Vec<Door>,
+    /// The records and `one_of`s the host opens for its scripts beyond its doors' own (D85).
+    types: Vec<HostType>,
     /// The scripts compiled against these doors, most recently used last.
     kept: Mutex<Vec<Loaded>>,
 }
@@ -234,6 +236,43 @@ fn door_refusal(name: &str, what: impl Into<String>, why: &str) -> Message {
     let mut message = Message::new(MessageKind::Refused, Place::default(), what).with_why(why);
     message.file = format!("the host's door `{name}`");
     message
+}
+
+/// A record's or a `one_of`'s name.
+fn type_name(host_type: &HostType) -> Option<&str> {
+    match host_type {
+        HostType::Record { name, .. } | HostType::OneOf { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+/// Checks a host type's names: its own is a type's, capitalised with no `_`, and its fields' and cases' are names
+/// (D24, D85, D93).
+fn check_type_spelling(host_type: &HostType) -> Result<(), Message> {
+    let Some(name) = type_name(host_type) else { return Ok(()) };
+    if !name.starts_with(|first: char| first.is_ascii_uppercase())
+        || !name.chars().all(|character| character.is_ascii_alphanumeric())
+    {
+        return Err(door_refusal(
+            name,
+            format!("`{name}` isn't spelt as a type: a capital first, then letters and digits"),
+            "a type's name joins its words with capitals, as `HighScore`, so a capital always means a type.",
+        ));
+    }
+    let words: Vec<&str> = match host_type {
+        HostType::Record { fields, .. } => fields.iter().map(|(field, _)| field.as_str()).collect(),
+        HostType::OneOf { cases, .. } => cases
+            .iter()
+            .flat_map(|(case, fields)| {
+                std::iter::once(case.as_str()).chain(fields.iter().map(|(field, _)| field.as_str()))
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    for word in words {
+        check_spelling(name, word)?;
+    }
+    Ok(())
 }
 
 /// Checks a door's or a label's spelling: Seal's own, checked when the host opens the door (D24).
@@ -279,7 +318,11 @@ impl Doors {
         }
         // Doors shared with loaded scripts are left as they are; this set gets a list of its own to add to.
         if Arc::get_mut(&mut self.inner).is_none() {
-            self.inner = Arc::new(Inner { doors: self.inner.doors.clone(), kept: Mutex::default() });
+            self.inner = Arc::new(Inner {
+                doors: self.inner.doors.clone(),
+                types: self.inner.types.clone(),
+                kept: Mutex::default(),
+            });
         }
         let Some(inner) = Arc::get_mut(&mut self.inner) else {
             return Err(Message::internal("a set of doors couldn't be changed"));
@@ -313,6 +356,80 @@ impl Doors {
     #[must_use]
     pub fn signatures(&self) -> Vec<DoorSignature> {
         self.inner.doors.iter().map(|door| door.signature.clone()).collect()
+    }
+
+    /// Opens one of the host's records or `one_of`s for its scripts, made with `#[derive(Seal)]` (D48). A script
+    /// uses it by name with nothing declared, as it uses a door (D85). A type a door takes or gives is opened with
+    /// the door, so this is for the ones only the host's calls into the script use.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a type that isn't a record or a `one_of`, or whose names don't follow Seal's spelling (D24, D85).
+    pub fn add_type<T: crate::host::SealType>(&mut self) -> Result<(), Message> {
+        let host_type = T::host_type();
+        let name = match &host_type {
+            HostType::Record { name, .. } | HostType::OneOf { name, .. } => name.clone(),
+            _ => {
+                return Err(door_refusal(
+                    "?",
+                    "only a record or a `one_of` is opened as a type",
+                    "a host opens its own records and `one_of`s for a script; Seal's own types are there already.",
+                ));
+            }
+        };
+        check_type_spelling(&host_type)?;
+        if Arc::get_mut(&mut self.inner).is_none() {
+            self.inner = Arc::new(Inner {
+                doors: self.inner.doors.clone(),
+                types: self.inner.types.clone(),
+                kept: Mutex::default(),
+            });
+        }
+        let Some(inner) = Arc::get_mut(&mut self.inner) else {
+            return Err(Message::internal("a set of doors couldn't be changed"));
+        };
+        if let Ok(kept) = inner.kept.get_mut() {
+            kept.clear();
+        }
+        if !inner.types.iter().any(|known| matches!(known, HostType::Record { name: known, .. } | HostType::OneOf { name: known, .. } if *known == name)) {
+            inner.types.push(host_type);
+        }
+        Ok(())
+    }
+
+    /// The records and `one_of`s the host opens, its doors' included, each once, inner ones too (D85).
+    #[must_use]
+    pub fn types(&self) -> Vec<HostType> {
+        let mut found: Vec<HostType> = Vec::new();
+        let mut waiting: Vec<HostType> = self.inner.types.clone();
+        for door in &self.inner.doors {
+            waiting.extend(door.signature.parameters.iter().map(|parameter| parameter.host_type.clone()));
+            waiting.push(door.signature.result.clone());
+        }
+        while let Some(host_type) = waiting.pop() {
+            match &host_type {
+                HostType::List(inner) | HostType::Maybe(inner) => waiting.push((**inner).clone()),
+                HostType::Dict(key, value) => {
+                    waiting.push((**key).clone());
+                    waiting.push((**value).clone());
+                }
+                HostType::Record { name, fields }
+                    if !found.iter().any(|known| type_name(known) == Some(name.as_str())) =>
+                {
+                    waiting.extend(fields.iter().map(|(_, field)| field.clone()));
+                    found.push(host_type);
+                }
+                HostType::OneOf { name, cases }
+                    if !found.iter().any(|known| type_name(known) == Some(name.as_str())) =>
+                {
+                    waiting.extend(cases.iter().flat_map(|(_, fields)| fields.iter().map(|(_, field)| field.clone())));
+                    found.push(host_type);
+                }
+                _ => {}
+            }
+        }
+        found.reverse();
+        found
     }
 
     /// What a source compiled to the last time it was loaded with these doors, when that's still kept.

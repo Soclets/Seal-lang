@@ -321,8 +321,13 @@ pub enum ExpressionKind {
         left: Box<Expression>,
         right: Box<Expression>,
     },
-    /// Pieces of text joined into one (D29, D12).
+    /// Pieces of text joined into one, as braces fill a text in (D75, D100).
     Join(Vec<Expression>),
+    /// A `Float` shown to so many digits after its point, as `{speed, places: 2}` fills it in (D94, Unio D175).
+    ShowPlaces {
+        value: Box<Expression>,
+        places: u8,
+    },
     /// A record built from its fields, in the order written: each field's number and its value (D27).
     BuildRecord {
         record: u32,

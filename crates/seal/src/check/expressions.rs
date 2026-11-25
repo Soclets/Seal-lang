@@ -66,8 +66,9 @@ impl Checker<'_> {
             }
             Kind::Float { text, approximate } => self.float_literal(text, *approximate, false, place),
             Kind::Bool(value) => Expression { kind: ExpressionKind::Bool(*value), type_id: BOOL, place },
-            // The text is kept as written until here, where `\` makes its next character literal (D63).
-            Kind::Text(text) => Expression { kind: ExpressionKind::Text(cook_text(text)), type_id: TEXT, place },
+            // The text is kept as written until here, where `\` makes its next character literal (D63), and every
+            // text fills in its braces (D75).
+            Kind::Text(text) => self.text_literal(text, place),
             Kind::Name(name) => self.name(name, place),
             Kind::TypeName(word) => {
                 let name = &word.text;
@@ -226,6 +227,174 @@ impl Checker<'_> {
         }
     }
 
+    /// A text as written: what it holds, with its braces filled in (D12, D28, D63, D75, D94, D118, Unio D30).
+    fn text_literal(&mut self, text: &str, place: Place) -> Expression {
+        if !text.contains('{') {
+            return Expression { kind: ExpressionKind::Text(cook_text(text)), type_id: TEXT, place };
+        }
+        let characters: Vec<char> = text.chars().collect();
+        let column_of = |index: usize| place.column + 1 + u32::try_from(index).unwrap_or(0);
+        let mut parts: Vec<Expression> = Vec::new();
+        let mut plain = String::new();
+        let mut index = 0;
+        while let Some(&character) = characters.get(index) {
+            match character {
+                // trace: D63, Unio D30. `\{` is a brace, `\"` a quote and `\\` a backslash.
+                '\\' => {
+                    plain.extend(characters.get(index + 1));
+                    index += 2;
+                }
+                '{' => {
+                    let Some(length) =
+                        characters.get(index..).and_then(|rest| rest.iter().position(|&next| next == '}'))
+                    else {
+                        self.not_designed(
+                            Place::new(place.line, column_of(index), 1),
+                            "a `{` with no `}` after it in text",
+                        );
+                        return Self::error(place);
+                    };
+                    let inside: String = characters.get(index + 1..index + length).unwrap_or(&[]).iter().collect();
+                    let brace_place = Place::new(place.line, column_of(index), u32::try_from(length + 1).unwrap_or(1));
+                    match inside.as_str() {
+                        // trace: D118. `{newln}` and `{tab}` give a line break and a tab.
+                        "newln" => plain.push('\n'),
+                        "tab" => plain.push('\t'),
+                        "" => {
+                            // trace: D93
+                            let mut fixed: Vec<char> = self.source_line(place.line).chars().collect();
+                            let at = (column_of(index) as usize).saturating_sub(1);
+                            if at <= fixed.len() {
+                                fixed.insert(at, '\\');
+                            }
+                            self.messages.push(
+                                crate::message::Message::refused(
+                                    brace_place,
+                                    "these braces are empty, so they fill in nothing",
+                                )
+                                .with_fix(fixed.into_iter().collect::<String>())
+                                .with_why("braces in text fill in a name; a brace shown as it is, is written `\\{`."),
+                            );
+                        }
+                        _ => {
+                            if !plain.is_empty() {
+                                parts.push(Expression {
+                                    kind: ExpressionKind::Text(std::mem::take(&mut plain)),
+                                    type_id: TEXT,
+                                    place,
+                                });
+                            }
+                            if let Some(part) = self.brace(&inside, brace_place) {
+                                parts.push(part);
+                            }
+                        }
+                    }
+                    index += length + 1;
+                }
+                // A `}` with no open `{` is just a character (D63, Unio D30).
+                other => {
+                    plain.push(other);
+                    index += 1;
+                }
+            }
+        }
+        if parts.is_empty() {
+            return Expression { kind: ExpressionKind::Text(plain), type_id: TEXT, place };
+        }
+        if !plain.is_empty() {
+            parts.push(Expression { kind: ExpressionKind::Text(plain), type_id: TEXT, place });
+        }
+        Expression { kind: ExpressionKind::Join(parts), type_id: TEXT, place }
+    }
+
+    /// What's inside one pair of braces: a name, which may be followed by its fields and facts, and for a `Float`,
+    /// `places:` (D28, D75, D94, D100).
+    fn brace(&mut self, inside: &str, place: Place) -> Option<Expression> {
+        let is_name = |word: &str| {
+            !word.is_empty()
+                && word.starts_with(|first: char| first.is_ascii_lowercase())
+                && word
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+        };
+        let (path, places) = match inside.split_once(", places: ") {
+            Some((path, places)) => {
+                let Ok(places) = places.parse::<u8>() else {
+                    self.refuse_why(
+                        place,
+                        format!("`places:` takes a whole number written out, but this is `{places}`"),
+                        "`places:` says how many digits a `Float` shows after its point, as `{speed, places: 2}`.",
+                    );
+                    return None;
+                };
+                (path, Some(places))
+            }
+            None => (inside, None),
+        };
+        if !path.split('.').all(is_name) {
+            // trace: D12, D28, D75
+            self.refuse_why(
+                place,
+                format!("`{{{inside}}}` isn't a name with its fields and facts"),
+                "braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.",
+            );
+            return None;
+        }
+        let mut column = place.column + 1;
+        let mut built: Option<syntax::Expression> = None;
+        for word in path.split('.') {
+            let width = u32::try_from(word.len()).unwrap_or(1);
+            let word_place = Place::new(place.line, column, width);
+            built = Some(match built {
+                None => syntax::Expression {
+                    id: u32::MAX,
+                    kind: syntax::ExpressionKind::Name(word.to_owned()),
+                    place: word_place,
+                },
+                Some(receiver) => {
+                    let whole = receiver.place.to(word_place);
+                    syntax::Expression {
+                        id: u32::MAX,
+                        kind: syntax::ExpressionKind::Member {
+                            receiver: Box::new(receiver),
+                            name: syntax::Word { text: word.to_owned(), place: word_place },
+                        },
+                        place: whole,
+                    }
+                }
+            });
+            column += width + 1;
+        }
+        let built = built?;
+        if !self.is_value(&built) {
+            let first = path.split('.').next().unwrap_or(path);
+            self.refuse_why(
+                place,
+                format!("there's no name `{first}` here"),
+                "a name in braces is checked when the script loads; a brace shown as it is, is written `\\{`.",
+            );
+            return None;
+        }
+        let checked = self.expression(&built, None);
+        let Some(places) = places else { return Some(checked) };
+        // trace: D94, Unio D175. `places:` rounds a `Float` for showing.
+        if !self.program.types.unify(checked.type_id, FLOAT) {
+            let found = self.describe(checked.type_id);
+            self.refuse_why(
+                place,
+                format!("`places:` shows a `Float` to so many digits, but this is {found}"),
+                "`places:` is only for a `Float`, which otherwise shows every digit it needs.",
+            );
+            return None;
+        }
+        Some(Expression { kind: ExpressionKind::ShowPlaces { value: Box::new(checked), places }, type_id: TEXT, place })
+    }
+
+    /// The script's line as written, by its number.
+    pub(super) fn source_line(&self, number: u32) -> String {
+        self.script.line(number).to_owned()
+    }
+
     /// trace: Unio D155, D180
     fn float_literal(&mut self, text: &str, approximate: bool, negative: bool, place: Place) -> Expression {
         let Some((value, exact)) = read_float_literal(text) else {
@@ -273,6 +442,10 @@ impl Checker<'_> {
             }
             self.mark_read(id);
             return Expression { kind: ExpressionKind::Variable(id), type_id: self.variable_type(id), place };
+        }
+        if matches!(name, "newln" | "tab") {
+            self.not_designed(place, format!("`{name}` outside braces"));
+            return Self::error(place);
         }
         if self.words.contains(name) || super::BUILT_IN_WORDS.contains(&name) {
             // trace: Unio D4
@@ -362,6 +535,7 @@ impl Checker<'_> {
             }
             _ => {
                 let operand_wanted = if operator.is_comparison() { None } else { wanted };
+                let (left_syntax, right_syntax) = (left, right);
                 let left = self.expression(left, operand_wanted);
                 let right = self.expression(right, Some(left.type_id));
                 if !self.program.types.unify(left.type_id, right.type_id) {
@@ -383,6 +557,29 @@ impl Checker<'_> {
                             format!("{quoted} has {left_text} on its left, but {right_text} on its right"),
                         );
                     }
+                    return Self::error(place);
+                }
+                if operator == BinaryOperator::Add && self.program.types.resolve(left.type_id) == TEXT {
+                    // trace: D77. Text is joined only by filling it in.
+                    let mut message = crate::message::Message::refused(operator_place, "`+` doesn't join text; text is joined by filling it in with braces")
+                        .with_why("`+` is only for numbers; text is joined by filling it in with braces, as in `\"{first} {last}\"`.");
+                    if let (Some(first), Some(second)) = (filled(left_syntax), filled(right_syntax))
+                        && left_syntax.place.line == right_syntax.place.line
+                    {
+                        let line: Vec<char> = self.source_line(left_syntax.place.line).chars().collect();
+                        let from = left_syntax.place.column.saturating_sub(1) as usize;
+                        let to = (right_syntax.place.column + right_syntax.place.width).saturating_sub(1) as usize;
+                        if from <= to && to <= line.len() {
+                            let fixed = line.get(..from).unwrap_or(&[]).iter().collect::<String>()
+                                + "\""
+                                + &first
+                                + &second
+                                + "\""
+                                + &line.get(to..).unwrap_or(&[]).iter().collect::<String>();
+                            message = message.with_fix(fixed);
+                        }
+                    }
+                    self.messages.push(message);
                     return Self::error(place);
                 }
                 let (requirement, purpose) = match operator {
@@ -978,6 +1175,23 @@ impl Checker<'_> {
     /// Whether a call's callee is a method on a value, as opposed to a procedure's name.
     pub(super) fn is_method(&self, callee: &syntax::Expression) -> bool {
         matches!(&callee.kind, syntax::ExpressionKind::Member { receiver, .. } if self.is_value(receiver))
+    }
+}
+
+/// How a piece of joined text is written inside text: a text as it's written, or a name with its fields and facts in
+/// braces (D75, D77).
+fn filled(expression: &syntax::Expression) -> Option<String> {
+    fn path(expression: &syntax::Expression) -> Option<String> {
+        match &expression.kind {
+            syntax::ExpressionKind::Name(name) => Some(name.clone()),
+            syntax::ExpressionKind::Member { receiver, name } => Some(format!("{}.{}", path(receiver)?, name.text)),
+            _ => None,
+        }
+    }
+    match &expression.kind {
+        syntax::ExpressionKind::Text(text) => Some(text.clone()),
+        syntax::ExpressionKind::Group(inner) => filled(inner),
+        _ => Some(format!("{{{}}}", path(expression)?)),
     }
 }
 

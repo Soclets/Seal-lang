@@ -1,5 +1,5 @@
 // Purpose: shuffling a list in place. A list of 16 whole numbers is reversed `rounds` times, item by item.
-proc run[rounds] -> Whole
+proc run[rounds: Whole] -> Whole
     mut items: List<Whole> = []
     for each i in range[from: 0, before: 16]
         items.add(i)

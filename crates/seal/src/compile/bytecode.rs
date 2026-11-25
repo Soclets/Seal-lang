@@ -767,6 +767,10 @@ pub enum JoinPiece {
     Whole(Register),
     Bool(Register),
     Float(Register),
+    /// A `Float` shown to so many digits after its point, with no `~` (D94, Unio D175).
+    Places(Register, u8),
+    /// Any other value, shown as it's written in Seal, by its type's number in the script's types (D100).
+    Value(Register, u32),
 }
 
 /// How a record or a case is laid out on the heap: which of its values are heap values themselves.
