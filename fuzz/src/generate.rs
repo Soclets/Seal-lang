@@ -1377,6 +1377,8 @@ impl Generator {
                     }
                 }
             }
+            // trace: D107, D115. A `HugeWhole` whose limits are past a `Whole`'s range.
+            20 if self.seal() && self.random.chance(1, 3) => self.ranged_huge(),
             _ => {
                 let kind = if self.seal() {
                     *self.random.pick(&[Kind::Whole, Kind::Float]).unwrap_or(&Kind::Whole)
@@ -1392,6 +1394,24 @@ impl Generator {
                 }
             }
         }
+    }
+
+    /// A ranged `HugeWhole` with edges past a `Whole`'s range, made from text, changed with `_`, and shown: it's
+    /// checked or pulled back as it lands (D107, D115, D147).
+    fn ranged_huge(&mut self) {
+        const EDGES: [&str; 3] = [
+            "[max.clamp: 100000000000000000000]",
+            "[min.clamp: -99999999999999999999, max.clamp: 99999999999999999999]",
+            "[min: -100000000000000000000, max.clamp: 100000000000000000000]",
+        ];
+        const STARTS: [&str; 5] = ["7", "-3", "9223372036854775808", "123456789012345678901234567890", "x"];
+        let name = self.fresh();
+        let edges = self.random.pick(&EDGES).copied().unwrap_or("");
+        let start = self.random.pick(&STARTS).copied().unwrap_or("0");
+        let factor = self.random.pick(&["2", "-1000", "9223372036854775807", "0"]).copied().unwrap_or("2");
+        self.line(&format!("mut {name}: HugeWhole{edges} = be.HugeWhole(\"{start}\") ?? 0"));
+        self.line(&format!("{name} = _ * {factor}"));
+        self.line(&format!("show_msg(\"{name}: {{{name}}}\")"));
     }
 
     fn freeze(&mut self, text: &str, frozen: bool) {
