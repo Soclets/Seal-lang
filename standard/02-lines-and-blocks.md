@@ -41,8 +41,9 @@ where `opening line` is the block's first line and `body` its statements.
 - **An `end` can carry a note naming its block,** written after `\\`: `end \\ proc on_hit`. The note is optional, it's
   coloured like a comment, and it's checked: a note naming any other block is refused, so it can't go stale (D102).
 - **The language server writes the note** when it closes a block, as `\\ if`, `\\ while`, `\\ for`, `\\ match`,
-  `\\ otherwise`, `\\ proc heal`, `\\ record Enemy`, `\\ one_of Event`, `\\ fam.proc spawn`, `\\ group.handler level_failed`, `\\ spawn.boss`, `\\ ::start_over` or
-  `\\ comment old_scoring`: what the block is, with its name when it has one (D102).
+  `\\ otherwise`, `\\ proc heal`, `\\ record Enemy`, `\\ one_of Event`, `\\ fam.proc spawn`,
+  `\\ group.handler level_failed`, `\\ spawn.boss`, `\\ ::start_over` or `\\ comment old_scoring`: what the block is,
+  with its name when it has one (D102).
 - **An `end` at the wrong depth is refused** (D20).
 - **A missing `end` is reported naming the block it should close,** as in "the `while` on line 3 has no `end`" (D20).
 
