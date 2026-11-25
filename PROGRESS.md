@@ -333,14 +333,8 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
 
 ## Questions for the design session
 
-Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D124), 12 (D119), 15 (D125), and most of
-1 to 10 by D120 to D123 (units convert by themselves when exact, `per`, `.point`, `in`, `group.unit`). Still open:
-- 13, 14: which `be.` conversions and which operations the new number types take.
-- 16: what crosses a door for each new number type (mine to choose; to report).
-- 17: whether a ranged number is its own type, and whether "storing" covers parameters, fields, items and `return`s.
-- 18 to 20: a handler's parameter labels (chapter 7's example), `fail` in a handler as a jump, what `handles` can name.
-- 21: `newln` outside braces.
-- D58: whether n-body's Normal program is rightly the one written with D62's direct changes.
+Sent 2026-11-25 (batch 1 of this session, 21 questions): all answered by D119 to D129 and built, and n-body's Normal
+program is rightly the one written with D62's direct changes.
 
 Batch 2, sent 2026-11-25 after C12 (C7 to C10's first three were answered by D130 to D132):
 - D108: a negative power of a `Whole` only known while running is a failed check (built), as D89 treats an empty
