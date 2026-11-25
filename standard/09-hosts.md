@@ -21,7 +21,7 @@ calls Seal is the building session's to propose.
 - **A host can give its doors narrowings,** declared with the door, working exactly like Seal's own; an unknown one is
   refused at load time, with the door's real narrowings listed (D13, Unio D102).
 - **Values cross the doors as copies,** and the host's own objects arrive as IDs (D15).
-- **A door can take a unit,** as `wait(2 time::secs)`, or a plain number with its label saying the unit, as
+- **A door can take a unit,** as `wait(2 secs)`, or a plain number with its label saying the unit, as
   `wait(seconds: 2)`; the host chooses (D111, chapter 6).
 
 - **A host can open types too,** its own records and `one_of`s, made with `#[derive(Seal)]` (D48). A script uses them

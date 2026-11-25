@@ -62,18 +62,19 @@ known while loading (D103).
 Units are optional: a `Whole` or a `Float` can carry one, as Cyborg's do, and nothing is ever required to (D111):
 
 ```
-wait(2 time::secs)
-wait(500 time::ms)
-total = 2 time::secs + 500 time::ms      // 2.5 secs
+wait(2 secs)
+wait(500 ms)
+total = 2 secs + 500 ms                  // 2.5 secs
 ```
 
-- **A number takes its unit after it,** from a unit group, reached with `::` (D110, D111).
+- **A number takes its unit bare, right after it,** as `2 secs`. Units belong to groups, and the group is written,
+  as `time::secs`, only to settle a clash between two groups with a unit of the same name. A unit only ever stands
+  after a number or in a type, so it never takes a word away from names (D111, D112).
 - **Units that measure the same thing combine and convert by themselves;** ones that measure different things, as
   seconds and pixels, are refused together (D111).
 - **Where a unit is expected, a plain number is refused,** with the unit added as the fix, so a door taking a time
   can't be given a bare `2` (D111).
-- **Inside its group, a unit has its short name,** as `time::secs` and `time::ms`, since the group says what it
-  measures (D111).
+- **Units have short names,** as `secs` and `ms`, since their group says what they measure (D111).
 - **Everything else follows Cyborg's units,** decided there: derived units, angles, points and spans, prefixes and
   showing a unit (D111).
 

@@ -3355,3 +3355,37 @@ give?", "Wait a fucking minute, that's a big pitch, even bigger than speed & saf
 that? Ohhhhhhh", "So, maybe the learning curve is very much the tradeoff?", then, asked "Should Seal take Cyborg's
 units as an optional layer, with short unit names inside their groups, replacing D55?", the owner chose: "yea. Btw, if
 Seal ever has a JIT or learning host. It would be NginJIT, NginLearn"
+
+(Changed by D112: a unit is written bare after its number, as `2 secs`.)
+
+## D112. A unit is written bare after its number; its group only settles a clash
+
+2026-11-25.
+
+**Chosen.** A unit is written right after its number with no group, replacing D111's `time::secs`:
+
+```
+wait(2 secs)
+wait(500 ms)
+turn(90 degs)
+```
+
+- **The group is written only to settle a clash,** as `health::points` beside `score::points`, when two groups have a
+  unit of the same name. Seal's own units never clash.
+- **A unit only ever stands right after a number or in a type,** as `Float[unit: secs]`, never where a name goes, so a
+  name can still be `secs`, as a label like `by:` takes no word away.
+- **Handlers keep their `::`** (D110): a handler stands after `??`, where a value can too, so `?? ::start_over` needs
+  its mark, while nothing but a unit can follow a number.
+
+**Weighed.**
+- The group every time, as `2 time::secs` (D111). Tankun: "I would fucking like units if it didn't need to summon the
+  entire fucking location".
+- No units, with labels only, as `wait(sec: 2)`, which Tankun asked about. A label checks the call, not a value carried
+  there, and D111 already lets a host use labels.
+
+**Why this won.** As short as Tankun's own first sketch, `wait(2 secs)`, with nothing left unclear.
+
+**Tankun's words.** ""the host or the game"?", "What if required?", "So, required?", "or just no units, and just
+labels? `wait(sec: )`", "I would fucking like units if it didn't need to summon the entire fucking location", "Then,
+what about handler?", then, asked "Should units be written bare after their number, as `2 secs`, with `group::` only
+to settle a clash?", the owner chose: "yea"
