@@ -78,7 +78,17 @@ total = 2 secs + 500 ms                  // 2.5 secs
 - **Everything else follows Cyborg's units,** decided there: derived units, angles, points and spans, prefixes and
   showing a unit (D111).
 
-**Not decided:** Seal's own list of units and their names; how `sin` and the other angle built-ins take units.
+Seal's own unit groups are (D113):
+
+| Group | Units |
+|---|---|
+| `time` | `ms`, `secs`, `mins`, `frames` |
+| `angle` | `degs`, `rads`, `turns` |
+| `distance` | `px`, `tiles` |
+
+`frames` and `tiles` have no fixed size, so they convert only through a rate, as `16.0 px per tiles`, or a frame's
+measured time in `secs per frames`. Other units, as money or a game's own, a script or host declares as a group of
+its own (D113).
 
 ## Ranged numbers
 

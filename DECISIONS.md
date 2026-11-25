@@ -3252,6 +3252,8 @@ kind of the same operation.
 asked "Should Seal have `sin`, `cos`, `tan`, `asin`, `acos` and `atan2` in radians, `.degrees` versions of each, and
 `pi`?", the owner chose: "yea"
 
+(Changed by D113: the angle built-ins take `angle` units, and the `.degrees` versions go.)
+
 ## D110. Handlers live in a `group.handler`, reached with `::`, and a group can say which procedures it handles
 
 2026-11-25.
@@ -3389,3 +3391,39 @@ turn(90 degs)
 labels? `wait(sec: )`", "I would fucking like units if it didn't need to summon the entire fucking location", "Then,
 what about handler?", then, asked "Should units be written bare after their number, as `2 secs`, with `group::` only
 to settle a clash?", the owner chose: "yea"
+
+## D113. Seal's unit groups: `time`, `angle` and `distance`
+
+2026-11-25.
+
+**Chosen.**
+
+| Group | Units |
+|---|---|
+| `time` | `ms`, `secs`, `mins`, `frames` |
+| `angle` | `degs`, `rads`, `turns` |
+| `distance` | `px`, `tiles` |
+
+- **A group is named after what its units measure,** so units in one group convert into each other and refuse other
+  groups.
+- **A unit's name is the short form people already write,** as "500ms" and "16px", and `secs`, `mins`, `degs` and
+  `rads` rather than cryptic symbols.
+- **`frames` and `tiles` have no fixed size,** so they convert only through a rate, as `16.0 px per tiles`, or a
+  frame's measured time in `secs per frames`, which can change while running.
+- **The angle built-ins take an angle,** as `sin(90 degs)` and `sin(1.5 rads)`, replacing D109's `.degrees` versions.
+  A plain `Float` still means radians, for formulas from elsewhere. `asin`, `acos` and `atan2` give `rads`.
+- Other units, as money, metres or a game's own currencies, a script or host declares as a group of its own.
+
+**Weighed.**
+- `screen` for `px` and `tiles`, as the design session first named it. It names a place, not a measure, and tiles
+  belong to the game world.
+- `dist`, as Tankun asked. A group is only written to settle a clash (D112), so a short name saves nothing, and `time`
+  and `angle` are full words.
+- Frame and tile sizes set by the host, fixed while a script runs. A real frame's length varies, and a game can change
+  its tile size.
+
+**Why this won.** Time, angles and distances are what games measure, and the names are what people already type.
+
+**Tankun's words.** "Why those names?", "No, i meant the group name", "What about` dist`?", then, asked "Should Seal
+start with `time`, `angle` and `distance` as its built-in unit groups, with `frames` and `tiles` converting only
+through rates, and the angle built-ins taking angle units in place of `.degrees`?", the owner chose: "yea"
