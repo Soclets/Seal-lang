@@ -61,7 +61,7 @@ where each `...` stands for that procedure's body.
   since it's called on its own anywhere (D97).
 - **Each member is the word itself, or reads as "a Y kind of X"** for its name `X.Y`; anything else is refused (D43).
 - **A narrowed procedure is declared only inside its word's family** (D43, Unio D41).
-- **`fam.handler`** holds a failure's handlers (chapter 7, D97).
+- **Handlers aren't a family:** they live in a `group.handler`, a named set reached with `::` (chapter 7, D110).
 
 ## Types
 

@@ -49,18 +49,19 @@ end
 
 ## Handlers
 
-A handler is a named, reusable set of `case`s, declared in a `fam.handler` named after what fails, as Unio's are (D97,
-Unio D41 to D44):
+A handler is a named, reusable set of `case`s. Handlers live in a handler group, a named set reached with `::`, as
+Cyborg reaches every named set (D110, Cyborg D488, Unio D41 to D44):
 
 ```
-fam.handler level_failed
-    start_over
+group.handler level_failed
+    handles [load_level, load_save]
+    ::start_over
         case not_found
             instead 1
         case broken
             instead 1
     end
-    start_at[level: Whole]
+    ::start_at[level: Whole]
         case not_found
             instead level
         case broken
@@ -68,18 +69,26 @@ fam.handler level_failed
     end
 end
 
-a = load_level("forest") ?? level_failed.start_over
-b = load_level("cave") ?? level_failed.start_at(level: 3)
+a = load_level("forest") ?? ::start_over
+b = load_save("slot1") ?? level_failed::start_at(level: 3)
+c = load_level("cave") otherwise
+    include ::start_over
+end
 ```
 
-- **A member is written by its short name,** with no `handler`, since a handler is only ever used after `??` or
-  inside an `otherwise` block; it's used by its full name, as `level_failed.start_over` (D97, D98).
+- **`group.handler name`** declares a group: "a handler kind of group". It isn't a family, since its members aren't
+  kinds of its name (D110).
+- **Each member is declared as `::name`,** the mark it's reached with (D110).
+- **`handles [ … ]`,** an optional first line, lists the procedures the group is for. Right after a call to one of
+  them, `::start_over` reaches into the groups that handle it; if two such groups both have that member, the short form
+  is refused there (D110).
+- **The full form, `level_failed::start_over`, works anywhere** (D110).
 - **On one line, a handler follows `??`,** as a value, `ignore` or `crash` would; `otherwise` is only ever a block
   (D98).
 - **It's used as if its cases were written at the call,** so it must cover every failure still possible there (Unio
   D40, D42).
-- **A handler that can `return` or `break` is marked `*` where it's used,** as `?? level_failed.*give_up`; the
-  mark is required on one that can jump and refused on one that can't (Unio D42).
-- **`include level_failed.start_over`** inside an `otherwise` block brings in its cases beside the block's own; together
-  they cover every failure, none twice (Unio D43).
+- **A handler that can `return` or `break` is marked `*` where it's used,** as `?? ::*give_up` or
+  `?? level_failed::*give_up`; the mark is required on one that can jump and refused on one that can't (Unio D42).
+- **`include`** inside an `otherwise` block brings in a handler's cases beside the block's own; together they cover
+  every failure, none twice (Unio D43).
 - **A handler can take parameters,** written as a procedure's are, and is given arguments where it's used (Unio D44).

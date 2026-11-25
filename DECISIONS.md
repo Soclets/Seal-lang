@@ -2916,6 +2916,8 @@ chose: "yea. What about `?!` replacing `otherwise` for non-block ver?"
 
 (Changed by D98: on one line a handler follows `??`, and `otherwise` is only a block.)
 
+(Changed by D110: handlers live in a `group.handler`, declared and reached with `::`.)
+
 ## D98. On one line, a handler follows `??`; `otherwise` is only a block
 
 2026-11-24.
@@ -2946,6 +2948,8 @@ D42's, `otherwise level_failed.start_over` on one line.
 **Tankun's words.** "yea. What about `?!` replacing `otherwise` for non-block ver?" (quoted whole in D97), has code,
 "or just `??`?", then, asked "Should `??` take a handler on one line, with `otherwise` only for the block?", the owner
 chose: "yea"
+
+(Changed by D110: a handler is reached with `::`, as `?? level_failed::start_over` or `?? ::start_over`.)
 
 ## D99. A `range` is a `List<Whole>`
 
@@ -3245,3 +3249,63 @@ kind of the same operation.
 **Tankun's words.** "So, default is radians?", "Wait a fucking minute, don't you have a script for that? Quote", then,
 asked "Should Seal have `sin`, `cos`, `tan`, `asin`, `acos` and `atan2` in radians, `.degrees` versions of each, and
 `pi`?", the owner chose: "yea"
+
+## D110. Handlers live in a `group.handler`, reached with `::`, and a group can say which procedures it handles
+
+2026-11-25.
+
+**Chosen.** Following Cyborg D488, a member picked out of a named set is reached with `::`, while `.` keeps narrowings,
+fields and `one_of` cases. Handlers, which are members of a set and not kinds of a word, move out of families:
+
+```
+group.handler level_failed
+    handles [load_level, load_save]
+    ::start_over
+        case not_found
+            instead 1
+        case broken
+            instead 1
+    end
+end
+
+level = load_level("cave") ?? ::start_over
+level = load_save("slot1") ?? level_failed::start_over
+```
+
+- **`group.handler name … end`** declares a handler group, "a handler kind of group", replacing D97's `fam.handler`.
+  `fam` keeps one meaning: a word and its kinds, joined by `.`. Other named sets, if Seal gets them, would be
+  `group.` too.
+- **Members are declared as `::name`,** the mark they're reached with.
+- **`handles [ … ]`,** an optional first line, lists the procedures the group is for. Right after a call to one of
+  them, `::start_over` reaches into the groups that handle it, with `?? ::*give_up` for one that can jump, and
+  `include ::start_over` in an `otherwise` block. If two such groups both have that member, the short form is refused
+  there.
+- **The full form, `level_failed::start_over`, works anywhere,** including for a group with no `handles` line.
+
+The wordings come with a later batch.
+
+**Weighed.**
+- `level_failed.start_over`, as D97 and Unio have it. Tankun: a narrowing goes into the word to make a different kind
+  of it, while a handler group's member goes to the right, a different thing, which Cyborg D488 settled.
+- No group in front, as `?? start_over`. Two groups could each have one, and it would read like a fallback value.
+- A group named after its procedure, as `load_level::start_over`, as the design session proposed. One spelling would
+  mean two things, which nothing else in Seal does (D71).
+- `handlers level_failed`, as the design session proposed. `group.handler` mirrors `fam.proc` and extends to other
+  named sets.
+- `kit`, `set`, `space`, `bundle` or `pack` in place of `group`. `group` is plain English and collides with nothing
+  planned.
+
+**Why this won.** Each mark means one thing: `.` goes into a word, `::` reaches into a named set, and a call's own
+procedure says which set a short `::` name means.
+
+**Tankun's words.** "Before that. I think the diff between `fam.proc` and `fam.handler` is weird. Well, look.
+proc fam could make `println.stored`, while handler fam could make `level_failed.start_over`.
+it can't really make a more specific `start_over`, rather just reaching into `level_failed` like a path, or some shit",
+"Cyborg has this too, and since its fam model is what I want it to be. You should msg Cyborg dclaude about this, and
+that I will be dealing with it there for a bit", "Why not just no mark>", "Then, you should probably shorten it to
+`level::start_over`", "Or have a way to tie handler groups to proc? So, you could say shit like `::start_over` because
+of the left", "Ohhh, Idk about name being like that. Since, we usually don't do that, right?", "Can we write
+::start_over inside too? just feel like it", "Woah, `fam`? Maybe we should use another name? Or would we just make
+`fam` very diverse", "What about `group.`?", "Any other names for group?", then, asked "Should handler groups be
+`group.handler level_failed`, with `handles [ … ]`, members declared as `::start_over`, and `::start_over` usable after
+a handled procedure's call?", the owner chose: "yea"
