@@ -101,7 +101,8 @@ total = 2 secs + 500 ms                  // 2500 ms
   can't be given a bare `2` (D111).
 - **Units have short names,** as `secs` and `ms`, since their group says what they measure (D111).
 - **`to` measures a value in a unit,** giving the plain number it reads as there: `total to secs` is `2.5` and
-  `total to ms` is `2500` for `total` of `2500 ms` (D148, replacing D122's `in`, which stays the loop's). The value is unchanged; only a unit of its own group can measure
+  `total to ms` is `2500` for `total` of `2500 ms` (D148, replacing D122's `in`, which stays the loop's).
+  Maths before `to` needs brackets, as `(a + b) to ms`; `a + b to ms` is refused, with the brackets as the fix (D149). The value is unchanged; only a unit of its own group can measure
   it, and the result is a `Float` where it can't be a whole number (D122).
 - **A unit is an amount, a span, unless it's marked a point,** with the narrowing `.point`, as `px.point` for a place
   on screen or `secs.point` for a moment. A point plus a span is a point, a point minus a point is a span, and two

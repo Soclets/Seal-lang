@@ -1,0 +1,4 @@
+a = 2 secs
+b = 500 ms
+total_ms = (a + b) to ms
+show_msg("{total_ms}")

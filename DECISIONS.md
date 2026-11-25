@@ -4508,3 +4508,31 @@ insdie", "Doesn't Rust use as for conversion?", "We're not borrowing Rust's, jus
 plain. But kinda sounds like go into, though.", "What about `as`?", "Fuck, I forgot about that. What if we changed
 loop", "is `of` there accurate? In English", "Would it be vonfused with range to?", then, asked "Should measuring be
 written `to`, as `total to secs`, leaving `in` only for `for_each`?", the owner chose: "yea"
+
+## D149. Maths before `to` needs brackets
+
+2026-11-25.
+
+**Chosen.** When `to` measures the result of maths, the maths is bracketed; without brackets it's refused, with the
+brackets as the fix:
+
+```
+total_ms = (a + b) to ms     // measures the sum
+total_ms = a + b to ms       // refused
+total_ms = total to ms       // a single value needs none
+```
+
+It's D72's rule, brackets wherever maths doesn't say which goes first (Unio D72): `to` is Seal's own word, with no
+place in maths' order. The nearest thing maths and physics have, a unit after a sum, is written with brackets too, as
+the SI style guides ask for `(12 + 3) m` rather than `12 + 3 m`.
+
+**Weighed.**
+- `to` applying to everything before it, `(a + b) to ms`, as English reads it. A reader would have to know an order
+  for a word maths doesn't have.
+- `to` applying only to the value right before it, `a + (b to ms)`. Then `a + b to ms` adds a plain number to a time,
+  which units refuse anyway.
+
+**Why this won.** Where no order is known, brackets say what's meant, as everywhere else in Seal.
+
+**Tankun's words.** "Does maths say?", then, asked "Should `to` after maths without brackets be refused, with the
+brackets as the fix?", the owner chose: "y"
