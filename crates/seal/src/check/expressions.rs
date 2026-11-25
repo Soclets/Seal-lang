@@ -1427,15 +1427,24 @@ fn type_word<'r, 'e>(expression: &'r syntax::Expression<'e>) -> Option<&'r synta
 }
 
 /// A procedure's name with its narrowings, as `show_msg` and `same_line`.
-pub(super) fn name_path(expression: &syntax::Expression) -> Option<Vec<String>> {
+pub(super) fn name_path<'e>(expression: &syntax::Expression<'e>) -> Option<Vec<&'e str>> {
     match &expression.kind {
-        syntax::ExpressionKind::Name(name) => Some(vec![(*name).to_owned()]),
+        syntax::ExpressionKind::Name(name) => Some(vec![*name]),
         syntax::ExpressionKind::Member { receiver, name } => {
             let mut path = name_path(receiver)?;
-            path.push(name.text.to_owned());
+            path.push(name.text);
             Some(path)
         }
         _ => None,
+    }
+}
+
+/// Whether an expression is a name, or a name with its narrowings: what `name_path` reads, without reading it.
+pub(super) fn is_name_path(expression: &syntax::Expression<'_>) -> bool {
+    match &expression.kind {
+        syntax::ExpressionKind::Name(_) => true,
+        syntax::ExpressionKind::Member { receiver, .. } => is_name_path(receiver),
+        _ => false,
     }
 }
 

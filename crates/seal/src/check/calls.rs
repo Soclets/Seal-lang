@@ -1,6 +1,6 @@
 //! Checking calls: the script's procedures, the host's doors, the built-ins, and methods on values.
 
-use super::expressions::name_path;
+use super::expressions::{is_name_path, name_path};
 use super::tree::{Conversion, Expression, ExpressionKind, NumberType, ProcedureId, Rounding};
 use super::types::{BOOL, ERROR, FLOAT, NOTHING, TEXT, Type, TypeId, WHOLE};
 use super::{Checker, DeferredArgument, Requirement};
@@ -10,7 +10,7 @@ use crate::syntax::tree as syntax;
 /// How many calls are nested here, each the first argument of the next (Unio D128).
 fn chain_length(expression: &syntax::Expression) -> usize {
     match &expression.kind {
-        syntax::ExpressionKind::Call { callee, arguments } if name_path(callee).is_some() => {
+        syntax::ExpressionKind::Call { callee, arguments } if is_name_path(callee) => {
             // Brackets around the inner call don't make the chain any shorter.
             let inner = arguments.first().filter(|entry| entry.label.is_none()).map_or(0, |entry| {
                 let mut value = &entry.value;
@@ -60,7 +60,7 @@ impl<'a> Checker<'a> {
                 );
             }
         }
-        let word = path.first().map(String::as_str).unwrap_or_default();
+        let word = path.first().copied().unwrap_or_default();
         if path.len() == 1 && self.visible(word).is_some() {
             self.refuse_why(
                 callee.place,
@@ -129,9 +129,9 @@ impl<'a> Checker<'a> {
     /// never mixed, with units or without; `sin`, `cos` and `tan` on an angle in `rads`, `degs` or `turns`, or a
     /// plain `Float` in radians; `asin`, `acos` and `atan2` giving `rads`; `lerp` on two values of one unit group.
     #[allow(clippy::too_many_lines)] // one case per kind of built-in, each with its units
-    fn maths_call(&mut self, path: &[String], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
+    fn maths_call(&mut self, path: &[&str], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
         use super::tree::MathsFunction as Function;
-        let word = path.first().map(String::as_str).unwrap_or_default();
+        let word = path.first().copied().unwrap_or_default();
         let (function, labels): (Function, &[Option<&str>]) = match word {
             "abs" => (Function::Abs, &[None]),
             "min" => (Function::Min, &[None, None]),
@@ -316,8 +316,8 @@ impl<'a> Checker<'a> {
     }
 
     /// An unknown narrowing is refused, with the word's real narrowings listed (D13, Unio D102).
-    fn refuse_unknown_narrowing(&mut self, path: &[String], place: Place) {
-        let word = path.first().map(String::as_str).unwrap_or_default();
+    fn refuse_unknown_narrowing(&mut self, path: &[&str], place: Place) {
+        let word = path.first().copied().unwrap_or_default();
         let prefix = format!("{word}.");
         let mut real: Vec<String> = self
             .procedure_names
@@ -357,7 +357,7 @@ impl<'a> Checker<'a> {
     pub(super) fn single_argument<'e>(
         &mut self,
         name: &str,
-        path: &[String],
+        path: &[&str],
         path_length: usize,
         arguments: &'e [syntax::Entry<'a>],
         place: Place,
@@ -632,8 +632,8 @@ impl<'a> Checker<'a> {
 
     /// `be.Text`, `be.Whole` and its narrowings, and `be.Float` (D22, Unio D22, D153, D178).
     #[allow(clippy::too_many_lines)] // one case per conversion, each with its own refusals
-    fn conversion(&mut self, path: &[String], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
-        let narrowing: Vec<&str> = path.iter().skip(1).map(String::as_str).collect();
+    fn conversion(&mut self, path: &[&str], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
+        let narrowing: Vec<&str> = path.iter().skip(1).copied().collect();
         let full = path.join(".");
         let rounding = match narrowing.as_slice() {
             ["Text" | "Whole" | "Float" | "Bool"] => None,

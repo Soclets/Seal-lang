@@ -244,12 +244,12 @@ impl<'a> Checker<'a> {
     #[allow(clippy::too_many_lines)] // one case per pair of types
     pub(super) fn convert_to_number(
         &mut self,
-        path: &[String],
+        path: &[&str],
         arguments: &[syntax::Entry<'a>],
         place: Place,
     ) -> Expression {
         let full = path.join(".");
-        let narrowing: Vec<&str> = path.iter().skip(1).map(String::as_str).collect();
+        let narrowing: Vec<&str> = path.iter().skip(1).copied().collect();
         let to = match narrowing.first().copied() {
             Some("HugeWhole") => NumberType::Huge,
             Some("Decimal") => NumberType::Decimal,

@@ -279,19 +279,38 @@ pub struct Token<'a> {
 
 /// One statement's worth of tokens (D8).
 #[derive(Clone, Debug, PartialEq)]
-pub struct Line<'a> {
+pub struct Line {
     /// The number of spaces before the first token.
     pub indentation: u32,
-    pub tokens: Vec<Token<'a>>,
+    /// Where its tokens are in the script's one list of them (D140).
+    pub start: u32,
+    pub end: u32,
     /// The place of the whole first physical line, for messages about the line itself.
     pub place: Place,
     /// Where the `///` comment right before the line starts, when it has one (D63, D91).
     pub documented: Option<Place>,
 }
 
+/// A script's tokens, all in one list, and its lines, each a run of them (D140).
+#[derive(Clone, Debug, Default)]
+pub struct Lexed<'a> {
+    pub tokens: Vec<Token<'a>>,
+    pub lines: Vec<Line>,
+}
+
+impl Line {
+    /// The line's tokens, out of the script's list.
+    #[must_use]
+    pub fn tokens<'t, 'a>(&self, all: &'t [Token<'a>]) -> &'t [Token<'a>] {
+        all.get(self.start as usize..self.end as usize).unwrap_or(&[])
+    }
+}
+
 struct Lexer<'a> {
-    lines: Vec<Line<'a>>,
-    current: Vec<Token<'a>>,
+    lines: Vec<Line>,
+    tokens: Vec<Token<'a>>,
+    /// Where the statement being read starts in `tokens`.
+    line_start: usize,
     current_indentation: u32,
     current_place: Place,
     /// The open `(` and `[`, innermost last.
@@ -310,10 +329,11 @@ struct Lexer<'a> {
 ///
 /// Returns the first thing that can't be read, as a message.
 #[allow(clippy::too_many_lines)] // one pass over a script's lines: each kind of line is dealt with where it's met
-pub fn lex(source: &str) -> Result<Vec<Line<'_>>, Message> {
+pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
     let mut lexer = Lexer {
         lines: Vec::new(),
-        current: Vec::new(),
+        tokens: Vec::with_capacity(source.len() / 3),
+        line_start: 0,
         current_indentation: 0,
         current_place: Place::default(),
         open_brackets: Vec::new(),
@@ -513,7 +533,7 @@ pub fn lex(source: &str) -> Result<Vec<Line<'_>>, Message> {
     if let Some((symbol, place)) = lexer.open_brackets.last() {
         return Err(Message::refused(*place, format!("this `{}` is never closed", symbol.text())));
     }
-    Ok(lexer.lines)
+    Ok(Lexed { tokens: lexer.tokens, lines: lexer.lines })
 }
 
 /// Checks the comment lines waiting for this one: each is indented like it, or one level in when it's an `end`, an
@@ -566,27 +586,40 @@ fn column_of(index: usize) -> u32 {
 
 impl<'a> Lexer<'a> {
     fn finish_line(&mut self, physical: &[&str]) -> Result<(), Message> {
-        // The next line's tokens get room for a usual line at once, instead of growing into it.
-        let tokens = std::mem::replace(&mut self.current, Vec::with_capacity(12));
-        check_spacing(&tokens, &std::mem::take(&mut self.mistakes), physical)?;
+        let mistakes = std::mem::take(&mut self.mistakes);
+        check_spacing(self.current(), &mistakes, physical)?;
         self.type_depth = 0;
         let documented = self.documented.take();
-        self.lines.push(Line { indentation: self.current_indentation, tokens, place: self.current_place, documented });
+        let (start, end) =
+            (u32::try_from(self.line_start).unwrap_or(u32::MAX), u32::try_from(self.tokens.len()).unwrap_or(u32::MAX));
+        self.lines.push(Line {
+            indentation: self.current_indentation,
+            start,
+            end,
+            place: self.current_place,
+            documented,
+        });
+        self.line_start = self.tokens.len();
         Ok(())
     }
 
+    /// The tokens of the statement being read.
+    fn current(&self) -> &[Token<'a>] {
+        self.tokens.get(self.line_start..).unwrap_or(&[])
+    }
+
     fn push(&mut self, kind: TokenKind<'a>, place: Place, gap: Gap) {
-        self.current.push(Token { kind, place, gap });
+        self.tokens.push(Token { kind, place, gap });
     }
 
     /// Whether a value just ended, so that a `-` here is between two values.
     fn after_value(&self) -> bool {
         // The `floor` of `div.floor` is part of an operator, not a value.
-        if ends_with_rounding(&self.current) {
+        if ends_with_rounding(self.current()) {
             return false;
         }
         matches!(
-            self.current.last().map(|token| &token.kind),
+            self.current().last().map(|token| &token.kind),
             Some(
                 TokenKind::Name(_)
                     | TokenKind::TypeName(_)
@@ -627,7 +660,7 @@ impl<'a> Lexer<'a> {
             let Some(&character_here) = characters.get(index) else {
                 break;
             };
-            let gap = if self.current.is_empty() {
+            let gap = if self.current().is_empty() {
                 Gap::LineStart
             } else if first && continued {
                 Gap::LineBreak
@@ -645,8 +678,7 @@ impl<'a> Lexer<'a> {
                 }
                 '\\' if characters.get(index + 1) == Some(&'\\') => {
                     // trace: D102. After `end`, `\\` starts a note naming the block it closes.
-                    let after_end =
-                        matches!(self.current.as_slice(), [Token { kind: TokenKind::Keyword(Keyword::End), .. }]);
+                    let after_end = matches!(self.current(), [Token { kind: TokenKind::Keyword(Keyword::End), .. }]);
                     if !after_end {
                         return Err(Message::refused(place_of(2), "`\\\\` outside text starts a note after `end`")
                             .with_why("an `end` can carry a note naming its block, as `end \\\\ proc on_hit`; nothing else uses `\\\\`."));
@@ -760,7 +792,10 @@ impl<'a> Lexer<'a> {
                         ('<', _) => {
                             // A `<` touching a type's name opens its blanks; any other `<` compares (Unio D17).
                             let touching_type = gap == Gap::Spaces(0)
-                                && matches!(self.current.last().map(|token| &token.kind), Some(TokenKind::TypeName(_)));
+                                && matches!(
+                                    self.current().last().map(|token| &token.kind),
+                                    Some(TokenKind::TypeName(_))
+                                );
                             if touching_type {
                                 self.type_depth += 1;
                                 (Symbol::TypeOpen, 1)
@@ -1142,16 +1177,14 @@ mod tests {
     use crate::message::MessageKind;
 
     fn kinds(source: &str) -> Vec<TokenKind<'_>> {
-        lex(source)
-            .map(|lines| lines.into_iter().flat_map(|line| line.tokens).map(|token| token.kind).collect())
-            .unwrap_or_default()
+        lex(source).map(|lexed| lexed.tokens.into_iter().map(|token| token.kind).collect()).unwrap_or_default()
     }
 
     // trace: D8
     #[test]
     fn d08_a_line_carries_on_inside_an_open_bracket() {
         let lines = lex("total = (first +\n    second)\nmut x = 1\n").unwrap_or_default();
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.lines.len(), 2);
     }
 
     // trace: D24

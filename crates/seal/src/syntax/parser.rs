@@ -22,7 +22,9 @@ const MAX_BLOCK_DEPTH: u32 = 48;
 const MAX_EXPRESSION_DEPTH: u32 = 160;
 
 struct Parser<'a> {
-    lines: Vec<Line<'a>>,
+    lines: Vec<Line>,
+    /// Every token of the script, which the lines are runs of (D140).
+    tokens: Vec<Token<'a>>,
     /// The script as written, for fixes that show a whole line put right.
     source: &'a str,
     line_index: usize,
@@ -44,7 +46,7 @@ struct Opener {
 
 /// A line indented by anything but 4 spaces a level is refused, with the line indented right as the fix (D63, Unio
 /// D10).
-fn wrong_indentation(line: &Line<'_>, wanted: u32) -> Message {
+fn wrong_indentation(line: &Line, wanted: u32) -> Message {
     Message::refused(
         Place::new(line.place.line, 1, line.indentation.max(1)),
         format!("this line is indented {} spaces, where its block's body is indented {wanted}", line.indentation),
@@ -59,9 +61,17 @@ fn wrong_indentation(line: &Line<'_>, wanted: u32) -> Message {
 ///
 /// Returns the first thing that can't be read, as a message.
 pub fn parse(source: &str) -> Result<Script<'_>, Message> {
-    let lines = lex(source)?;
-    let mut parser =
-        Parser { lines, source, line_index: 0, position: 0, next_id: 0, block_depth: 0, expression_depth: 0 };
+    let lexed = lex(source)?;
+    let mut parser = Parser {
+        lines: lexed.lines,
+        tokens: lexed.tokens,
+        source,
+        line_index: 0,
+        position: 0,
+        next_id: 0,
+        block_depth: 0,
+        expression_depth: 0,
+    };
     let mut items = Vec::new();
     while parser.line_index < parser.lines.len() {
         let indentation = parser.indentation();
@@ -77,7 +87,7 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
 impl<'a> Parser<'a> {
     // ---- tokens ----
 
-    fn line(&self) -> Option<&Line<'a>> {
+    fn line(&self) -> Option<&Line> {
         self.lines.get(self.line_index)
     }
 
@@ -90,11 +100,11 @@ impl<'a> Parser<'a> {
     }
 
     fn peek(&self) -> Option<&Token<'a>> {
-        self.line().and_then(|line| line.tokens.get(self.position))
+        self.line().and_then(|line| line.tokens(&self.tokens).get(self.position))
     }
 
     fn peek_at(&self, offset: usize) -> Option<&Token<'a>> {
-        self.line().and_then(|line| line.tokens.get(self.position + offset))
+        self.line().and_then(|line| line.tokens(&self.tokens).get(self.position + offset))
     }
 
     fn peek_kind(&self) -> Option<&TokenKind<'a>> {
@@ -110,7 +120,7 @@ impl<'a> Parser<'a> {
     }
 
     fn first_keyword(&self) -> Option<Keyword> {
-        match self.line().and_then(|line| line.tokens.first()).map(|token| &token.kind) {
+        match self.line().and_then(|line| line.tokens(&self.tokens).first()).map(|token| &token.kind) {
             Some(TokenKind::Keyword(keyword)) => Some(*keyword),
             _ => None,
         }
@@ -132,7 +142,12 @@ impl<'a> Parser<'a> {
     /// Steps past the next token, taking what it holds instead of copying it: a name's or a value's text is read
     /// once. The token keeps its place, which is all that's looked back at.
     fn take(&mut self) -> Option<Token<'a>> {
-        let token = self.lines.get_mut(self.line_index)?.tokens.get_mut(self.position)?;
+        let line = self.lines.get(self.line_index)?;
+        let index = line.start as usize + self.position;
+        if index >= line.end as usize {
+            return None;
+        }
+        let token = self.tokens.get_mut(index)?;
         let kind = std::mem::replace(&mut token.kind, TokenKind::Symbol(Symbol::Comma));
         let whole = Token { kind, place: token.place, gap: token.gap };
         self.position += 1;
@@ -142,7 +157,8 @@ impl<'a> Parser<'a> {
     /// Puts a token just taken back, for reading it another way.
     fn put_back(&mut self, token: Token<'a>) {
         self.position = self.position.saturating_sub(1);
-        if let Some(slot) = self.lines.get_mut(self.line_index).and_then(|line| line.tokens.get_mut(self.position)) {
+        let index = self.lines.get(self.line_index).map(|line| line.start as usize + self.position);
+        if let Some(slot) = index.and_then(|index| self.tokens.get_mut(index)) {
             *slot = token;
         }
     }
@@ -158,7 +174,7 @@ impl<'a> Parser<'a> {
     /// The place right after the line's last token, for "something is missing here".
     fn end_place(&self) -> Place {
         self.line()
-            .and_then(|line| line.tokens.last())
+            .and_then(|line| line.tokens(&self.tokens).last())
             .map_or(self.line_place(), |token| Place::new(token.place.line, token.place.column + token.place.width, 1))
     }
 
@@ -1641,7 +1657,7 @@ impl<'a> Parser<'a> {
 
     fn previous_place(&self) -> Place {
         self.line()
-            .and_then(|line| line.tokens.get(self.position.wrapping_sub(1)))
+            .and_then(|line| line.tokens(&self.tokens).get(self.position.wrapping_sub(1)))
             .map_or(Place::default(), |token| token.place)
     }
 

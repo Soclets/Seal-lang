@@ -653,6 +653,18 @@ impl Checker<'_> {
                    type is written after the name, as in `name: Type`.";
         for id in std::mem::take(&mut self.batch) {
             let Some(procedure) = self.program.procedure(id) else { continue };
+            // Usually every parameter and the result are settled (D81), and there's nothing to say.
+            let settled = |types: &super::types::TypeTable, type_id| types.is_settled(type_id);
+            if settled(&self.program.types, procedure.result)
+                && procedure.parameters.iter().all(|&parameter| {
+                    self.program
+                        .variables
+                        .get(parameter.0 as usize)
+                        .is_none_or(|variable| settled(&self.program.types, variable.type_id))
+                })
+            {
+                continue;
+            }
             let name = procedure.name.clone();
             let parameters = procedure.parameters.clone();
             let result = procedure.result;
