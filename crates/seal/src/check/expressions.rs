@@ -14,6 +14,8 @@ impl<'a> Checker<'a> {
     pub(super) fn expression(&mut self, expression: &syntax::Expression<'a>, wanted: Option<TypeId>) -> Expression {
         let checked = self.expression_as_written(expression, wanted);
         match wanted {
+            // A value already of the very type wanted lands as it is (D140).
+            Some(wanted) if checked.type_id == wanted => checked,
             Some(wanted) => {
                 let checked = self.land_number(checked, wanted);
                 let checked = self.fit_limit(checked, wanted);

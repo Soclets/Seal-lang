@@ -695,7 +695,8 @@ impl Checker<'_> {
         if !last || self.demand_depth > 0 {
             return;
         }
-        loop {
+        // With nothing waiting on a type, there's nothing for the candidates to decide.
+        while !self.pending.is_empty() {
             let single = self
                 .open_candidates()
                 .into_iter()
@@ -708,7 +709,8 @@ impl Checker<'_> {
             self.program.types.unify(open, only);
             self.solve_ready();
         }
-        let candidates = self.open_candidates();
+        // Worked out only when a procedure leaves a type open, for its message.
+        let mut candidates: Option<HashMap<TypeId, Option<Vec<TypeId>>>> = None;
         let why = "a parameter's type is worked out from its own procedure's body; where the body can't decide, the \
                    type is written after the name, as in `name: Type`.";
         let mut batch = std::mem::take(&mut self.batch);
@@ -752,7 +754,10 @@ impl Checker<'_> {
                 let last_name = names.pop().unwrap_or_default();
                 let parameter_names =
                     if names.is_empty() { last_name } else { format!("{} and {last_name}", names.join(", ")) };
-                let what = match candidates.get(&root) {
+                if candidates.is_none() {
+                    candidates = Some(self.open_candidates());
+                }
+                let what = match candidates.as_ref().and_then(|candidates| candidates.get(&root)) {
                     Some(Some(fitting)) if fitting.len() > 1 => {
                         let mut listed: Vec<String> =
                             fitting.iter().map(|&candidate| format!("a {}", self.describe(candidate))).collect();
