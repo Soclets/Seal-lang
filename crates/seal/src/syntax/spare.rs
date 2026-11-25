@@ -10,11 +10,10 @@ use super::tree::{
     Entry, Expression, ExpressionKind, Item, Parameter, Procedure, Script, Statement, StatementKind, Word,
 };
 
-/// The most lists of each kind kept on a thread.
-const MOST_KEPT: usize = 256;
-
-/// The most room a list may have and still be kept, so a big script's lists aren't held on to.
-const MOST_ROOM: usize = 64;
+/// The most lists of each kind kept on a thread, and the most room one may have and still be kept, so that what a
+/// thread holds on to between scripts stays small, a few hundred kilobytes at most, whatever it has read.
+const MOST_KEPT: usize = 64;
+const MOST_ROOM: usize = 32;
 
 /// Emptied lists of each kind, as lists of things borrowed from no script yet.
 #[derive(Default)]
