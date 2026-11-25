@@ -1,0 +1,1 @@
+A handler's cases for failures a call can't give are allowed there and never run. D131, D110, Unio D40, D42, D43.

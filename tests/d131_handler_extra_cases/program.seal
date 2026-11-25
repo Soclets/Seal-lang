@@ -1,0 +1,35 @@
+proc load_level[name: Text] -> Whole ! [not_found, broken]
+    if name == "cave"
+        return 5
+    elif name == "ruin"
+        fail broken
+    else
+        fail not_found
+    end
+end
+
+proc load_save[slot: Text] -> Whole ! [not_found]
+    if slot == "slot1"
+        return 7
+    else
+        fail not_found
+    end
+end
+
+group.handler level_failed
+    handles [load_level, load_save]
+    ::start_over
+        case not_found
+            instead 1
+        case broken
+            instead 2
+    end
+end
+
+a = load_level("ruin") ?? ::start_over
+b = load_save("slot9") ?? ::start_over
+c = load_save("slot1") ?? level_failed::start_over
+d = load_save("slot2") otherwise
+    include ::start_over
+end
+show_msg("{a} {b} {c} {d}")

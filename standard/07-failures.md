@@ -89,7 +89,8 @@ end
 - **On one line, a handler follows `??`,** as a value, `ignore` or `crash` would; `otherwise` is only ever a block
   (D98).
 - **It's used as if its cases were written at the call,** so it must cover every failure still possible there (Unio
-  D40, D42).
+  D40, D42). Its cases for failures that call can't give are allowed and never run there, since a handler is shared
+  across calls; a case written straight into an `otherwise` block for a failure its call can't give is refused (D131).
 - **A handler that can `return` or `break` is marked `*` where it's used,** as `?? ::*give_up` or
   `?? level_failed::*give_up`; the mark is required on one that can jump and refused on one that can't (Unio D42).
   A `fail` inside a handler's case leaves the procedure too, so it counts as a jump (D129).

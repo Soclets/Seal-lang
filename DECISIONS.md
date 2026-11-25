@@ -3909,3 +3909,46 @@ b = load_level("cave") ?? ::start_at(roll_dice())
 
 **Tankun's words.** Asked "Should a handler's arguments, and any fallback after `??`, be worked out only when the call
 fails?", the owner chose: "yea"
+
+## D131. A handler's cases may go unused at a call; an `otherwise` block's own cases may not
+
+2026-11-25.
+
+**Chosen.** A handler is shared across calls, so a case for a failure one call can't give is there for the others:
+
+```
+group.handler level_failed
+    handles [load_level, load_save]
+    ::start_over
+        case not_found
+            instead 1
+        case broken
+            instead 1
+    end
+end
+
+level = load_level("cave") ?? ::start_over
+slot = load_save("slot1") ?? ::start_over
+```
+
+With `load_level` failing with `not_found` or `broken`, and `load_save` only with `not_found`, both uses are allowed;
+after `load_save`, `case broken` simply never runs.
+
+- **A handler must still cover every failure the call can give** (Unio D40, D42), wherever it's used: after `??`, or
+  brought into an `otherwise` block with `include` (Unio D43).
+- **Its cases for failures the call can't give are allowed there,** and never run.
+- **A case written straight into an `otherwise` block for a failure its call can't give is still refused,** as Unio
+  D40 has it: it was written for that one call, so it's a mistake, or left over from a failure the procedure no longer
+  has.
+- `include` keeps its name (Unio D43, D97).
+
+**Weighed.**
+- Refusing a handler with cases the call can't give, as the building session built it, reading Unio D42's "as if its
+  cases were written at the call" strictly. One handler would only fit calls that fail in exactly the same ways, and
+  D110's own `handles [load_level, load_save]` would break as soon as the two failed differently.
+
+**Why this won.** A handler is written once to be reused, and an unused case after one call is still in use after
+another; a case written for one call has no such reason.
+
+**Tankun's words.** "what", "What about `otherwise`?", "Is it `include` or `incl`", then, asked "allow a handler's
+extra cases to go unused, and keep `otherwise`'s own cases strict?", the owner chose: "Yes, and don't change `incl`"
