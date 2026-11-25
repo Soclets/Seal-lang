@@ -143,7 +143,9 @@ From Unio's rules:
 - Subjects are `kind.folder.narrowing: sentence`. Kinds: `decision`, `design`, `feature`, `fix`, `test`, `house`. A
   decision's commit credits who chose it and its number, as in `(owner: "yea"; D2)`.
 - Every commit ends with its own session's trailer: `Co-Authored-By: design claude <noreply@anthropic.com>` for the
-  design session, and `seal claude` in the same form for Seal's building session.
+  design session, and one for each of Seal's building sessions, named for itself so `git log` shows who did what:
+  `seal claude` for the first, on Claude Fable 5.2, and `seal opus claude` for the one carrying it on, on Claude Opus
+  5.5 (owner, 2026-11-25).
 
 ## Bedtime
 
