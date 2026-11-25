@@ -19,6 +19,12 @@ message once the open questions are settled. Removed once sent.
     neither case can run there.
 - Its D146 question: yes, a `for_each` block's note is `end \\ for_each`, naming the block by its opening keyword
   (D102, D146).
+- Its readings after D143 to D149, reviewed by the design session, all confirmed:
+  - D146: `for` and `each` alone are plain names again; the note is `\\ for_each`.
+  - D147 on a `Dict` key: `_` reads the key as a lookup does, so it can fail with `missing`, written
+    `counts[key: w] = (_ ?? 0) + 1`; a bare `_ + 1` there is refused (D32). Positions and keys are worked out once,
+    before the value, as D147 says.
+  - Its two draft wordings, for `_` where nothing is changed and for D149, read well; they go with the wording review.
 - Its refusal for D131's case says "this `otherwise`" even after `??`.
 - D135: check the benchmark programs in `bench/programs/` for `mut` names that are never changed.
 - An idea, its own call (D57): Unio's fib trick from `Beta++`, inlining a procedure with no side effects into itself
