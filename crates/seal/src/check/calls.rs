@@ -87,6 +87,9 @@ impl Checker<'_> {
                 Expression { kind: ExpressionKind::Sqrt(Box::new(checked)), type_id: FLOAT, place }
             }
             "be" => self.conversion(&path, arguments, place),
+            "abs" | "min" | "max" | "clamp" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan2" | "lerp" => {
+                self.maths_call(&path, arguments, place)
+            }
             "range" => {
                 // trace: Unio D165, D170
                 self.refuse_why(
@@ -115,6 +118,94 @@ impl Checker<'_> {
                 Self::error(place)
             }
         }
+    }
+
+    /// The maths built-ins (D107, D109, D114): `abs`, `min`, `max` and `clamp` on two `Whole`s or two `Float`s, never
+    /// mixed, and the angle built-ins and `lerp` on `Float`s.
+    fn maths_call(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
+        use super::tree::MathsFunction as Function;
+        let word = path.first().map(String::as_str).unwrap_or_default();
+        let (function, labels, number): (Function, &[Option<&str>], bool) = match word {
+            "abs" => (Function::Abs, &[None], true),
+            "min" => (Function::Min, &[None, None], true),
+            "max" => (Function::Max, &[None, None], true),
+            "clamp" => (Function::Clamp, &[None, Some("low"), Some("high")], true),
+            "sin" => (Function::Sin, &[None], false),
+            "cos" => (Function::Cos, &[None], false),
+            "tan" => (Function::Tan, &[None], false),
+            "asin" => (Function::Asin, &[None], false),
+            "acos" => (Function::Acos, &[None], false),
+            "atan2" => (Function::Atan2, &[Some("y"), Some("x")], false),
+            _ => (Function::Lerp, &[None, Some("to"), Some("by")], false),
+        };
+        if let Some(narrowing) = path.get(1) {
+            // trace: D113. The `.degrees` versions went; an angle's unit says it.
+            self.refuse_why(
+                place,
+                format!("`{word}` has no narrowing `.{narrowing}`"),
+                &format!("`{word}` takes its angle in radians as a plain `Float`."),
+            );
+            return Self::error(place);
+        }
+        let owned: Vec<Option<String>> = labels.iter().map(|label| label.map(str::to_owned)).collect();
+        let Some(bound) = self.bind_arguments(word, (&owned, false), &vec![false; owned.len()], arguments, place)
+        else {
+            for entry in arguments {
+                self.expression(&entry.value, None);
+            }
+            return Self::error(place);
+        };
+        let mut checked: Vec<Expression> = Vec::new();
+        for argument in &bound {
+            let Some(entry) = argument.and_then(|index| arguments.get(index)) else { return Self::error(place) };
+            let wanted = if number { checked.first().map(|first| first.type_id) } else { Some(FLOAT) };
+            checked.push(self.expression(&entry.value, wanted));
+        }
+        let type_id = if number {
+            let first = checked.first().map_or(ERROR, |first| first.type_id);
+            for other in checked.iter().skip(1) {
+                if !self.program.types.unify(other.type_id, first) {
+                    let (left, right) = (self.describe(first), self.describe(other.type_id));
+                    // trace: D107, Unio D162. The two never mix.
+                    self.refuse_why(
+                        other.place,
+                        format!("`{word}` takes values of one type, but this is {right} and the first is {left}"),
+                        "`Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`.",
+                    );
+                    return Self::error(place);
+                }
+            }
+            self.require(first, Requirement::Number, place, &format!("`{word}` works on a `Whole` or a `Float`"));
+            first
+        } else {
+            for value in &checked {
+                if !self.program.types.unify(value.type_id, FLOAT) {
+                    let found = self.describe(value.type_id);
+                    self.refuse_why(
+                        value.place,
+                        format!("`{word}` takes a `Float`, but this is {found}"),
+                        "angles and `lerp` work on `Float`s; a number written with a point, as `2.0`, is a `Float`.",
+                    );
+                    return Self::error(place);
+                }
+            }
+            FLOAT
+        };
+        // trace: D107. A `clamp` whose edges are written the wrong way round has no answer anyone decided.
+        if function == Function::Clamp
+            && let [_, low, high] = checked.as_slice()
+        {
+            let crossed = match (&low.kind, &high.kind) {
+                (ExpressionKind::Whole(low), ExpressionKind::Whole(high)) => low > high,
+                (ExpressionKind::Float(low), ExpressionKind::Float(high)) => low > high,
+                _ => false,
+            };
+            if crossed {
+                self.not_designed(place, "a `clamp` whose `low:` is more than its `high:`");
+                return Self::error(place);
+            }
+        }
+        Expression { kind: ExpressionKind::Maths { function, arguments: checked }, type_id, place }
     }
 
     /// An unknown narrowing is refused, with the word's real narrowings listed (D13, Unio D102).
@@ -339,6 +430,14 @@ impl Checker<'_> {
                 Some(entry) => {
                     let settled = self.program.types.is_settled(parameter_type);
                     let value = self.expression(&entry.value, settled.then_some(parameter_type));
+                    // trace: D128. An argument Seal can see past a ranged parameter's hard edge is refused while
+                    // loading; any other is checked as the procedure starts, where the host's arguments land too.
+                    if self.program.types.limits(parameter_type).is_some()
+                        && matches!(self.land(value.clone(), parameter_type).kind, ExpressionKind::Error)
+                    {
+                        checked.push(Self::error(place));
+                        continue;
+                    }
                     let purpose = format!("`{name}`'s argument");
                     if settled {
                         self.expect(&value, parameter_type, &purpose);
@@ -698,7 +797,7 @@ impl Checker<'_> {
                         None if value.is_none() => {
                             let checked = self.expression(&entry.value, Some(item));
                             self.expect(&checked, item, "the list's item");
-                            value = Some(checked);
+                            value = Some(self.land(checked, item));
                         }
                         Some(label @ ("pos" | "offset")) if position.is_none() && value.is_some() => {
                             let checked = self.expression(&entry.value, Some(WHOLE));

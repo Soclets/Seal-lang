@@ -277,7 +277,7 @@ impl<'a> Checker<'a> {
                 Some(entry) => {
                     let value = self.expression(&entry.value, Some(wanted));
                     self.expect(&value, wanted, &format!("`::{member}`'s argument"));
-                    values.push(value);
+                    values.push(self.land(value, wanted));
                 }
                 None => {
                     values.push(defaults.get(position).cloned().flatten().unwrap_or_else(|| Self::error(using.place)));

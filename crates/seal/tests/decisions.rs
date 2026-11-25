@@ -169,3 +169,33 @@ fn d110_handler_refusals() {
     assert!(refusal(&both).contains("could be"), "{}", refusal(&both));
     assert!(refusal("fam.handler level_failed\nend\n").contains("`group.handler`"));
 }
+
+// trace: D107, D128
+#[test]
+fn d107_d128_ranged_numbers_are_checked_where_values_land() {
+    let script = "mut hp: Whole[min.clamp: 0, max.clamp: 100] = 100\nhp = hp - 150\nlow = hp\nhp = hp + 500\nrecord Stats\n    level: Whole[min.clamp: 1, max.clamp: 10]\nend\nstats = Stats[level: 50]\nproc volume[v: Whole[min.clamp: 0, max.clamp: 100]] -> Whole\n    return v\nend\nloud = volume(170)\nshow_msg(\"{low} {hp} {stats.level} {loud}\")\n";
+    assert_eq!(shows(script), ["0 100 10 100"]);
+    let hard = "mut gold: Whole[min: 0] = 10\nproc spend[amount: Whole]\n    gold = gold - amount\nend\nspend(20)\nshow_msg(\"{gold}\")\n";
+    assert!(refusal(hard).contains("this value is below its type's `min: 0`"), "{}", refusal(hard));
+    assert!(refusal("gold: Whole[min: 0] = -5\nshow_msg(\"{gold}\")\n").contains("below its type's `min: 0`"));
+    let argument = "proc volume[v: Whole[min: 0, max: 100]]\n    show_msg(\"{v}\")\nend\nvolume(150)\n";
+    assert!(refusal(argument).contains("above its type's `max: 100`"), "{}", refusal(argument));
+    let floats = "mut speed: Float[min.clamp: 0.0, max.clamp: 12.5] = 20.0\nshow_msg(\"{speed}\")\n";
+    assert_eq!(shows(floats), ["12.5"]);
+}
+
+// trace: D107, D108, D109, D114
+#[test]
+fn d108_d109_d114_maths() {
+    let script = "x = 3\nsquare = x ** 2\narea = 2 * x ** 2\nroot = 2.0 ** 0.5\nangle = atan2(y: 1.0, x: 1.0)\nwave = sin(1.0)\nfar = abs(-7)\nlow = min(3.5, 2.5)\nhigh = max(2, 9)\nheld = clamp(150, low: 0, high: 100)\npart = lerp(0.0, to: 10.0, by: 0.25)\nshow_msg(\"{square} {area} {root} {pi} {angle} {wave} {far} {low} {high} {held} {part}\")\n";
+    assert_eq!(
+        shows(script),
+        ["9 18 ~1.4142135623730951 ~3.141592653589793 ~0.7853981633974483 ~0.8414709848078965 7 2.5 9 100 2.5"]
+    );
+    assert!(refusal("big = 2 ** 70\nshow_msg(\"{big}\")\n").contains("too big for a `Whole`"));
+    assert!(refusal("half = 2 ** -1\nshow_msg(\"{half}\")\n").contains("negative power"));
+    assert!(refusal("x = asin(2.0)\nshow_msg(\"{x}\")\n").contains("from -1 to 1"));
+    assert!(refusal("pi = 3.0\nshow_msg(\"{pi}\")\n").contains("one of Seal's own words"));
+    assert!(refusal("mixed = min(1, 2.0)\nshow_msg(\"{mixed}\")\n").contains("one type"));
+    assert!(refusal("x = newln\nshow_msg(x)\n").contains("{newln}"));
+}

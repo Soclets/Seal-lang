@@ -57,7 +57,7 @@ checker, compiler or VM.
   again: 404 the same, 0 different, from seed 1, with 4 of the 15 tests compared.
 - [x] **C10. Handlers** (D97, D98, D110): `group.handler`, `::name`, `handles [ … ]`, `??` with a handler, `include`,
   `*`, parameters.
-- [ ] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
+- [x] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
   (D109), `lerp` (D114), each correctly rounded (D50).
 - [ ] **C12. Units** (D111 to D113), once the design session has answered how Cyborg's units work in Seal.
 - [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116), timed in the benchmarks.
@@ -153,6 +153,21 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   with `??` as the fix; `fam.handler` is refused. A `fail` in a handler's case is a jump (D129); `handles` names
   any procedure, door or built-in that can fail (`be.Whole`, `be.Bool`), and one that can't fail is refused.
 - **D129** `newln` and `tab` outside braces are refused, with `"{newln}"` as the way.
+- **D107, D128** Ranged numbers: `Whole[…]` and `Float[…]` with `min:`, `max:`, `min.clamp:`, `max.clamp:` (a number,
+  `-` allowed, or a top-level plain name), one per edge. A ranged type resolves to its plain type for every type rule;
+  the checker wraps each value landing where one is written (a name, a field, a list or `Dict` item, a `return`, a
+  handler's parameter) in a check, and a procedure checks its ranged parameters as it starts, so the host's calls are
+  held too; such a procedure isn't written out in place. A value Seal can see past a hard edge is refused while
+  loading.
+- **D107, D108, D109, D114** `abs`, `min`, `max`, `clamp` on two `Whole`s or `Float`s; `**`, binding tighter than `*`;
+  `sin`, `cos`, `tan`, `asin`, `acos`, `atan2(y:, x:)`, `lerp(a, to:, by:)` and `pi`. A negative power of a written
+  `Whole` is refused; one only known while running is a failed check. `pi` can be filled into braces.
+- **D50: correctly rounded maths.** `crates/seal/src/big.rs` is a whole number of any size, written here with no
+  `unsafe` (every candidate crate, `num-bigint`, `astro-float`, `dashu`, uses some). `crates/seal/src/maths.rs` works
+  each answer out in big fixed point with an error bound and keeps the `Float` the whole interval rounds to, doubling
+  the precision when it can't tell (Ziv's strategy); `**` finds exact answers and ties first, `lerp` is worked out
+  exactly and rounded once. 600 answers checked against Python's 120-digit decimals: all the same. The platform's own
+  `tan` is 2 ulps off at -7.59421142430311, checked by hand. Cost: about 14 µs a call, with no fast path yet.
 - An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
 
 ## How it's built (the building session's design)
@@ -189,9 +204,11 @@ The VM, and its optimizations (Building rule 5):
   be the same, as `for each j in range[from: i + 1, …]` does.
 - **A `mut` record of plain numbers kept in registers**, written back in one step.
 - **Small procedures written out in place** of a call to them.
-- **Rare, big instructions live outside the loop.** Joining text is a function of its own, never inlined: with it
-  inside the loop, the loop's machine code got worse for everything, `fib` 18% slower on the same bytecode. Kept
-  out, `fib` is 6% faster than before, and a join costs about 3 ns more (one call).
+- **Rare, big instructions live outside the loop.** Joining text, comparing bigger values, ranges kept as lists, `**`,
+  the maths built-ins, ranged numbers' checks, `be.Bool` and `?? crash` on a `Maybe` share one case in the loop,
+  which hands them to one function, never inlined. Each added as a case of its own made the loop's machine code worse
+  for everything: `fib` 18% slower on the same bytecode after joining text was added, and 10 to 16% again after C11's
+  instructions. Shared and kept out, `fib` is about 52 ms against 55.5 before this session.
 - **The host's side:** a script's compiled form is kept by its doors and shared by every script loaded from the same
   text; plain numbers cross a door or a host call as their bare bits; a finished call's room is reused; a paused task
   is resumed where it sits.
@@ -258,6 +275,10 @@ Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D1
 New questions from C7 to C10, not sent yet:
 - Unio D44: a handler's arguments are worked out when the call fails, right before its cases run (built that way);
   or before the call?
+- D108: which way `a ** b ** c` groups, and whether `-2 ** 2` is `-(2 ** 2)` (both stop). A negative power of a
+  `Whole` only known while running is a failed check (built), as D89 treats an empty separator.
+- D109: `atan2(y: 0.0, x: 0.0)`, a point with no angle (stops; IEEE 754 says 0). D107: `clamp` with `low:` above
+  `high:` (stops).
 - A handler with a case for a failure the call can't give is refused at that use, as such a case written in an
   `otherwise` is (Unio D40, "as if written at the call"); so a group's handler fits only calls that fail exactly so.
 - D91 lists the declarations `///` goes on; a name made inside a block isn't among them (stops).
@@ -278,6 +299,8 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - a `///` before a name made inside a block
 - a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
 - a handler used inside its own cases
+- a chain of `**`, as `a ** b ** c`; a `-` in front of a power, as `-2 ** 2`
+- `atan2` of (0, 0), which has no angle; a `clamp` whose `low:` is more than its `high:` (both stop while running too)
 
 ## Not built yet
 

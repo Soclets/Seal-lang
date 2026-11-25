@@ -55,7 +55,6 @@ proc advance[bodies: List<Body>, dt: Float] -> List<Body>
 end
 
 proc run[steps: Whole] -> Float
-    pi = ~3.141592653589793
     solar_mass = 4.0 * pi * pi
     days = ~365.24
     mut bodies = [

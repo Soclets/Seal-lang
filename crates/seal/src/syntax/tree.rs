@@ -268,6 +268,8 @@ pub enum BinaryOperator {
     Subtract,
     Multiply,
     Divide,
+    /// `**` (D108).
+    Power,
     DivFloor,
     DivTrunc,
     RemFloor,
@@ -291,6 +293,7 @@ impl BinaryOperator {
             BinaryOperator::Subtract => "-",
             BinaryOperator::Multiply => "*",
             BinaryOperator::Divide => "/",
+            BinaryOperator::Power => "**",
             BinaryOperator::DivFloor => "div.floor",
             BinaryOperator::DivTrunc => "div.trunc",
             BinaryOperator::RemFloor => "rem.floor",
@@ -328,6 +331,7 @@ impl BinaryOperator {
                 | BinaryOperator::Subtract
                 | BinaryOperator::Multiply
                 | BinaryOperator::Divide
+                | BinaryOperator::Power
                 | BinaryOperator::DivFloor
                 | BinaryOperator::DivTrunc
                 | BinaryOperator::RemFloor

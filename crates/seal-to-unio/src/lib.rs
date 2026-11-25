@@ -96,6 +96,7 @@ impl Translator<'_> {
             Type::Record(_) => return not_shared("a record"),
             Type::OneOf(_) => return not_shared("a `one_of`"),
             Type::Maybe(_) => return not_shared("a `Maybe`"),
+            Type::Ranged { .. } => return not_shared("a ranged number"),
             Type::Nothing | Type::Error | Type::Variable(_) => return not_shared("a value with no type to write"),
         })
     }
@@ -409,6 +410,9 @@ impl Translator<'_> {
                 if !matches!(self.program.types.get(left.type_id), Type::Whole | Type::Float | Type::Bool) {
                     return not_shared("comparing two values that aren't numbers or `Bool`s");
                 }
+                if *operator == BinaryOperator::Power {
+                    return not_shared("`**`");
+                }
                 // trace: Unio D190. `eq` and `not_eq` compare.
                 let operator = match operator {
                     BinaryOperator::Equal => "eq",
@@ -480,6 +484,8 @@ impl Translator<'_> {
             }
             ExpressionKind::ShowPlaces { .. } => return not_shared("`places:` in braces"),
             ExpressionKind::Range { .. } => return not_shared("a `range` kept as a list"),
+            ExpressionKind::Maths { .. } => return not_shared("Seal's own maths built-ins"),
+            ExpressionKind::Land { .. } => return not_shared("a ranged number"),
             ExpressionKind::Try(_) | ExpressionKind::Otherwise { .. } => {
                 return not_shared("a procedure that fails on purpose");
             }

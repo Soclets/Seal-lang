@@ -8,11 +8,12 @@ use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use super::show::{equal, show};
 use crate::check::tree::Rounding;
-use crate::check::types::TypeId;
+use crate::check::types::{Limits, TypeId};
 use crate::compile::bytecode::{
     BULK_UNIT, Compiled, Crossing, FAR, Instruction, JoinPiece, Layout, PLAIN_CASE, ProcedureEntry, Register,
 };
 use crate::host::Value;
+use crate::maths;
 use crate::number::{float_to_text, float_to_whole, float_with_places, text_to_whole};
 use crate::text::{grapheme_at, grapheme_count, graphemes};
 
@@ -220,7 +221,7 @@ fn text_list(heap: &mut Heap, pieces: &[String], work: usize, layouts: &[Layout]
 
 /// Joins a text from its pieces into register `to`, or onto the text already there when `appending` (D75, D94,
 /// D100). It's kept apart from [`run`]'s loop, whose speed depends on how little code sits in it.
-#[inline(never)]
+#[inline]
 fn join_pieces(
     registers: &mut [u64],
     heap: &mut Heap,
@@ -307,6 +308,99 @@ fn join_pieces(
     Ok(())
 }
 
+/// The instructions [`run`] hands over to work outside its loop: each changes its registers as the loop would, and
+/// gives the failure it ends with, when it has one.
+#[inline(never)]
+fn rare_instruction(
+    instruction: Instruction,
+    registers: &mut [u64],
+    heap: &mut Heap,
+    compiled: &Compiled,
+    pc: usize,
+) -> Result<Option<u32>, Stopped> {
+    let get = |registers: &[u64], register: Register| {
+        registers.get(usize::from(register)).copied().ok_or_else(|| broken("a register outside its frame", pc))
+    };
+    let set = |registers: &mut [u64], register: Register, value: u64| match registers.get_mut(usize::from(register)) {
+        Some(slot) => {
+            *slot = value;
+            Ok(())
+        }
+        None => Err(broken("a register outside its frame", pc)),
+    };
+    let stop = |stop: Stop| (stop, pc);
+    match instruction {
+        Instruction::MakeRange { to, base, inclusive } => {
+            let numbers = [
+                get(registers, base)?.cast_signed(),
+                get(registers, base.wrapping_add(1))?.cast_signed(),
+                get(registers, base.wrapping_add(2))?.cast_signed(),
+            ];
+            let list = make_range(numbers, inclusive, heap).map_err(stop)?;
+            set(registers, to, list)?;
+        }
+        Instruction::EqualValues { to, left, site } => {
+            let right = left.wrapping_add(1);
+            let same =
+                equal_values(get(registers, left)?, get(registers, right)?, site, heap, compiled).map_err(stop)?;
+            set(registers, to, u64::from(same))?;
+        }
+        Instruction::PowerWhole { to, left, right } => {
+            let value = power_whole(get(registers, left)?.cast_signed(), get(registers, right)?.cast_signed(), pc)?;
+            set(registers, to, value.cast_unsigned())?;
+        }
+        Instruction::PowerFloat { to, left, right } => {
+            let (left, right) = (f64::from_bits(get(registers, left)?), f64::from_bits(get(registers, right)?));
+            let result = maths::power(left, right);
+            // trace: D18
+            if !result.is_finite() {
+                return Err(float_not_real(left, "**", right, pc));
+            }
+            set(registers, to, result.to_bits())?;
+        }
+        Instruction::Maths { to, base, function } => {
+            let count = usize::from(MATHS_ARGUMENTS.get(usize::from(function)).copied().unwrap_or(1));
+            let Some(arguments) = registers.get(usize::from(base)..usize::from(base) + count) else {
+                return Err(broken("a register outside its frame", pc));
+            };
+            let value = maths_function(function, arguments, pc)?;
+            set(registers, to, value)?;
+        }
+        Instruction::CheckLimits { register, site } => {
+            let Some(limits) = compiled.limits.get(usize::from(site)) else {
+                return Err(broken("a ranged number's check that isn't there", pc));
+            };
+            let value = land(get(registers, register)?, limits, pc)?;
+            set(registers, register, value)?;
+        }
+        Instruction::CrashIfNone { number } => {
+            if get(registers, number)? == 0 {
+                // trace: D79
+                return Err(check_failed(
+                    "this `Maybe` is `none`",
+                    "it's followed by `?? crash`".to_owned(),
+                    "`?? crash` says the `Maybe` can't be `none` here, so the script stops when it is.",
+                    pc,
+                ));
+            }
+        }
+        // trace: D101. Exactly as a `Bool` shows, and nothing else.
+        Instruction::TextToBool { to, from, failure } => {
+            match heap.text(get(registers, from)?).map_err(|error| stop(Stop::from(error)))? {
+                "true" => set(registers, to, 1)?,
+                "false" => set(registers, to, 0)?,
+                _ => return Ok(Some(u32::from(failure))),
+            }
+        }
+        Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
+            let appending = matches!(instruction, Instruction::AppendPieces { .. });
+            join_pieces(registers, heap, compiled, to, site, appending).map_err(stop)?;
+        }
+        _ => return Err(broken("an instruction handed over that isn't one of these", pc)),
+    }
+    Ok(None)
+}
+
 /// A `range[…]` kept as a list (D99), checked as a `for each` checks one (Unio D172), with its memory counted before
 /// it's built, so a range of billions stops at the cap instead of being built. Kept out of [`run`]'s loop.
 #[inline(never)]
@@ -343,6 +437,145 @@ fn make_range([from, end, step]: [i64; 3], inclusive: bool, heap: &mut Heap) -> 
     }
     heap.work = heap.work.saturating_add(count as u64);
     Ok(heap.allocate(Object::List { items, references: false }, needed)?)
+}
+
+/// A number landing in a ranged type (D107, D128): past a hard edge it stops the script; past a `.clamp` edge it's
+/// pulled back to it. Kept out of [`run`]'s loop.
+#[inline(never)]
+fn land(bits: u64, limits: &Limits, pc: usize) -> Result<u64, Stopped> {
+    let shown = |bits: u64| {
+        if limits.float { float_to_text(f64::from_bits(bits)) } else { bits.cast_signed().to_string() }
+    };
+    let below = |value: u64, edge: u64| {
+        if limits.float {
+            f64::from_bits(value) < f64::from_bits(edge)
+        } else {
+            value.cast_signed() < edge.cast_signed()
+        }
+    };
+    for (edge, is_min) in [(limits.min, true), (limits.max, false)] {
+        let Some(edge) = edge else { continue };
+        let outside = if is_min { below(bits, edge.bits) } else { below(edge.bits, bits) };
+        if !outside {
+            continue;
+        }
+        if edge.clamp {
+            return Ok(edge.bits);
+        }
+        let (word, side) = if is_min { ("min", "below") } else { ("max", "above") };
+        return Err(check_failed(
+            &format!("this value is {side} its type's `{word}: {}`", shown(edge.bits)),
+            format!("`{}` lands where the type says `{word}: {}`", shown(bits), shown(edge.bits)),
+            "a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.",
+            pc,
+        ));
+    }
+    Ok(bits)
+}
+
+/// How many arguments each of the maths built-ins takes, by its number in [`maths_function`].
+const MATHS_ARGUMENTS: [u8; 15] = [1, 1, 2, 2, 2, 2, 3, 3, 1, 1, 1, 1, 1, 2, 3];
+
+/// `left ** right` on two `Whole`s (D108). Kept out of [`run`]'s loop.
+#[inline(never)]
+fn power_whole(left: i64, right: i64, pc: usize) -> Result<i64, Stopped> {
+    if right < 0 {
+        // trace: D108. A negative power of a `Whole` isn't whole; one written out is refused while loading.
+        return Err(check_failed(
+            "this raises a `Whole` to a negative power",
+            format!("`{left} ** {right}`"),
+            "a `Whole`'s power is 0 or more, since a negative one isn't a whole number; `be.Float(…)` gives `Float`s.",
+            pc,
+        ));
+    }
+    let exponent = u32::try_from(right).unwrap_or(u32::MAX);
+    match left.checked_pow(exponent) {
+        Some(value) => Ok(value),
+        // 0, 1 and -1 never overflow, whatever the power.
+        None if left == 0 || left == 1 => Ok(left),
+        None if left == -1 => Ok(if right % 2 == 0 { 1 } else { -1 }),
+        None => Err(overflow(left, "**", right, pc)),
+    }
+}
+
+/// One of the maths built-ins on its arguments' bits, by its number: `abs`, `min`, `max` and `clamp` on `Whole`s
+/// (0, 2, 4, 6) and `Float`s (1, 3, 5, 7), then `sin`, `cos`, `tan`, `asin`, `acos`, `atan2` and `lerp` (8 to 14)
+/// (D107, D109, D114). Kept out of [`run`]'s loop.
+#[inline(never)]
+fn maths_function(function: u8, arguments: &[u64], pc: usize) -> Result<u64, Stopped> {
+    let whole = |index: usize| arguments.get(index).copied().unwrap_or(0).cast_signed();
+    let float = |index: usize| f64::from_bits(arguments.get(index).copied().unwrap_or(0));
+    let floats = |value: f64| Ok(value.to_bits());
+    let not_real = |text: String, value: f64| {
+        if value.is_finite() {
+            Ok(value.to_bits())
+        } else {
+            Err(check_failed("the result isn't a real number a `Float` can hold", text, FLOAT_RANGE, pc))
+        }
+    };
+    let crossed = || (Stop::NotDesigned("a `clamp` whose `low:` is more than its `high:`".to_owned()), pc);
+    match function {
+        0 => match whole(0).checked_abs() {
+            Some(value) => Ok(value.cast_unsigned()),
+            None => Err(check_failed(
+                "the result is too big for a `Whole`",
+                format!("`abs({})`", whole(0)),
+                WHOLE_RANGE,
+                pc,
+            )),
+        },
+        1 => floats(float(0).abs()),
+        2 => Ok(whole(0).min(whole(1)).cast_unsigned()),
+        // Two equal `Float`s, as 0.0 and -0.0, give the first, so the answer is the same everywhere (D50).
+        3 => floats(if float(1) < float(0) { float(1) } else { float(0) }),
+        4 => Ok(whole(0).max(whole(1)).cast_unsigned()),
+        5 => floats(if float(1) > float(0) { float(1) } else { float(0) }),
+        6 => {
+            let (value, low, high) = (whole(0), whole(1), whole(2));
+            if low > high {
+                return Err(crossed());
+            }
+            Ok(value.clamp(low, high).cast_unsigned())
+        }
+        7 => {
+            let (value, low, high) = (float(0), float(1), float(2));
+            if low > high {
+                return Err(crossed());
+            }
+            floats(if value < low {
+                low
+            } else if value > high {
+                high
+            } else {
+                value
+            })
+        }
+        8 => floats(maths::sin(float(0))),
+        9 => floats(maths::cos(float(0))),
+        10 => floats(maths::tan(float(0))),
+        11 | 12 => {
+            let name = if function == 11 { "asin" } else { "acos" };
+            let answer = if function == 11 { maths::asin(float(0)) } else { maths::acos(float(0)) };
+            // trace: D109. `asin` and `acos` take a value from -1 to 1.
+            answer.map(f64::to_bits).ok_or_else(|| {
+                check_failed(
+                    &format!("`{name}` takes a value from -1 to 1"),
+                    format!("`{name}({})`", float_to_text(float(0))),
+                    "no angle has a sine or cosine past 1 or below -1.",
+                    pc,
+                )
+            })
+        }
+        13 => match maths::atan2(float(0), float(1)) {
+            Some(angle) => floats(angle),
+            None => Err((Stop::NotDesigned("`atan2` of the point (0, 0), which has no angle,".to_owned()), pc)),
+        },
+        _ => {
+            let (a, b, t) = (float(0), float(1), float(2));
+            let text = format!("`lerp({}, to: {}, by: {})`", float_to_text(a), float_to_text(b), float_to_text(t));
+            not_real(text, maths::lerp(a, b, t))
+        }
+    }
 }
 
 /// Whether two bigger values hold the same contents (D95), with the work it took counted as steps (D14). Kept out of
@@ -1202,48 +1435,25 @@ pub fn run(
             }
             Instruction::ClearFailure => failure = 0,
             Instruction::Crash => return Err((Stop::Crashed { failure }, pc)),
-            Instruction::MakeRange { to, base, inclusive } => {
-                let numbers = [whole!(base), whole!(base + 1), whole!(base + 2)];
-                match make_range(numbers, inclusive, heap) {
-                    Ok(list) => set!(to, list),
-                    Err(stop) => return Err((stop, pc)),
+            // The instructions a script meets rarely, or that do a lot at once, share one case here and are worked
+            // in a function of their own, so the loop's own machine code stays small and its hot paths fast.
+            Instruction::MakeRange { .. }
+            | Instruction::EqualValues { .. }
+            | Instruction::PowerWhole { .. }
+            | Instruction::PowerFloat { .. }
+            | Instruction::Maths { .. }
+            | Instruction::CheckLimits { .. }
+            | Instruction::CrashIfNone { .. }
+            | Instruction::TextToBool { .. }
+            | Instruction::JoinPieces { .. }
+            | Instruction::AppendPieces { .. } => {
+                match rare_instruction(instruction, registers, heap, compiled, pc) {
+                    Ok(Some(failed)) => failure = failed,
+                    Ok(None) => {}
+                    Err(stopped) => return Err(stopped),
                 }
                 count_work!();
             }
-            Instruction::EqualValues { to, left, site } => {
-                let right = left.wrapping_add(1);
-                match equal_values(get!(left), get!(right), site, heap, compiled) {
-                    Ok(same) => set!(to, u64::from(same)),
-                    Err(stop) => return Err((stop, pc)),
-                }
-                count_work!();
-            }
-            Instruction::CrashIfNone { number } => {
-                if get!(number) == 0 {
-                    // trace: D79
-                    return Err(check_failed(
-                        "this `Maybe` is `none`",
-                        "it's followed by `?? crash`".to_owned(),
-                        "`?? crash` says the `Maybe` can't be `none` here, so the script stops when it is.",
-                        pc,
-                    ));
-                }
-            }
-
-            Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
-                let appending = matches!(instruction, Instruction::AppendPieces { .. });
-                // Joining is kept out of the loop's own code, so the loop's hot paths aren't crowded by it.
-                if let Err(stop) = join_pieces(registers, heap, compiled, to, site, appending) {
-                    return Err((stop, pc));
-                }
-                count_work!();
-            }
-            // trace: D101. Exactly as a `Bool` shows, and nothing else.
-            Instruction::TextToBool { to, from, failure: not_a_bool } => match heap_try!(heap.text(get!(from))) {
-                "true" => set!(to, 1),
-                "false" => set!(to, 0),
-                _ => failure = u32::from(not_a_bool),
-            },
             Instruction::TextToWhole { to, from } => match text_to_whole(heap_try!(heap.text(get!(from)))) {
                 Some(value) => set!(to, value.cast_unsigned()),
                 None => failure = not_a_whole,

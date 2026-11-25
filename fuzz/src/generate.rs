@@ -331,6 +331,21 @@ impl Generator {
                 if simple {
                     return self.whole_literal();
                 }
+                // The maths built-ins and `**` on `Whole`s (D107, D108).
+                if self.seal() && self.random.chance(1, 8) {
+                    let a = self.operand(Kind::Whole, level - 1);
+                    let b = self.operand(Kind::Whole, level - 1);
+                    return match self.random.below(5) {
+                        0 => format!("abs({a})"),
+                        1 => format!("min({a}, {b})"),
+                        2 => format!("max({a}, {b})"),
+                        3 => format!("clamp({a}, low: {}, high: {})", self.random.below(5), 5 + self.random.below(20)),
+                        _ => {
+                            let base = if a.starts_with('-') { format!("({a})") } else { a };
+                            format!("{base} ** {}", self.random.below(5))
+                        }
+                    };
+                }
                 match self.random.below(11) {
                     0..=2 => {
                         let operator = *self.random.pick(&["+", "-", "*"]).unwrap_or(&"+");
@@ -421,6 +436,26 @@ impl Generator {
                     }
                     3 => format!("sqrt({})", self.argument(Kind::Float, level)),
                     4 => format!("be.Float({})", self.argument(Kind::Whole, level)),
+                    // The angle built-ins, `lerp`, `**` and `pi` on `Float`s (D108, D109, D114).
+                    5 if self.seal() && self.random.chance(1, 2) => {
+                        let a = self.argument(Kind::Float, level);
+                        let b = self.argument(Kind::Float, level);
+                        match self.random.below(8) {
+                            0 => format!("sin({a})"),
+                            1 => format!("cos({a})"),
+                            2 => format!("tan({a})"),
+                            3 => format!("asin({a})"),
+                            4 => format!("atan2(y: {a}, x: {b})"),
+                            5 => format!("lerp({a}, to: {b}, by: 0.5)"),
+                            6 => {
+                                let base = self.operand(Kind::Float, level - 1);
+                                let base = if base.starts_with('-') { format!("({base})") } else { base };
+                                let power = self.random.pick(&["2.0", "0.5", "-1.0", "3.0"]).copied().unwrap_or("2.0");
+                                format!("{base} ** {power}")
+                            }
+                            _ => "pi".to_owned(),
+                        }
+                    }
                     _ => self.call_value(Kind::Float, level).unwrap_or_else(|| self.float_literal()),
                 }
             }
@@ -982,7 +1017,23 @@ impl Generator {
                 let typed = self.random.chance(1, 4) || matches!(kind, Kind::Dict | Kind::Maybe);
                 let marker = if mutable { "mut " } else { "" };
                 if typed {
-                    self.line(&format!("{marker}{name}: {} = {value}", kind.written()));
+                    // trace: D107. Now and then a ranged number, which checks or pulls back every value landing in it.
+                    let written = match kind {
+                        Kind::Whole if self.seal() && self.random.chance(1, 3) => {
+                            let edges = [
+                                "[min.clamp: -50, max.clamp: 50]",
+                                "[min: -1000000]",
+                                "[max.clamp: 7]",
+                                "[min: 0, max.clamp: 100]",
+                            ];
+                            format!("Whole{}", self.random.pick(&edges).copied().unwrap_or(""))
+                        }
+                        Kind::Float if self.seal() && self.random.chance(1, 3) => {
+                            "Float[min.clamp: -2.5, max.clamp: 2.5]".to_owned()
+                        }
+                        _ => kind.written().to_owned(),
+                    };
+                    self.line(&format!("{marker}{name}: {written} = {value}"));
                 } else {
                     self.line(&format!("{marker}{name} = {value}"));
                 }

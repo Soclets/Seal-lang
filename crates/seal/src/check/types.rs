@@ -49,6 +49,29 @@ pub enum Type {
     OneOf(u32),
     /// `Maybe<T>` (D38).
     Maybe(TypeId),
+    /// A `Whole` or a `Float` with limits, as `Whole[min: 0]` (D107). It's its plain type plus a check wherever a
+    /// value lands (D128), so resolving it gives the plain type, and only [`TypeTable::limits`] sees the limits.
+    Ranged {
+        base: TypeId,
+        limits: Limits,
+    },
+}
+
+/// A ranged number's limits (D107): each edge, when it has one, as its value's bits, and whether it pulls a value
+/// back (`.clamp`) instead of stopping the script.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Limits {
+    pub min: Option<Edge>,
+    pub max: Option<Edge>,
+    /// The values are `Float`s' bits, not `Whole`s'.
+    pub float: bool,
+}
+
+/// One edge of a ranged number (D107).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Edge {
+    pub bits: u64,
+    pub clamp: bool,
 }
 
 /// A record's declaration (D27).
@@ -129,12 +152,14 @@ impl TypeTable {
     #[must_use]
     pub fn resolve(&self, mut id: TypeId) -> TypeId {
         // A chain of bindings is never longer than the number of variables.
-        for _ in 0..=self.bindings.len() {
+        for _ in 0..=self.bindings.len() + 1 {
             match self.raw(id) {
                 Type::Variable(variable) => match self.bindings.get(*variable as usize) {
                     Some(Some(bound)) => id = *bound,
                     _ => return id,
                 },
+                // trace: D128. A ranged number is its plain type, as far as every type rule goes.
+                Type::Ranged { base, .. } => id = *base,
                 _ => return id,
             }
         }
@@ -217,6 +242,15 @@ impl TypeTable {
         }
     }
 
+    /// A ranged number's limits, when the type as written has them (D107, D128).
+    #[must_use]
+    pub fn limits(&self, id: TypeId) -> Option<Limits> {
+        match self.raw(id) {
+            Type::Ranged { limits, .. } => Some(*limits),
+            _ => None,
+        }
+    }
+
     /// Gives every variable still open inside a type the refused type, so nothing more is said about it.
     pub fn settle_as_error(&mut self, id: TypeId) {
         let id = self.resolve(id);
@@ -271,6 +305,7 @@ impl TypeTable {
                 self.one_ofs.get(*one_of as usize).map_or_else(|| "?".to_owned(), |one_of| one_of.name.clone())
             }
             Type::Maybe(inner) => format!("Maybe<{}>", self.written(*inner)),
+            Type::Ranged { base, .. } => self.written(*base),
         }
     }
 

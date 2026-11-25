@@ -163,6 +163,8 @@ pub enum Symbol {
     /// A `-` right before a value (Unio D27).
     Negate,
     Star,
+    /// `**`, raising to a power (D108).
+    Power,
     Slash,
     Ampersand,
     Slide,
@@ -193,6 +195,7 @@ impl Symbol {
             Symbol::Plus => "+",
             Symbol::Minus | Symbol::Negate => "-",
             Symbol::Star => "*",
+            Symbol::Power => "**",
             Symbol::Slash => "/",
             Symbol::Ampersand => "&",
             Symbol::Slide => "|>",
@@ -763,6 +766,7 @@ impl Lexer {
                                 (Symbol::Negate, 1)
                             }
                         }
+                        ('*', Some('*')) => (Symbol::Power, 2),
                         ('*', _) => (Symbol::Star, 1),
                         ('/', _) => (Symbol::Slash, 1),
                         ('&', _) => (Symbol::Ampersand, 1),

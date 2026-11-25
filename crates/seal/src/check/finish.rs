@@ -103,6 +103,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
         | ExpressionKind::MaybeCrash(inner)
+        | ExpressionKind::Land { value: inner, .. }
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
@@ -119,6 +120,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
             plain(second);
         }
         ExpressionKind::Call { arguments: items, .. }
+        | ExpressionKind::Maths { arguments: items, .. }
         | ExpressionKind::DoorCall { arguments: items, .. }
         | ExpressionKind::Join(items)
         | ExpressionKind::List(items) => {

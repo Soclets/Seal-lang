@@ -796,7 +796,8 @@ impl Parser<'_> {
                     path.push(self.expect_name("a setting's name")?);
                 }
                 self.expect_symbol(Symbol::Colon)?;
-                settings.push((path, self.operand()?));
+                // A ranged number's edge can be below zero (D107).
+                settings.push((path, self.unary()?));
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
@@ -1371,6 +1372,26 @@ impl Parser<'_> {
         Ok(left)
     }
 
+    /// trace: D108. `a ** b` binds tighter than `*` and `/`. Which way a chain of them groups, and how a `-` in front
+    /// of the base reads, aren't decided, so both stop.
+    fn power(&mut self) -> Result<Expression, Message> {
+        let base = self.operand()?;
+        if !self.at_symbol(Symbol::Power) {
+            return Ok(base);
+        }
+        let at = self.here();
+        self.advance();
+        self.deeper()?;
+        let exponent = self.unary()?;
+        if self.at_symbol(Symbol::Power) {
+            return Err(Message::not_designed_yet(
+                self.here(),
+                "a chain of `**`, as `a ** b ** c`, which could group either way,",
+            ));
+        }
+        Ok(self.binary(BinaryOperator::Power, base, exponent, at))
+    }
+
     /// `div` and `rem` say how they round, with `.floor` or `.trunc` (Unio D70, D71).
     fn rounding(&mut self, keyword: Keyword, at: Place) -> Result<BinaryOperator, Message> {
         let bare = || {
@@ -1401,13 +1422,19 @@ impl Parser<'_> {
             let place = self.here();
             self.advance();
             let operand = self.unary()?;
+            if matches!(operand.kind, ExpressionKind::Binary { operator: BinaryOperator::Power, .. }) {
+                return Err(Message::not_designed_yet(
+                    place,
+                    "a `-` in front of a power, as `-2 ** 2`, which could mean `-(2 ** 2)` or `(-2) ** 2`,",
+                ));
+            }
             let whole = place.to(operand.place);
             return Ok(self.expression(
                 ExpressionKind::Unary { operator: UnaryOperator::Negate, operand: Box::new(operand) },
                 whole,
             ));
         }
-        self.operand()
+        self.power()
     }
 
     fn member_name(&mut self) -> Result<Word, Message> {

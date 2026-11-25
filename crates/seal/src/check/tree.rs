@@ -253,6 +253,23 @@ pub enum Conversion {
     FloatToWhole(Rounding),
 }
 
+/// The maths built-ins beyond `sqrt` (D107, D109, D114). `abs`, `min`, `max` and `clamp` work on a `Whole` or a
+/// `Float`; the rest on `Float`s.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MathsFunction {
+    Abs,
+    Min,
+    Max,
+    Clamp,
+    Sin,
+    Cos,
+    Tan,
+    Asin,
+    Acos,
+    Atan2,
+    Lerp,
+}
+
 /// What comes after `??` on something that can fail (Unio D23).
 #[derive(Clone, Debug)]
 pub enum HandleFallback {
@@ -317,6 +334,11 @@ pub enum ExpressionKind {
         value: Box<Expression>,
     },
     Sqrt(Box<Expression>),
+    /// One of the maths built-ins, its arguments in their declared order (D107, D109, D114).
+    Maths {
+        function: MathsFunction,
+        arguments: Vec<Expression>,
+    },
     Negate(Box<Expression>),
     Not(Box<Expression>),
     /// Maths, comparing, `and` and `or`. Never `&`, which is [`ExpressionKind::Join`].
@@ -362,6 +384,12 @@ pub enum ExpressionKind {
     Handle {
         call: Box<Expression>,
         fallback: HandleFallback,
+    },
+    /// A value landing where a ranged number's type is written, checked or pulled back as it lands (D107, D128).
+    Land {
+        value: Box<Expression>,
+        /// The ranged type as written, with its limits.
+        target: TypeId,
     },
     /// `maybe ?? crash`: the value inside, or a failed check when it's `none` (D79).
     MaybeCrash(Box<Expression>),

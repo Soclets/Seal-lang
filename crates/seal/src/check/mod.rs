@@ -19,8 +19,11 @@ use tree::{
 };
 use types::{BOOL, CaseType, ERROR, FLOAT, NOTHING, OneOfType, RecordType, TEXT, Type, TypeId, WHOLE};
 
-/// The words Seal provides itself (D11, D22, D118). A script's own names can't take them.
-const BUILT_IN_WORDS: [&str; 5] = ["range", "sqrt", "be", "newln", "tab"];
+/// The words Seal provides itself (D11, D22, D107, D109, D114, D118). A script's own names can't take them.
+const BUILT_IN_WORDS: [&str; 17] = [
+    "range", "sqrt", "be", "newln", "tab", "abs", "min", "max", "clamp", "sin", "cos", "tan", "asin", "acos", "atan2",
+    "pi", "lerp",
+];
 
 /// The types Seal provides itself (D16, D32, D38).
 const BUILT_IN_TYPES: [&str; 8] = ["Whole", "Float", "Bool", "Text", "List", "Array", "Dict", "Maybe"];
@@ -534,6 +537,138 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// `Whole[…]` or `Float[…]` with its limits, `min:` and `max:` stopping the script past them and `min.clamp:` and
+    /// `max.clamp:` pulling a value back, one of each kind per edge (D107).
+    fn ranged_type(&mut self, written: &syntax::TypeExpression, float: bool) -> TypeId {
+        let base = if float { FLOAT } else { WHOLE };
+        let mut limits = types::Limits { min: None, max: None, float };
+        for (path, value) in &written.settings {
+            let setting = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+            let place = path.first().map_or(written.place, |word| word.place);
+            let (is_min, clamp) = match setting.as_str() {
+                "min" => (true, false),
+                "max" => (false, false),
+                "min.clamp" => (true, true),
+                "max.clamp" => (false, true),
+                _ => {
+                    self.refuse_why(
+                        place,
+                        format!("`{}` has no setting `{setting}`", written.name.text),
+                        "a number's settings are its limits: `min:`, `max:`, `min.clamp:` and `max.clamp:`.",
+                    );
+                    return ERROR;
+                }
+            };
+            let Some(bits) = self.plain_number(value, float) else { return ERROR };
+            let slot = if is_min { &mut limits.min } else { &mut limits.max };
+            if slot.is_some() {
+                let edge = if is_min { "lowest" } else { "highest" };
+                self.refuse_why(
+                    place,
+                    format!("the {edge} edge is written twice"),
+                    "each edge is written once, with `min:` or `min.clamp:`, and `max:` or `max.clamp:`.",
+                );
+                return ERROR;
+            }
+            *slot = Some(types::Edge { bits, clamp });
+        }
+        if let (Some(min), Some(max)) = (limits.min, limits.max) {
+            let crossed = if float {
+                f64::from_bits(min.bits) > f64::from_bits(max.bits)
+            } else {
+                min.bits.cast_signed() > max.bits.cast_signed()
+            };
+            if crossed {
+                self.refuse_why(
+                    written.place,
+                    "this number's lowest edge is above its highest",
+                    "a ranged number's `min` is at most its `max`, so some value fits.",
+                );
+                return ERROR;
+            }
+        }
+        self.program.types.intern(Type::Ranged { base, limits })
+    }
+
+    /// A ranged number's edge: a number written there, `-` allowed, or a top-level name made from one with no `mut`,
+    /// a `Whole` or a `Float` as the type is (D103, D107). Gives its bits.
+    fn plain_number(&mut self, expression: &syntax::Expression, float: bool) -> Option<u64> {
+        let written = match &expression.kind {
+            syntax::ExpressionKind::Name(name) => {
+                if let Some(&global) = self.globals.get(name) {
+                    self.mark_read(global);
+                }
+                let Some(value) = self.plain_names.get(name).copied() else {
+                    self.refuse_why(
+                        expression.place,
+                        format!("`{name}` isn't a top-level name made from a number written out, with no `mut`"),
+                        "a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.",
+                    );
+                    return None;
+                };
+                value
+            }
+            _ => expression,
+        };
+        let checked = self.expression(written, Some(if float { FLOAT } else { WHOLE }));
+        match (&checked.kind, float) {
+            (ExpressionKind::Whole(value), false) => Some(value.cast_unsigned()),
+            (ExpressionKind::Float(value), true) => Some(value.to_bits()),
+            (ExpressionKind::Error, _) => None,
+            _ => {
+                let wanted = if float { "a `Float`" } else { "a `Whole`" };
+                self.refuse_why(
+                    expression.place,
+                    format!("this number's limit is {wanted} written out"),
+                    "a number's limits are known while loading, and are of its own type.",
+                );
+                None
+            }
+        }
+    }
+
+    /// trace: D107, D128. A value landing where a ranged number's type is written: in a name, a field, an item, a
+    /// parameter or a `return`. One Seal can see past a hard edge is refused; any other is checked, or pulled back
+    /// with `.clamp`, as it lands.
+    pub(super) fn land(&mut self, value: Expression, target: TypeId) -> Expression {
+        let Some(limits) = self.program.types.limits(target) else { return value };
+        let past = |edge: Option<types::Edge>, below: bool| {
+            let edge = edge.filter(|edge| !edge.clamp)?;
+            let outside = match value.kind {
+                ExpressionKind::Whole(number) => {
+                    let limit = edge.bits.cast_signed();
+                    if below { number < limit } else { number > limit }
+                }
+                ExpressionKind::Float(number) => {
+                    let limit = f64::from_bits(edge.bits);
+                    if below { number < limit } else { number > limit }
+                }
+                _ => false,
+            };
+            outside.then_some(edge)
+        };
+        let shown = |limits: &types::Limits, edge: types::Edge| {
+            if limits.float {
+                crate::number::float_to_text(f64::from_bits(edge.bits))
+            } else {
+                edge.bits.cast_signed().to_string()
+            }
+        };
+        for (edge, below) in [(limits.min, true), (limits.max, false)] {
+            if let Some(edge) = past(edge, below) {
+                let (word, side) = if below { ("min", "below") } else { ("max", "above") };
+                self.refuse_why(
+                    value.place,
+                    format!("this is {side} its type's `{word}: {}`", shown(&limits, edge)),
+                    "a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.",
+                );
+                return Self::error(value.place);
+            }
+        }
+        let (type_id, place) = (value.type_id, value.place);
+        Expression { kind: ExpressionKind::Land { value: Box::new(value), target }, type_id, place }
+    }
+
     /// A type's setting: a whole number written there, or a top-level name made from one with no `mut` (D103).
     fn plain_whole(&mut self, expression: &syntax::Expression) -> Option<i64> {
         let written = match &expression.kind {
@@ -601,6 +736,9 @@ impl<'a> Checker<'a> {
             };
             self.refuse(written.place, what);
             return ERROR;
+        }
+        if matches!(name, "Whole" | "Float") && !written.settings.is_empty() {
+            return self.ranged_type(written, name == "Float");
         }
         let mut settings: HashMap<String, i64> = HashMap::new();
         for (path, value) in &written.settings {
@@ -1621,6 +1759,10 @@ impl<'a> Checker<'a> {
         let wanted = written_type.map(|written| self.written_type(written));
         self.partial_types = false;
         let checked = self.expression(value, wanted);
+        let checked = match wanted {
+            Some(wanted) => self.land(checked, wanted),
+            None => checked,
+        };
         let type_id = match wanted {
             Some(wanted) => {
                 self.expect(&checked, wanted, &format!("`{}`", name.text));
@@ -1676,7 +1818,12 @@ impl<'a> Checker<'a> {
             Some(global) if at_top_level => {
                 let variable_type = self.variable_type(global);
                 self.program.types.unify(variable_type, type_id);
+                let ranged = self.program.types.limits(type_id).is_some();
                 if let Some(variable) = self.program.variables.get_mut(global.0 as usize) {
+                    // trace: D128. A ranged name keeps its limits, which its plain type, worked out, doesn't carry.
+                    if ranged {
+                        variable.type_id = type_id;
+                    }
                     variable.mutable = marker == syntax::Marker::Mut;
                     variable.marked_unused = marker == syntax::Marker::Unused;
                     variable.place = name.place;
@@ -1746,10 +1893,12 @@ impl<'a> Checker<'a> {
         let wanted = self.variable_type(variable);
         let checked = self.expression(value, Some(wanted));
         self.expect(&checked, wanted, &format!("`{}`", name.text));
+        let checked = self.land(checked, wanted);
         changeable.then_some(StatementKind::Set { variable, value: checked })
     }
 
     /// `name.field = value`, `name[pos: n] = value` and `name[key: k] = value` (D27, D32, Unio D80).
+    #[allow(clippy::too_many_lines)] // a field, an item and a key, each checked and landed
     fn change(&mut self, target: &syntax::Expression, value: &syntax::Expression) -> Option<StatementKind> {
         let (receiver, step) = match &target.kind {
             syntax::ExpressionKind::Member { receiver, name } => (receiver, Step::Field(name)),
@@ -1795,6 +1944,7 @@ impl<'a> Checker<'a> {
                 };
                 let checked = self.expression(value, Some(field_type));
                 self.expect(&checked, field_type, &format!("the field `{}`", field.text));
+                let checked = self.land(checked, field_type);
                 StatementKind::SetField { variable, field: field.text.clone(), value: checked }
             }
             Step::Reach(entries) => {
@@ -1809,6 +1959,7 @@ impl<'a> Checker<'a> {
                         self.expect(&index, WHOLE, &format!("`{label}:`"));
                         let checked = self.expression(value, Some(item));
                         self.expect(&checked, item, "an item of the list");
+                        let checked = self.land(checked, item);
                         StatementKind::SetItem { variable, index, zero_based: label == "offset", value: checked }
                     }
                     (Type::Dict { key, value: value_type }, Some("key")) => {
@@ -1816,6 +1967,7 @@ impl<'a> Checker<'a> {
                         self.expect(&checked_key, key, "the dictionary's key");
                         let checked = self.expression(value, Some(value_type));
                         self.expect(&checked, value_type, "the dictionary's value");
+                        let checked = self.land(checked, value_type);
                         StatementKind::SetKey { variable, key: checked_key, value: checked }
                     }
                     (Type::Error, _) => return None,
@@ -2125,6 +2277,7 @@ impl<'a> Checker<'a> {
             }
             self.context.returned_value = Some(true);
             let checked = self.expression(value, Some(result));
+            let checked = self.land(checked, result);
             if self.program.types.resolve(checked.type_id) == NOTHING {
                 self.refuse_why(
                     value.place,

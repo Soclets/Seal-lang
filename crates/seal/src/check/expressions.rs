@@ -376,7 +376,8 @@ impl Checker<'_> {
             column += width + 1;
         }
         let built = built?;
-        if !self.is_value(&built) {
+        // `pi` is a built-in value, so braces can hold it as they hold any name (D109).
+        if !self.is_value(&built) && path != "pi" {
             let first = path.split('.').next().unwrap_or(path);
             self.refuse_why(
                 place,
@@ -453,6 +454,10 @@ impl Checker<'_> {
             self.mark_read(id);
             return Expression { kind: ExpressionKind::Variable(id), type_id: self.variable_type(id), place };
         }
+        if name == "pi" {
+            // trace: D109. `pi` is the `Float` nearest π.
+            return Expression { kind: ExpressionKind::Float(std::f64::consts::PI), type_id: FLOAT, place };
+        }
         if matches!(name, "newln" | "tab") {
             // trace: D129. `newln` and `tab` exist only inside braces.
             self.refuse_why(
@@ -505,7 +510,8 @@ impl Checker<'_> {
         false
     }
 
-    /// trace: D16, D22, D29, Unio D17, D27, D34, D70, D71, D162
+    /// trace: D16, D22, D29, D108, Unio D17, D27, D34, D70, D71, D162
+    #[allow(clippy::too_many_lines)] // one case per kind of operator, with `**`'s own refusal
     fn binary(
         &mut self,
         operator: BinaryOperator,
@@ -605,6 +611,18 @@ impl Checker<'_> {
                     _ => (Requirement::Number, format!("{quoted} works on two numbers")),
                 };
                 self.require(left.type_id, requirement, left.place, &purpose);
+                // trace: D108. A negative power of a `Whole` isn't whole.
+                if operator == BinaryOperator::Power
+                    && self.program.types.resolve(left.type_id) == WHOLE
+                    && matches!(right.kind, ExpressionKind::Whole(power) if power < 0)
+                {
+                    self.refuse_why(
+                        right.place,
+                        "a `Whole` raised to a negative power isn't a whole number",
+                        "a `Whole`'s power is 0 or more; `be.Float(…)` gives `Float`s, whose powers can be negative.",
+                    );
+                    return Self::error(place);
+                }
                 let type_id = if operator.is_comparison() { BOOL } else { left.type_id };
                 Expression {
                     kind: ExpressionKind::Binary { operator, left: Box::new(left), right: Box::new(right) },
@@ -835,6 +853,7 @@ impl Checker<'_> {
             let field_type = fields.get(index).map_or(ERROR, |(_, field_type)| *field_type);
             let value = self.expression(&entry.value, Some(field_type));
             self.expect(&value, field_type, &format!("`{}`", label.text));
+            let value = self.land(value, field_type);
             built.push((index_number, value));
         }
         let missing: Vec<String> = fields
@@ -922,7 +941,7 @@ impl Checker<'_> {
     fn item(&mut self, value: &syntax::Expression, item: TypeId) -> Expression {
         let checked = self.expression(value, Some(item));
         self.expect(&checked, item, "the list's item");
-        checked
+        self.land(checked, item)
     }
 
     /// `[key: value, …]` (D32) and `[all: value]` (Unio D169).
@@ -966,6 +985,7 @@ impl Checker<'_> {
             self.expect(&checked_key, key_type, "the dictionary's key");
             let checked_value = self.expression(value, Some(value_type));
             self.expect(&checked_value, value_type, "the dictionary's value");
+            let checked_value = self.land(checked_value, value_type);
             let plain = match &checked_key.kind {
                 ExpressionKind::Whole(number) => Some(number.to_string()),
                 ExpressionKind::Text(text) => Some(format!("\"{text}\"")),

@@ -6,9 +6,11 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic)]
 
+pub mod big;
 pub mod check;
 pub mod compile;
 pub mod host;
+pub mod maths;
 pub mod message;
 pub mod number;
 pub mod signature;

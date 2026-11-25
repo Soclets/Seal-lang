@@ -399,7 +399,7 @@ impl<'p> Compiler<'p> {
                 }
                 Crossing::OneOf { name: declared.map(|one_of| one_of.name).unwrap_or_default(), cases }
             }
-            Type::Nothing | Type::Error | Type::Variable(_) => Crossing::Nothing,
+            Type::Nothing | Type::Error | Type::Variable(_) | Type::Ranged { .. } => Crossing::Nothing,
         }
     }
 
@@ -480,6 +480,17 @@ impl<'p> Compiler<'p> {
         self.out.top_level_frame_size = self.function.high_water + 1;
     }
 
+    /// Checks, or pulls back, the number in `register` against a ranged type's limits, when it has any (D107, D128).
+    fn check_limits(&mut self, target: TypeId, register: Register) {
+        let Some(limits) = self.program.types.limits(target) else { return };
+        let site = u16::try_from(self.out.limits.len()).unwrap_or(u16::MAX);
+        if site == u16::MAX {
+            return self.too_big("ranged numbers' checks");
+        }
+        self.out.limits.push(limits);
+        self.emit(Instruction::CheckLimits { register, site });
+    }
+
     /// A default written out plainly, as the host's value, for a call from the host that leaves it out (D42, D104).
     fn constant_value(&self, expression: &Expression) -> Option<Value> {
         Some(match &expression.kind {
@@ -533,6 +544,9 @@ impl<'p> Compiler<'p> {
                 self.hold(register);
             }
             let Some(variable) = self.program.variable(parameter) else { continue };
+            // trace: D128. A ranged parameter is checked as the procedure starts, for the script's calls and the
+            // host's alike.
+            self.check_limits(variable.type_id, register);
             let default = procedure
                 .defaults
                 .get(position as usize)
@@ -2457,6 +2471,37 @@ impl<'p> Compiler<'p> {
                 self.emit(Instruction::MakeRange { to, base, inclusive: *inclusive });
                 true
             }
+            ExpressionKind::Maths { function, arguments } => {
+                use crate::check::tree::MathsFunction as Function;
+                let float = matches!(self.kind(expression.type_id), Type::Float);
+                let number = match function {
+                    Function::Abs => u8::from(float),
+                    Function::Min => 2 + u8::from(float),
+                    Function::Max => 4 + u8::from(float),
+                    Function::Clamp => 6 + u8::from(float),
+                    Function::Sin => 8,
+                    Function::Cos => 9,
+                    Function::Tan => 10,
+                    Function::Asin => 11,
+                    Function::Acos => 12,
+                    Function::Atan2 => 13,
+                    Function::Lerp => 14,
+                };
+                let count = u32::try_from(arguments.len()).unwrap_or(1);
+                let base = self.allocate_many(count);
+                for (offset, argument) in (0u16..).zip(arguments) {
+                    self.value_into(argument, base.wrapping_add(offset));
+                }
+                self.place = expression.place;
+                self.emit(Instruction::Maths { to, base, function: number });
+                false
+            }
+            // trace: D107, D128. The value is checked, or pulled back, as it lands.
+            ExpressionKind::Land { value, target } => {
+                let held = self.value_into(value, to);
+                self.check_limits(*target, to);
+                held
+            }
             ExpressionKind::MaybeCrash(maybe) => {
                 let maybe = self.value(maybe);
                 let number = self.allocate();
@@ -2630,6 +2675,12 @@ impl<'p> Compiler<'p> {
         let program: &'p Program = self.program;
         let found = program.procedures.get(procedure as usize)?;
         if found.can_fail || found.can_pause || self.current == Some(procedure) || self.inlining.contains(&procedure) {
+            return None;
+        }
+        // A ranged parameter is checked as the procedure starts (D128), which a call written out in place skips.
+        if found.parameters.iter().any(|&parameter| {
+            program.variable(parameter).is_some_and(|variable| program.types.limits(variable.type_id).is_some())
+        }) {
             return None;
         }
         let [Statement { kind: StatementKind::Return(Some(body)), .. }] = found.body.as_slice() else { return None };
@@ -2864,6 +2915,8 @@ impl<'p> Compiler<'p> {
             (BinaryOperator::Subtract, true) => Instruction::SubtractFloat { to, left, right },
             (BinaryOperator::Multiply, true) => Instruction::MultiplyFloat { to, left, right },
             (BinaryOperator::Divide, true) => Instruction::DivideFloat { to, left, right },
+            (BinaryOperator::Power, false) => Instruction::PowerWhole { to, left, right },
+            (BinaryOperator::Power, true) => Instruction::PowerFloat { to, left, right },
             (BinaryOperator::DivFloor, _) => Instruction::DivideFloor { to, left, right },
             (BinaryOperator::DivTrunc, _) => Instruction::DivideTrunc { to, left, right },
             (BinaryOperator::RemFloor, _) => Instruction::RemainderFloor { to, left, right },
@@ -2938,6 +2991,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
         | ExpressionKind::MaybeCrash(inner)
+        | ExpressionKind::Land { value: inner, .. }
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
@@ -2950,6 +3004,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         | ExpressionKind::Binary { left: first, right: second, .. }
         | ExpressionKind::MaybeOr { maybe: first, fallback: second } => uses(first) || uses(second),
         ExpressionKind::Call { arguments: items, .. }
+        | ExpressionKind::Maths { arguments: items, .. }
         | ExpressionKind::DoorCall { arguments: items, .. }
         | ExpressionKind::Join(items)
         | ExpressionKind::List(items) => items.iter().any(uses),
@@ -3027,6 +3082,7 @@ fn size(expression: &Expression) -> usize {
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
         | ExpressionKind::MaybeCrash(inner)
+        | ExpressionKind::Land { value: inner, .. }
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner) => add(inner),
@@ -3074,6 +3130,7 @@ fn mentions(expression: &Expression, variable: VariableId) -> bool {
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
         | ExpressionKind::MaybeCrash(inner)
+        | ExpressionKind::Land { value: inner, .. }
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)

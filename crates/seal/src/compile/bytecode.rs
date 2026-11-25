@@ -497,6 +497,31 @@ pub enum Instruction {
         base: Register,
         inclusive: bool,
     },
+    /// `left ** right` on two `Whole`s: checked for overflow and for a negative power (D108).
+    PowerWhole {
+        to: Register,
+        left: Register,
+        right: Register,
+    },
+    /// `left ** right` on two `Float`s, correctly rounded and checked (D18, D50, D108).
+    PowerFloat {
+        to: Register,
+        left: Register,
+        right: Register,
+    },
+    /// `abs`, `min`, `max` and `clamp`, and the angle built-ins and `lerp`: `function` says which, and the arguments
+    /// are in `base` and the registers after it, in their declared order (D107, D109, D114).
+    Maths {
+        to: Register,
+        base: Register,
+        function: u8,
+    },
+    /// A ranged number landing: checked against, or pulled back to, the limits `limits` lists at `site` (D107,
+    /// D128).
+    CheckLimits {
+        register: Register,
+        site: u16,
+    },
     /// `?? crash` on a `Maybe`: a failed check when the case number in `number` is `none`'s, 0 (D79).
     CrashIfNone {
         number: Register,
@@ -937,6 +962,8 @@ pub struct Compiled {
     pub joins: Vec<Vec<JoinPiece>>,
     /// The type each `EqualValues` compares, by its site (D95).
     pub compared_types: Vec<u32>,
+    /// The limits each `CheckLimits` holds a value to, by its site (D107).
+    pub limits: Vec<crate::check::types::Limits>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
