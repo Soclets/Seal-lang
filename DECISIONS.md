@@ -4650,3 +4650,28 @@ holds either one compiled script or a bundle of many, with an index at its front
 **Tankun's words.** "What about bundle", "What about `.sealbund`?", "Isn't that about the syntax?", then, asked "Should
 a `.sealc` file hold either one script or a bundle of many, loaded by name, with both built now?", the owner chose:
 "yea"
+
+## D154. An optional on-disk cache of compiled scripts, switched on by the host
+
+2026-11-25.
+
+**Chosen.** A host can switch on a cache of compiled scripts, in a folder it chooses:
+- **The first time a script loads from its text,** its compiled form is saved there as a `.sealc` (D153), keyed by a
+  hash of the text, the Seal version and the host's doors.
+- **Later loads of the same text** load the cached file instead of reading, checking and compiling again, verified as
+  every `.sealc` is (D141). A stale, tampered or unreadable cache file is refused and the text is loaded as usual, so
+  the cache never changes what a script means.
+- **Seal never writes files on its own** (D11): the cache is off unless the host switches it on and names the folder.
+- It's built with D141, after the current work. Its shape is the building session's.
+
+**Weighed.**
+- Only the in-memory sharing Seal has now, where scripts loaded from the same text share one compiled form within a
+  run (149 ns a load). Each launch would read and check every script again.
+- Leaving caching to each host. Every host would build its own, and few would verify what they load back.
+
+**Why this won.** Mod loaders and games that load scripts from text get most of D141's speed with no build step, and
+verifying keeps it as safe as loading text.
+
+**Tankun's words.** "What about cache?", "`" (a stray key, after the question was first asked), then, asked "Should
+Seal have an optional on-disk cache of compiled scripts, switched on by the host with a folder it chooses, using
+D141's verified `.sealc` files?", the owner chose: "yea"
