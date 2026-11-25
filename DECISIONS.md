@@ -3086,5 +3086,5 @@ value isn't known while loading. The wording comes with a later batch.
 **Why this won.** A name made once from a number and never changed is known while loading as surely as the number,
 and one name for a limit changes in one place.
 
-**Tankun's words.** Asked "Should a type's setting accept a top-level, non-`mut` name made from a plain number, as in
+**Tankun's words.** Asked "should a type's setting accept a top-level, non-`mut` name made from a plain number, as in
 `len.max: max_items`?", the owner chose: "yea"
