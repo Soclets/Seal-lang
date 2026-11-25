@@ -5,7 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D148, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
+- D130 to D149, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
@@ -28,7 +28,6 @@ message once the open questions are settled. Removed once sent.
 ## Still to settle with Tankun
 
 - A `Whole` with a unit into a `Float` with a unit of its group (asked; recommended yes, whenever exact).
-- `a + b to ms` without brackets (was `in`; D148).
 - Unit maths with no written form, as `px * px`, and maths on points beyond adding a span.
 - `clamp` with `low:` above `high:`.
 - `///` on a name made inside a block.
