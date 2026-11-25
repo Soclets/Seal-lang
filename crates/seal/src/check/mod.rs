@@ -109,6 +109,17 @@ struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    /// The context with nothing in it, keeping its lists' room for the next procedure (D140).
+    fn emptied(mut self) -> Self {
+        self.procedure = None;
+        self.scopes.clear();
+        self.loop_depth = 0;
+        self.iterating.clear();
+        self.returned_value = None;
+        self.instead_types.clear();
+        self
+    }
+
     /// An empty table for a new scope, one kept from an earlier scope when there is one.
     fn spare_scope(&mut self) -> HashMap<&'a str, VariableId> {
         self.spare_scopes.pop().unwrap_or_default()
@@ -168,6 +179,8 @@ pub(crate) struct Checker<'a> {
     deferred: Vec<DeferredArgument>,
     demand_depth: u32,
     batch: Vec<ProcedureId>,
+    /// Procedures' contexts, emptied, for the next procedure checked to reuse (D140).
+    spare_contexts: Vec<Context<'a>>,
     top_level_position: usize,
     /// Each procedure's written failures, to compare with what its body does (D44).
     written_failures: Vec<Option<Vec<syntax::Word<'a>>>>,
@@ -227,6 +240,7 @@ pub fn check(
         deferred: Vec::new(),
         demand_depth: 0,
         batch: Vec::new(),
+        spare_contexts: Vec::new(),
         top_level_position: 0,
         written_failures: Vec::new(),
         reported_early_use: HashSet::new(),
@@ -1523,12 +1537,18 @@ impl<'a> Checker<'a> {
         if let Some(state) = self.procedure_state.get_mut(index) {
             *state = ProcedureState::InProgress;
         }
-        let saved = std::mem::replace(&mut self.context, Context { procedure: Some(id), ..Context::default() });
+        // The procedure's own context reuses the room of one kept from an earlier procedure, and the scope tables
+        // kept so far (D140).
+        let mut fresh = self.spare_contexts.pop().unwrap_or_default();
+        fresh.procedure = Some(id);
+        fresh.spare_scopes = std::mem::take(&mut self.context.spare_scopes);
+        let saved = std::mem::replace(&mut self.context, fresh);
         self.demand_depth += 1;
         let mut scope = self.context.spare_scope();
-        let parameters = self.program.procedure(id).map(|procedure| procedure.parameters.clone()).unwrap_or_default();
         // Each written parameter made one variable, in order, so the two lists pair up.
-        for (&parameter, written) in parameters.iter().zip(&procedure.parameters) {
+        for (position, written) in procedure.parameters.iter().enumerate() {
+            let parameter = self.program.procedure(id).and_then(|procedure| procedure.parameters.get(position));
+            let Some(&parameter) = parameter else { continue };
             // trace: D71. A parameter can't take a spelling that already means something.
             let word = &written.name;
             self.check_new_name(word);
@@ -1572,7 +1592,11 @@ impl<'a> Checker<'a> {
         if let Some(state) = self.procedure_state.get_mut(index) {
             *state = ProcedureState::Checked;
         }
-        self.context = saved;
+        let mut used = std::mem::replace(&mut self.context, saved);
+        self.context.spare_scopes = std::mem::take(&mut used.spare_scopes);
+        if self.spare_contexts.len() < SPARE_LIMIT {
+            self.spare_contexts.push(used.emptied());
+        }
         self.demand_depth -= 1;
         self.batch.push(id);
         self.solve(false);
@@ -1585,7 +1609,7 @@ impl<'a> Checker<'a> {
 
     fn block(&mut self, statements: &[syntax::Statement<'a>]) -> Block {
         self.context.open_scope();
-        let mut block = Vec::new();
+        let mut block = Vec::with_capacity(statements.len());
         // The line before, when it always leaves this block, or is an `if` or a `match` that can.
         let mut left: Option<(Place, Leaving)> = None;
         for statement in statements {

@@ -939,7 +939,9 @@ pub struct DoorSite {
     pub door: u32,
     /// Whether every argument is a plain number or `Bool`, needing no copy to cross.
     pub plain: bool,
-    pub arguments: Vec<Crossing>,
+    /// Where its arguments' crossings start in the script's `door_arguments`, and how many there are (D140).
+    pub first_argument: u32,
+    pub argument_count: u32,
     pub result: Crossing,
 }
 
@@ -953,8 +955,8 @@ pub struct CompiledProcedure {
     pub frame_size: u32,
     pub parameters: Vec<CompiledParameter>,
     pub result: Crossing,
-    /// The type the result has, as it's written in a script.
-    pub result_written: String,
+    /// The result's type, for messages, in the compiled script's `types`.
+    pub result_type: crate::check::types::TypeId,
     pub failures: Vec<String>,
     pub can_pause: bool,
     /// Whether a parameter's type or the result's holds itself, which can't cross yet (D72).
@@ -966,8 +968,8 @@ pub struct CompiledParameter {
     pub name: String,
     pub label: Option<String>,
     pub crossing: Crossing,
-    /// The parameter's type as it's written in a script, for messages.
-    pub written: String,
+    /// The parameter's type, for messages, in the compiled script's `types`.
+    pub type_id: crate::check::types::TypeId,
     /// The default's value, when the parameter has one (D42).
     pub default: Option<crate::host::Value>,
 }
@@ -999,6 +1001,8 @@ pub struct Compiled {
     pub global_references: Vec<bool>,
     pub layouts: Vec<Layout>,
     pub door_sites: Vec<DoorSite>,
+    /// Every door call's arguments' crossings, one run after another, in one list (D140).
+    pub door_arguments: Vec<Crossing>,
     /// The pieces each text join is made of, by the join's number.
     pub joins: Vec<Vec<JoinPiece>>,
     /// The type each `EqualValues` compares, by its site (D95).

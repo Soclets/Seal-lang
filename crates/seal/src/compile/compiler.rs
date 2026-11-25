@@ -128,6 +128,27 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
     compile_as(program, doors, false)
 }
 
+/// Compiles a checked script, as [`compile_as`] does, taking over the names and types the compiled script keeps
+/// instead of copying them, since the checked script isn't needed after (D140).
+///
+/// # Errors
+///
+/// As [`compile`].
+pub fn compile_taking(mut program: Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
+    let mut compiled = compile_parts(&program, doors, plain)?;
+    compiled.failure_names = std::mem::take(&mut program.failure_names);
+    compiled.types = std::mem::take(&mut program.types);
+    for (procedure, checked) in compiled.procedures.iter_mut().zip(&mut program.procedures) {
+        procedure.name = std::mem::take(&mut checked.name);
+        for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {
+            if let Some(variable) = program.variables.get_mut(variable.0 as usize) {
+                parameter.name = std::mem::take(&mut variable.name);
+            }
+        }
+    }
+    Ok(compiled)
+}
+
 /// Compiles a checked script, plainly when `plain` is set: with no shortcut for a list's items, so that what the
 /// shortcuts give can be checked against it.
 ///
@@ -135,16 +156,34 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
 ///
 /// As [`compile`].
 pub fn compile_as(program: &Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
+    let mut compiled = compile_parts(program, doors, plain)?;
+    compiled.failure_names.clone_from(&program.failure_names);
+    compiled.types = program.types.clone();
+    for (procedure, checked) in compiled.procedures.iter_mut().zip(&program.procedures) {
+        procedure.name.clone_from(&checked.name);
+        for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {
+            if let Some(variable) = program.variable(variable) {
+                parameter.name.clone_from(&variable.name);
+            }
+        }
+    }
+    Ok(compiled)
+}
+
+/// Compiles a checked script, leaving out the names and types the compiled script keeps, which the caller copies or
+/// takes from the checked script.
+fn compile_parts(program: &Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiler = Compiler {
         plain,
         program,
         doors,
         out: Compiled {
-            failure_names: program.failure_names.clone(),
             built_in_failures: ["missing", "not_a_whole", "full"].map(|wanted| {
                 (1u32..).zip(&program.failure_names).find(|(_, known)| *known == wanted).map_or(0, |(number, _)| number)
             }),
-            types: program.types.clone(),
+            // Room for a small script's instructions from the start, rather than growing to it.
+            code: Vec::with_capacity(32),
+            places: Vec::with_capacity(32),
             ..Compiled::default()
         },
         constant_ids: HashMap::new(),
@@ -529,7 +568,29 @@ impl<'p> Compiler<'p> {
     // ---- procedures ----
 
     fn start_function(&mut self, first_free: u32) {
-        self.function = Function { next: first_free, high_water: first_free, ..Function::default() };
+        // The last function's tables and lists are emptied and reused, keeping their room (D140).
+        let mut last = std::mem::take(&mut self.function);
+        last.locations.clear();
+        last.held.clear();
+        last.loops.clear();
+        last.instead_targets.clear();
+        last.texts.clear();
+        last.takeovers.clear();
+        last.views.clear();
+        last.distinct.clear();
+        self.function = Function {
+            next: first_free,
+            high_water: first_free,
+            locations: last.locations,
+            held: last.held,
+            loops: last.loops,
+            instead_targets: last.instead_targets,
+            texts: last.texts,
+            takeovers: last.takeovers,
+            views: last.views,
+            distinct: last.distinct,
+            ..Function::default()
+        };
         for (&variable, &global) in &self.globals {
             self.function.locations.insert(variable, Location::Global(global));
         }
@@ -618,10 +679,11 @@ impl<'p> Compiler<'p> {
                 .flatten()
                 .and_then(|default| self.constant_value(&default));
             parameters.push(CompiledParameter {
-                name: variable.name.clone(),
+                // The name comes from the checked script once compiling is done.
+                name: String::new(),
                 label: procedure.labels.get(position as usize).cloned().flatten(),
                 crossing: self.crossing(variable.type_id),
-                written: self.program.types.written(variable.type_id),
+                type_id: variable.type_id,
                 default,
             });
         }
@@ -661,12 +723,13 @@ impl<'p> Compiler<'p> {
             || parameters.iter().any(|parameter: &CompiledParameter| parameter.crossing.holds_itself());
         self.out.entries.push(ProcedureEntry { entry, frame_size: self.function.high_water + 1 });
         self.out.procedures.push(CompiledProcedure {
-            name: procedure.name.clone(),
+            // The name comes from the checked script once compiling is done.
+            name: String::new(),
             entry,
             frame_size: self.function.high_water + 1,
             parameters,
             result,
-            result_written: self.program.types.written(procedure.result),
+            result_type: procedure.result,
             failures,
             can_pause: procedure.can_pause,
             holds_itself,
@@ -2249,13 +2312,23 @@ impl<'p> Compiler<'p> {
             }
             ExpressionKind::DoorCall { door, arguments } => {
                 let can_pause = self.doors.get(*door as usize).is_some_and(|door| door.can_pause);
-                let crossings: Vec<Crossing> =
-                    arguments.iter().map(|argument| self.crossing(argument.type_id)).collect();
+                let first_argument = u32::try_from(self.out.door_arguments.len()).unwrap_or(u32::MAX);
+                for argument in arguments {
+                    let crossing = self.crossing(argument.type_id);
+                    self.out.door_arguments.push(crossing);
+                }
+                let argument_count = u32::try_from(arguments.len()).unwrap_or(u32::MAX);
+                let plain = self
+                    .out
+                    .door_arguments
+                    .get(first_argument as usize..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .all(|crossing| !crossing.is_reference());
                 let result = self.crossing(expression.type_id);
                 let base = self.arguments(arguments, true, None);
                 let site = u32::try_from(self.out.door_sites.len()).unwrap_or(u32::MAX);
-                let plain = crossings.iter().all(|crossing| !crossing.is_reference());
-                self.out.door_sites.push(DoorSite { door: *door, plain, arguments: crossings, result });
+                self.out.door_sites.push(DoorSite { door: *door, plain, first_argument, argument_count, result });
                 self.place = expression.place;
                 self.emit(Instruction::CallDoor { base, site });
                 if can_pause {

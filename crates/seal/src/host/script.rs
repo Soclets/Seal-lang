@@ -10,7 +10,7 @@ use super::doors::{Doors, Loaded};
 use super::value::Value;
 use crate::check::check;
 use crate::compile::bytecode::{Compiled, CompiledProcedure, Crossing};
-use crate::compile::compiler::compile_as;
+use crate::compile::compiler::compile_taking;
 use crate::message::{Message, MessageKind, Messages, Place};
 use crate::signature::HostType;
 use crate::syntax::parser::parse;
@@ -292,7 +292,7 @@ impl Script {
         let tree = parse(source).map_err(|message| vec![message])?;
         let signatures = doors.shared_signatures();
         let program = check(&tree, &signatures, &doors.shared_types(), doors.unit_groups())?;
-        compile_as(&program, &signatures, plain).map_err(|message| vec![message])
+        compile_taking(program, &signatures, plain).map_err(|message| vec![message])
     }
 
     /// Sets the script's memory up and runs its top level (D4).
@@ -466,7 +466,7 @@ impl Script {
         {
             return Err(self.not_built(format!(
                 "passing a `{}`, a type that holds itself, from a host to a script (D72), which calling `{procedure}` needs, isn't",
-                parameter.written
+                self.compiled.types.written(parameter.type_id)
             )));
         }
         if found.holds_itself && found.result.holds_itself() {
@@ -521,7 +521,7 @@ impl Script {
                             format!(
                                 "argument {} of `{procedure}` is a `{}`, but the call gives {found}",
                                 position + 1,
-                                parameter.written
+                                self.compiled.types.written(parameter.type_id)
                             ),
                         ),
                     });

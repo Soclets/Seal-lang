@@ -385,9 +385,12 @@ fn main() -> ExitCode {
         let mutated = mutate(&script, &mut random);
         let soup = soup(&mut random);
         if show {
-            println!("{script}");
-            let run = run(&script);
-            println!("=> {}\n{}{}", run.ending, run.messages, run.output);
+            // Every script and how it went, so two builds' runs can be compared line by line.
+            for (kind, source) in [("valid", &script), ("changed", &mutated), ("soup", &soup)] {
+                println!("-- {kind}\n{source}");
+                let run = run(source);
+                println!("=> {}\n{}{}", run.ending, run.messages, run.output);
+            }
             continue;
         }
         for (kind, source, tally) in

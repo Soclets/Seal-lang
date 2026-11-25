@@ -28,6 +28,9 @@ struct Parser<'a> {
     /// The script as written, for fixes that show a whole line put right.
     source: &'a str,
     line_index: usize,
+    /// Where the current line's tokens start and end in `tokens`, kept as the line changes.
+    line_start: usize,
+    line_end: usize,
     /// The index of the next token in the current line.
     position: usize,
     next_id: u32,
@@ -36,12 +39,35 @@ struct Parser<'a> {
 }
 
 /// What a block's body ran into: the line that isn't part of it.
-struct Opener {
+struct Opener<'a> {
     word: &'static str,
     place: Place,
     indentation: u32,
     /// What the note after its `end` says, when one is written: what the block is, with its name (D102).
-    note: String,
+    note: Note<'a>,
+}
+
+/// An `end`'s note, as what it starts with and the block's name after it, put together only when it's shown (D102).
+struct Note<'a> {
+    start: &'static str,
+    name: std::borrow::Cow<'a, str>,
+}
+
+impl<'a> Note<'a> {
+    fn new(start: &'static str, name: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+        Note { start, name: name.into() }
+    }
+
+    /// Whether a written note is this one.
+    fn is(&self, written: &str) -> bool {
+        written.strip_prefix(self.start) == Some(&*self.name)
+    }
+}
+
+impl std::fmt::Display for Note<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}{}", self.start, self.name)
+    }
 }
 
 /// A line indented by anything but 4 spaces a level is refused, with the line indented right as the fix (D63, Unio
@@ -67,11 +93,14 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
         tokens: lexed.tokens,
         source,
         line_index: 0,
+        line_start: 0,
+        line_end: 0,
         position: 0,
         next_id: 0,
         block_depth: 0,
         expression_depth: 0,
     };
+    parser.enter_line();
     let mut items = Vec::new();
     while parser.line_index < parser.lines.len() {
         let indentation = parser.indentation();
@@ -81,7 +110,9 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
         }
         items.push(parser.item()?);
     }
-    Ok(Script { items, expression_count: parser.next_id, source })
+    let expression_count = parser.next_id;
+    super::lexer::keep(parser.tokens, parser.lines);
+    Ok(Script { items, expression_count, source })
 }
 
 impl<'a> Parser<'a> {
@@ -99,12 +130,19 @@ impl<'a> Parser<'a> {
         self.line().map_or(Place::default(), |line| line.place)
     }
 
+    /// Notes where the current line's tokens are, once it's the current line.
+    fn enter_line(&mut self) {
+        (self.line_start, self.line_end) = self.line().map_or((0, 0), |line| (line.start as usize, line.end as usize));
+        self.position = 0;
+    }
+
     fn peek(&self) -> Option<&Token<'a>> {
-        self.line().and_then(|line| line.tokens(&self.tokens).get(self.position))
+        self.peek_at(0)
     }
 
     fn peek_at(&self, offset: usize) -> Option<&Token<'a>> {
-        self.line().and_then(|line| line.tokens(&self.tokens).get(self.position + offset))
+        let index = self.line_start + self.position + offset;
+        if index < self.line_end { self.tokens.get(index) } else { None }
     }
 
     fn peek_kind(&self) -> Option<&TokenKind<'a>> {
@@ -142,9 +180,8 @@ impl<'a> Parser<'a> {
     /// Steps past the next token, taking what it holds instead of copying it: a name's or a value's text is read
     /// once. The token keeps its place, which is all that's looked back at.
     fn take(&mut self) -> Option<Token<'a>> {
-        let line = self.lines.get(self.line_index)?;
-        let index = line.start as usize + self.position;
-        if index >= line.end as usize {
+        let index = self.line_start + self.position;
+        if index >= self.line_end {
             return None;
         }
         let token = self.tokens.get_mut(index)?;
@@ -157,8 +194,7 @@ impl<'a> Parser<'a> {
     /// Puts a token just taken back, for reading it another way.
     fn put_back(&mut self, token: Token<'a>) {
         self.position = self.position.saturating_sub(1);
-        let index = self.lines.get(self.line_index).map(|line| line.start as usize + self.position);
-        if let Some(slot) = index.and_then(|index| self.tokens.get_mut(index)) {
+        if let Some(slot) = self.tokens.get_mut(self.line_start + self.position) {
             *slot = token;
         }
     }
@@ -247,7 +283,7 @@ impl<'a> Parser<'a> {
             .with_why("each statement goes on a line of its own."));
         }
         self.line_index += 1;
-        self.position = 0;
+        self.enter_line();
         Ok(())
     }
 
@@ -260,7 +296,7 @@ impl<'a> Parser<'a> {
     // ---- blocks ----
 
     /// Reads a body: the lines one level deeper than `opener`, up to the line at the opener's own depth.
-    fn body(&mut self, opener: &Opener) -> Result<Block<'a>, Message> {
+    fn body(&mut self, opener: &Opener<'a>) -> Result<Block<'a>, Message> {
         self.block_depth += 1;
         if self.block_depth > MAX_BLOCK_DEPTH {
             return Err(Message::not_built_yet(
@@ -278,7 +314,7 @@ impl<'a> Parser<'a> {
 
     /// Whether the current line belongs to `opener`'s body. A line at a depth that's neither the body's nor the
     /// opener's is an error.
-    fn in_body(&self, opener: &Opener) -> Result<bool, Message> {
+    fn in_body(&self, opener: &Opener<'a>) -> Result<bool, Message> {
         let Some(line) = self.line() else {
             return Err(self.no_end(opener));
         };
@@ -308,7 +344,7 @@ impl<'a> Parser<'a> {
     }
 
     /// trace: D20
-    fn no_end(&self, opener: &Opener) -> Message {
+    fn no_end(&self, opener: &Opener<'a>) -> Message {
         let place = self.line().map_or(opener.place, |line| line.place);
         Message::refused(place, format!("the `{}` on line {} has no `end`", opener.word, opener.place.line))
             .with_because(format!("line {} opens it", opener.place.line), opener.place)
@@ -316,14 +352,14 @@ impl<'a> Parser<'a> {
     }
 
     /// Reads the `end` that closes `opener`'s block, with its note when one is written (D102).
-    fn end_of(&mut self, opener: &Opener) -> Result<Place, Message> {
+    fn end_of(&mut self, opener: &Opener<'a>) -> Result<Place, Message> {
         let at_depth = self.line().is_some_and(|line| line.indentation == opener.indentation);
         if !at_depth || self.first_keyword() != Some(Keyword::End) {
             return Err(self.no_end(opener));
         }
         let place = self.expect_keyword(Keyword::End)?;
         if let Some(Token { kind: TokenKind::Note(note), place: note_place, .. }) = self.peek() {
-            if *note != opener.note {
+            if !opener.note.is(note) {
                 // trace: D102. The note is checked, so it can't go stale.
                 return Err(Message::refused(
                     *note_place,
@@ -342,8 +378,8 @@ impl<'a> Parser<'a> {
         Ok(place)
     }
 
-    fn opener(&self, word: &'static str) -> Opener {
-        Opener { word, place: self.line_place(), indentation: self.indentation(), note: word.to_owned() }
+    fn opener(&self, word: &'static str) -> Opener<'a> {
+        Opener { word, place: self.line_place(), indentation: self.indentation(), note: Note::new(word, "") }
     }
 
     /// The script's line as written, by its number.
@@ -369,14 +405,14 @@ impl<'a> Parser<'a> {
             Some(Keyword::OneOf) => Ok(Item::OneOf(self.one_of()?)),
             // trace: D110. `group.handler name` declares a handler group; `group` is read as such only here.
             _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "group")
-                && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
+                && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Dot)))
                 && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if *word == "handler") =>
             {
                 Ok(Item::HandlerGroup(self.handler_group()?))
             }
             // trace: D123. `group.unit name` declares a script's own units.
             _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "group")
-                && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
+                && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Dot)))
                 && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if *word == "unit") =>
             {
                 Ok(Item::UnitGroup(self.unit_group()?))
@@ -413,9 +449,12 @@ impl<'a> Parser<'a> {
             self.expect_keyword(Keyword::Proc)?;
         }
         let path = self.path()?;
-        let name = path.iter().map(|word| word.text).collect::<Vec<_>>().join(".");
+        let name: std::borrow::Cow<'a, str> = match path.as_slice() {
+            [word] => word.text.into(),
+            path => path.iter().map(|word| word.text).collect::<Vec<_>>().join(".").into(),
+        };
         // trace: D102. A procedure's note is `proc` and its name; a member's is its own name.
-        opener.note = if member { name.clone() } else { format!("proc {name}") };
+        opener.note = Note::new(if member { "" } else { "proc " }, name.clone());
         if self.at_symbol(Symbol::OpenRound) {
             // trace: Unio D166
             return Err(Message::refused(self.here(), "a procedure's parameters go in `[ ]`, not `( )`")
@@ -538,7 +577,7 @@ impl<'a> Parser<'a> {
     #[allow(clippy::type_complexity)] // the three things the two lines say, in the order they're written
     fn labels_and_defaults(
         &mut self,
-        opener: &Opener,
+        opener: &Opener<'a>,
     ) -> Result<(Vec<LabelDeclaration<'a>>, bool, Vec<DefaultDeclaration<'a>>), Message> {
         let mut labels = Vec::new();
         let mut defaults = Vec::new();
@@ -613,7 +652,7 @@ impl<'a> Parser<'a> {
             }
         }
         let name = self.expect_name("the group's name")?;
-        opener.note = format!("group.handler {}", name.text);
+        opener.note = Note::new("group.handler ", name.text);
         self.end_line()?;
         let mut handles = Vec::new();
         if self.in_body(&opener)? && matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "handles") {
@@ -662,7 +701,7 @@ impl<'a> Parser<'a> {
         let mut opener = self.opener("::");
         self.expect_symbol(Symbol::Path)?;
         let name = self.expect_name("the handler's name")?;
-        opener.note = format!("::{}", name.text);
+        opener.note = Note::new("::", name.text);
         let parameters = self.parameters(&format!("::{}", name.text), name.text)?;
         self.end_line()?;
         let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
@@ -712,7 +751,7 @@ impl<'a> Parser<'a> {
         self.expect_symbol(Symbol::Dot)?;
         self.advance();
         let name = self.expect_name("the unit group's name")?;
-        opener.note = format!("group.unit {}", name.text);
+        opener.note = Note::new("group.unit ", name.text);
         self.end_line()?;
         let mut members = Vec::new();
         while self.in_body(&opener)? {
@@ -803,7 +842,7 @@ impl<'a> Parser<'a> {
         }
         self.advance();
         let word = self.expect_name("the family's word")?;
-        opener.note = format!("fam.proc {}", word.text);
+        opener.note = Note::new("fam.proc ", word.text);
         self.end_line()?;
         let mut members = Vec::new();
         while self.in_body(&opener)? {
@@ -840,7 +879,7 @@ impl<'a> Parser<'a> {
         let mut opener = self.opener("record");
         self.expect_keyword(Keyword::Record)?;
         let name = self.expect_type_name()?;
-        opener.note = format!("record {}", name.text);
+        opener.note = Note::new("record ", name.text);
         self.end_line()?;
         let mut fields = Vec::new();
         while self.in_body(&opener)? {
@@ -856,7 +895,7 @@ impl<'a> Parser<'a> {
         let mut opener = self.opener("one_of");
         self.expect_keyword(Keyword::OneOf)?;
         let name = self.expect_type_name()?;
-        opener.note = format!("one_of {}", name.text);
+        opener.note = Note::new("one_of ", name.text);
         self.end_line()?;
         let mut cases = Vec::new();
         while self.in_body(&opener)? {
@@ -1132,7 +1171,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A case's body: it runs until the next `case` or the block's `end` (D37).
-    fn case_body(&mut self, case: &Opener, block: &Opener) -> Result<Block<'a>, Message> {
+    fn case_body(&mut self, case: &Opener<'a>, block: &Opener<'a>) -> Result<Block<'a>, Message> {
         self.block_depth += 1;
         if self.block_depth > MAX_BLOCK_DEPTH {
             return Err(Message::not_built_yet(

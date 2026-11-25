@@ -19,6 +19,34 @@ trait Visitor {
     fn expression(&mut self, _expression: &Expression, _handled: bool) {}
 }
 
+/// Two visitors looking at a block in one walk, each seeing everything in the order it would alone.
+struct Both<'v>(&'v mut dyn Visitor, &'v mut dyn Visitor);
+
+impl Visitor for Both<'_> {
+    fn statement(&mut self, statement: &Statement) {
+        self.0.statement(statement);
+        self.1.statement(statement);
+    }
+
+    fn expression(&mut self, expression: &Expression, handled: bool) {
+        self.0.expression(expression, handled);
+        self.1.expression(expression, handled);
+    }
+}
+
+/// Whether a body's failures and pauses can depend on other procedures': only a call, or a change to a part, which
+/// can be one, looks at them (D140).
+#[derive(Default)]
+struct Dependence {
+    found: bool,
+}
+
+impl Visitor for Dependence {
+    fn expression(&mut self, expression: &Expression, _handled: bool) {
+        self.found |= matches!(expression.kind, ExpressionKind::Call { .. } | ExpressionKind::Inside { .. });
+    }
+}
+
 /// Looks at what a way into a part works out: its hidden names' values and its steps' places (D62).
 fn walk_inside(path: &Inside, visitor: &mut dyn Visitor) {
     for (_, value) in &path.lets {
@@ -651,7 +679,8 @@ impl Checker<'_> {
         let candidates = self.open_candidates();
         let why = "a parameter's type is worked out from its own procedure's body; where the body can't decide, the \
                    type is written after the name, as in `name: Type`.";
-        for id in std::mem::take(&mut self.batch) {
+        let mut batch = std::mem::take(&mut self.batch);
+        for &id in &batch {
             let Some(procedure) = self.program.procedure(id) else { continue };
             // Usually every parameter and the result are settled (D81), and there's nothing to say.
             let settled = |types: &super::types::TypeTable, type_id| types.is_settled(type_id);
@@ -725,6 +754,11 @@ impl Checker<'_> {
                 self.program.types.settle_as_error(result);
             }
         }
+        // The emptied list is kept for the next batch, unless one was started meanwhile.
+        batch.clear();
+        if self.batch.is_empty() {
+            self.batch = batch;
+        }
         self.solve_ready();
         for pending in std::mem::take(&mut self.pending) {
             if self.program.types.is_open(pending.subject) {
@@ -767,17 +801,41 @@ impl Checker<'_> {
         }
         let count = self.program.procedures.len();
 
-        // Failures and pauses: repeated until nothing changes, since procedures call each other.
+        // Failures and pauses: repeated until nothing changes, since procedures call each other. The first look also
+        // collects which top-level names each procedure changes itself, and what it calls, which don't change. A body
+        // that calls nothing is settled by the first look, and isn't looked at again.
+        let mut may_write: Vec<BTreeSet<VariableId>> = Vec::with_capacity(count);
+        let mut calls: Vec<BTreeSet<ProcedureId>> = Vec::with_capacity(count);
+        let mut settled = vec![false; count];
+        let mut first = true;
         loop {
             let mut changed = false;
             for index in 0..count {
+                if settled.get(index) == Some(&true) {
+                    continue;
+                }
                 let facts = Facts { program: &self.program, doors: self.doors, failure_ids: &self.failure_ids };
                 let Some(procedure) = self.program.procedures.get(index) else { continue };
                 let mut collector = FailureCollector { facts: &facts, found: BTreeSet::new() };
-                walk_block(&procedure.body, &mut collector);
-                let failures: Vec<FailureId> = collector.found.into_iter().collect();
                 let mut finder = PauseFinder { facts: &facts, found: None };
-                walk_block(&procedure.body, &mut finder);
+                let mut dependence = Dependence::default();
+                if first {
+                    let mut writes = WriteCollector::default();
+                    let mut pauses_and_dependence = Both(&mut finder, &mut dependence);
+                    let mut found = Both(&mut collector, &mut pauses_and_dependence);
+                    walk_block(&procedure.body, &mut Both(&mut found, &mut writes));
+                    may_write.push(writes.writes);
+                    calls.push(writes.calls);
+                } else {
+                    let mut pauses_and_dependence = Both(&mut finder, &mut dependence);
+                    walk_block(&procedure.body, &mut Both(&mut collector, &mut pauses_and_dependence));
+                }
+                if !dependence.found
+                    && let Some(settled) = settled.get_mut(index)
+                {
+                    *settled = true;
+                }
+                let failures: Vec<FailureId> = collector.found.into_iter().collect();
                 let can_pause = finder.found.is_some();
                 if failures != procedure.failures || can_pause != procedure.can_pause {
                     changed = true;
@@ -787,20 +845,13 @@ impl Checker<'_> {
                     }
                 }
             }
+            first = false;
             if !changed {
                 break;
             }
         }
 
         // Which top-level names each procedure may change, itself or through what it calls.
-        let mut may_write: Vec<BTreeSet<VariableId>> = Vec::with_capacity(count);
-        let mut calls: Vec<BTreeSet<ProcedureId>> = Vec::with_capacity(count);
-        for procedure in &self.program.procedures {
-            let mut collector = WriteCollector::default();
-            walk_block(&procedure.body, &mut collector);
-            may_write.push(collector.writes);
-            calls.push(collector.calls);
-        }
         loop {
             let mut changed = false;
             for index in 0..count {
@@ -828,8 +879,7 @@ impl Checker<'_> {
         let mut handling = HandlingChecker { facts: &facts, messages: Vec::new() };
         let mut loops = LoopChecker { facts: &facts, may_write: &may_write, messages: Vec::new() };
         for block in self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level]) {
-            walk_block(block, &mut handling);
-            walk_block(block, &mut loops);
+            walk_block(block, &mut Both(&mut handling, &mut loops));
         }
         messages.append(&mut handling.messages);
         messages.append(&mut loops.messages);

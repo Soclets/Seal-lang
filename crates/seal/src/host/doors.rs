@@ -218,7 +218,7 @@ struct Inner {
     /// The unit groups the host declares for its scripts (D111, D123).
     unit_groups: Vec<HostUnitGroup>,
     /// The scripts compiled against these doors, most recently used last.
-    kept: Mutex<Vec<Loaded>>,
+    kept: Mutex<std::collections::VecDeque<Loaded>>,
     /// What every load reads of the doors, worked out once until they change.
     signatures: OnceLock<Arc<[DoorSignature]>>,
     all_types: OnceLock<Arc<[HostType]>>,
@@ -518,20 +518,21 @@ impl Doors {
         // Looked for from the most recently used, which is the likeliest to be loaded again.
         let position = kept.iter().rposition(|loaded| *loaded.source == *source)?;
         // Moved to the end, as the most recently used, unless it's there already.
-        if position + 1 != kept.len() {
-            let loaded = kept.remove(position);
-            kept.push(loaded);
+        if position + 1 != kept.len()
+            && let Some(loaded) = kept.remove(position)
+        {
+            kept.push_back(loaded);
         }
-        kept.last().cloned()
+        kept.back().cloned()
     }
 
     /// Keeps what a source compiled to, for the next time it's loaded with these doors.
     pub(crate) fn keep(&self, loaded: Loaded) {
         if let Ok(mut kept) = self.inner.kept.lock() {
             if kept.len() >= KEPT_SCRIPTS {
-                kept.remove(0);
+                kept.pop_front();
             }
-            kept.push(loaded);
+            kept.push_back(loaded);
         }
     }
 }

@@ -306,6 +306,49 @@ impl Line {
     }
 }
 
+/// The most room a list may have and still be kept for the next script.
+const SPARE_LIMIT: usize = 4096;
+
+/// The lexer's lists, emptied and kept between scripts read on one thread, so reading one doesn't make and free them
+/// all again (D140). The tokens come back from the parser once it's done with them.
+#[derive(Default)]
+struct SpareRoom {
+    tokens: Vec<Token<'static>>,
+    lines: Vec<Line>,
+    characters: Vec<char>,
+    offsets: Vec<usize>,
+    pending_comments: Vec<(u32, usize)>,
+    open_brackets: Vec<(Symbol, Place)>,
+}
+
+thread_local! {
+    static SPARE_ROOM: std::cell::RefCell<SpareRoom> = std::cell::RefCell::default();
+}
+
+/// A list emptied for keeping, or a new one in its place when it grew too big to keep.
+fn emptied<T>(mut list: Vec<T>) -> Vec<T> {
+    if list.capacity() > SPARE_LIMIT {
+        return Vec::new();
+    }
+    list.clear();
+    list
+}
+
+/// Keeps a script's token and line lists, once read, for the next script on this thread (D140).
+pub(crate) fn keep(tokens: Vec<Token<'_>>, lines: Vec<Line>) {
+    // Emptied, the list holds no borrowed text, so it's made a list for any script's tokens, in the same room: Rust
+    // collects an emptied list's `filter_map` into the room it already has, and `filter` couldn't change its type.
+    #[allow(clippy::unnecessary_filter_map)]
+    let tokens: Vec<Token<'static>> = emptied(tokens).into_iter().filter_map(|_| None).collect();
+    let lines = emptied(lines);
+    SPARE_ROOM.with(|spare| {
+        if let Ok(mut spare) = spare.try_borrow_mut() {
+            spare.tokens = tokens;
+            spare.lines = lines;
+        }
+    });
+}
+
 struct Lexer<'a> {
     lines: Vec<Line>,
     tokens: Vec<Token<'a>>,
@@ -330,52 +373,45 @@ struct Lexer<'a> {
 /// Returns the first thing that can't be read, as a message.
 #[allow(clippy::too_many_lines)] // one pass over a script's lines: each kind of line is dealt with where it's met
 pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
+    let SpareRoom { tokens, lines, mut characters, mut offsets, mut pending_comments, open_brackets } = SPARE_ROOM
+        .with(|spare| spare.try_borrow_mut().map(|mut spare| std::mem::take(&mut *spare)).unwrap_or_default());
     let mut lexer = Lexer {
-        lines: Vec::new(),
-        tokens: Vec::with_capacity(source.len() / 3),
+        lines,
+        tokens,
         line_start: 0,
         current_indentation: 0,
         current_place: Place::default(),
-        open_brackets: Vec::new(),
+        open_brackets,
         type_depth: 0,
         mistakes: Vec::new(),
         documented: None,
     };
-    // Room for every line at once, counted before it's filled.
-    let mut physical: Vec<&str> = Vec::with_capacity(source.bytes().filter(|&byte| byte == b'\n').count() + 1);
-    physical.extend(source.split('\n'));
-    lexer.lines.reserve(physical.len());
-    // A file's last line break ends its last line; it doesn't start an empty one.
-    if physical.last() == Some(&"") {
-        physical.pop();
-    }
-    // trace: D63, Unio D144. A `\r` right before a line break is part of the line break.
-    for line in &mut physical {
-        *line = line.strip_suffix('\r').unwrap_or(line);
-    }
+    lexer.tokens.reserve(source.len() / 3);
+    lexer.lines.reserve(source.len() / 24);
     let mut blank_run = 0u32;
     // The open block comment: its depth, its name and where it starts (D63, D102).
     let mut comment_block: Option<(usize, String, Place)> = None;
     // The first `///` line still waiting for its declaration (D63, Unio D74).
     let mut pending_doc: Option<Place> = None;
     // Comment lines waiting for the line after them, which says how they're indented (D91, Unio D145).
-    let mut pending_comments: Vec<(u32, usize)> = Vec::new();
     let doc_without_declaration = |place: Place| {
         Message::refused(place, "this `///` has no declaration after it")
             .with_why("a `///` comment describes the declaration on the line after it.")
     };
-    // One line's characters, and where each starts in the line's text, in room that every line reuses, enough for
-    // the longest line from the start.
-    let longest = physical.iter().map(|line| line.len()).max().unwrap_or(0);
-    let mut characters: Vec<char> = Vec::with_capacity(longest);
-    let mut offsets: Vec<usize> = Vec::with_capacity(longest + 1);
-    for (index, &text) in physical.iter().enumerate() {
+    // One line's characters, and where each starts in the line's text, in room that every line reuses.
+    for (index, text) in physical_lines(source).enumerate() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
         characters.clear();
-        characters.extend(text.chars());
         offsets.clear();
-        offsets.extend(text.char_indices().map(|(offset, _)| offset));
-        offsets.push(text.len());
+        // A line of plain ASCII, the usual kind, has a character for each byte, each where its byte is, so it needs
+        // no list of where characters start (D140).
+        if text.is_ascii() {
+            characters.extend(text.bytes().map(char::from));
+        } else {
+            characters.extend(text.chars());
+            offsets.extend(text.char_indices().map(|(offset, _)| offset));
+            offsets.push(text.len());
+        }
         let leading = characters.iter().take_while(|&&character| character == ' ').count();
         if let Some((depth, name, _)) = &comment_block {
             // Everything inside a block comment is ignored; an `end` at its own depth closes it, and the note after
@@ -408,7 +444,9 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             continue;
         }
         let width = u32::try_from(characters.len()).unwrap_or(u32::MAX);
-        if let Some(position) = characters.iter().position(|&character| character == '\r') {
+        if text.as_bytes().contains(&b'\r')
+            && let Some(position) = characters.iter().position(|&character| character == '\r')
+        {
             return Err(Message::not_designed_yet(
                 Place::new(number, column_of(position), 1),
                 "a `\\r` that isn't right before a line break",
@@ -428,7 +466,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             }
             if blank_run > 1 {
                 // trace: D63, Unio D97, D101
-                let extra = physical.get(index..).unwrap_or(&[]).iter().take_while(|line| line.is_empty()).count();
+                let extra = physical_lines(source).skip(index).take_while(|line| line.is_empty()).count();
                 let lines = if extra == 1 { "line" } else { "lines" };
                 return Err(Message::refused(
                     Place::new(number, 1, 1),
@@ -483,7 +521,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             if continued {
                 // A comment line inside a statement keeps the statement's own spacing mistakes waiting.
             } else {
-                check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+                check_spacing(&[], &std::mem::take(&mut lexer.mistakes), source)?;
             }
             pending_comments.push((number, leading));
             continue;
@@ -494,7 +532,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
                 return Err(doc_without_declaration(doc));
             }
             check_comment_indentation(&mut pending_comments, leading, rest)?;
-            check_spacing(&[], &std::mem::take(&mut lexer.mistakes), &physical)?;
+            check_spacing(&[], &std::mem::take(&mut lexer.mistakes), source)?;
             comment_block = Some((leading, name, Place::new(number, column_of(leading), 7)));
             continue;
         }
@@ -520,7 +558,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
         }
         lexer.line(number, (&characters, text, &offsets), leading, continued)?;
         if lexer.open_brackets.is_empty() {
-            lexer.finish_line(&physical)?;
+            lexer.finish_line(source)?;
         }
     }
     if let Some((_, _, place)) = comment_block {
@@ -533,7 +571,26 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
     if let Some((symbol, place)) = lexer.open_brackets.last() {
         return Err(Message::refused(*place, format!("this `{}` is never closed", symbol.text())));
     }
+    SPARE_ROOM.with(|spare| {
+        if let Ok(mut spare) = spare.try_borrow_mut() {
+            spare.characters = emptied(characters);
+            spare.offsets = emptied(offsets);
+            spare.pending_comments = emptied(pending_comments);
+            spare.open_brackets = emptied(lexer.open_brackets);
+        }
+    });
     Ok(Lexed { tokens: lexer.tokens, lines: lexer.lines })
+}
+
+/// A script's lines, as written: its last line break ends its last line rather than starting an empty one, and a `\r`
+/// right before a line break is part of the line break (D63, Unio D144).
+fn physical_lines(source: &str) -> impl Iterator<Item = &str> {
+    let body = source.strip_suffix('\n').unwrap_or(source);
+    (!source.is_empty())
+        .then(|| body.split('\n'))
+        .into_iter()
+        .flatten()
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
 }
 
 /// Checks the comment lines waiting for this one: each is indented like it, or one level in when it's an `end`, an
@@ -585,9 +642,9 @@ fn column_of(index: usize) -> u32 {
 }
 
 impl<'a> Lexer<'a> {
-    fn finish_line(&mut self, physical: &[&str]) -> Result<(), Message> {
+    fn finish_line(&mut self, source: &str) -> Result<(), Message> {
         let mistakes = std::mem::take(&mut self.mistakes);
-        check_spacing(self.current(), &mistakes, physical)?;
+        check_spacing(self.current(), &mistakes, source)?;
         self.type_depth = 0;
         let documented = self.documented.take();
         let (start, end) =
@@ -642,8 +699,12 @@ impl<'a> Lexer<'a> {
         start: usize,
         continued: bool,
     ) -> Result<(), Message> {
-        // The text from one character to another, borrowed from the script (D140).
+        // The text from one character to another, borrowed from the script (D140). With no list of where characters
+        // start, the line is plain ASCII, and each character is where its byte is.
         let slice = |from: usize, to: usize| -> &'a str {
+            if offsets.is_empty() {
+                return text.get(from..to).unwrap_or("");
+            }
             match (offsets.get(from), offsets.get(to)) {
                 (Some(&from), Some(&to)) => text.get(from..to).unwrap_or(""),
                 _ => "",
@@ -926,11 +987,14 @@ pub fn check_name_spelling(word: &str, place: Place) -> Result<(), Message> {
     // trace: D24
     // The usual name passes in one look at each letter; only a wrong one is looked at again, to say what's wrong.
     let bytes = word.as_bytes();
-    if bytes.first().is_some_and(u8::is_ascii_lowercase)
-        && bytes.last() != Some(&b'_')
-        && bytes.iter().all(|&byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-        && !bytes.windows(2).any(|pair| pair == b"__")
-    {
+    let mut fine = bytes.first().is_some_and(u8::is_ascii_lowercase) && bytes.last() != Some(&b'_');
+    let mut after_underscore = false;
+    for &byte in bytes {
+        let underscore = byte == b'_';
+        fine &= byte.is_ascii_lowercase() || byte.is_ascii_digit() || (underscore && !after_underscore);
+        after_underscore = underscore;
+    }
+    if fine {
         return Ok(());
     }
     let why = "a name is lowercase letters, digits, and `_` between words, starting with a letter.";
@@ -1026,7 +1090,7 @@ pub fn cook_text(written: &str) -> String {
 ///
 /// Spacing is fixed, as Unio's table has it (D63, Unio D98). Every mistake on a line makes one message, with a `^`
 /// under each gap and the whole corrected line as the fix (Unio D100).
-fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) -> Result<(), Message> {
+fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Result<(), Message> {
     let mut mistakes = if found.is_empty() { Vec::new() } else { found.to_vec() };
     let header = header_brackets(tokens);
     for (index, pair) in tokens.windows(2).enumerate() {
@@ -1075,7 +1139,8 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
     let Some(line) = mistakes.iter().map(|mistake| mistake.line).min() else { return Ok(()) };
     mistakes.retain(|mistake| mistake.line == line);
     mistakes.sort_by_key(|mistake| mistake.column);
-    let mut corrected: Vec<char> = physical.get(line.saturating_sub(1) as usize).unwrap_or(&"").chars().collect();
+    let written = physical_lines(source).nth(line.saturating_sub(1) as usize).unwrap_or("");
+    let mut corrected: Vec<char> = written.chars().collect();
     // The gaps are put right from the line's end backwards, so the places of the earlier ones stay true.
     for mistake in mistakes.iter().rev() {
         let start = (mistake.column.saturating_sub(1) as usize).min(corrected.len());
@@ -1110,7 +1175,7 @@ fn header_brackets(tokens: &[Token]) -> Option<(usize, usize)> {
     {
         index += 2;
     }
-    if tokens.get(index).map(|token| &token.kind) != Some(&TokenKind::Symbol(Symbol::OpenSquare)) {
+    if !matches!(tokens.get(index).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::OpenSquare))) {
         return None;
     }
     let open = index;
@@ -1136,7 +1201,7 @@ fn header_brackets(tokens: &[Token]) -> Option<(usize, usize)> {
 fn ends_with_rounding(tokens: &[Token]) -> bool {
     let [.., word, dot, rounding] = tokens else { return false };
     matches!(word.kind, TokenKind::Keyword(Keyword::Div | Keyword::Rem))
-        && dot.kind == TokenKind::Symbol(Symbol::Dot)
+        && matches!(dot.kind, TokenKind::Symbol(Symbol::Dot))
         && matches!(&rounding.kind, TokenKind::Name(name) if *name == "floor" || *name == "trunc")
 }
 
@@ -1151,7 +1216,7 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
         return 0;
     }
     // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
-    if *after == TokenKind::Symbol(Symbol::Path) {
+    if matches!(after, TokenKind::Symbol(Symbol::Path)) {
         return u32::from(!matches!(before, TokenKind::Name(name) if *name != "include"));
     }
     let touches_brackets = matches!(

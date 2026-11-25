@@ -1407,10 +1407,13 @@ pub fn run(
                     return Err(broken("a call to a door that isn't there", pc));
                 };
                 let first = usize::from(call_base) + 1;
+                let count = door_site.argument_count as usize;
                 if !door_site.plain {
                     // Only arguments that are more than their bits are copied out as values (D15).
                     door_arguments.clear();
-                    for (register, crossing) in (call_base + 1..).zip(&door_site.arguments) {
+                    let start = door_site.first_argument as usize;
+                    let crossings = compiled.door_arguments.get(start..start + count).unwrap_or(&[]);
+                    for (register, crossing) in (call_base + 1..).zip(crossings) {
                         let slot = get!(register);
                         door_arguments.push(match plain_value(slot, crossing) {
                             Some(_) => Value::Nothing,
@@ -1418,7 +1421,7 @@ pub fn run(
                         });
                     }
                 }
-                let Some(bits) = registers.get(first..first + door_site.arguments.len()) else {
+                let Some(bits) = registers.get(first..first + count) else {
                     return Err(broken("a door's arguments outside their frame", pc));
                 };
                 match doors.call_door(door_site.door, bits, door_arguments) {

@@ -259,7 +259,7 @@ pub struct OneOfType {
     pub cases: Vec<CaseType>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TypeTable {
     types: Vec<Type>,
     interned: HashMap<Type, TypeId>,
@@ -269,6 +269,21 @@ pub struct TypeTable {
     pub one_ofs: Vec<OneOfType>,
     /// Seal's unit groups, then the host's and the script's own (D113, D123), shared until one is added.
     pub unit_groups: std::sync::Arc<Vec<UnitGroupType>>,
+}
+
+impl Default for TypeTable {
+    /// An empty table, sharing one empty list of unit groups, so making one makes nothing (D140).
+    fn default() -> Self {
+        static NO_UNIT_GROUPS: std::sync::OnceLock<std::sync::Arc<Vec<UnitGroupType>>> = std::sync::OnceLock::new();
+        TypeTable {
+            types: Vec::new(),
+            interned: HashMap::new(),
+            bindings: Vec::new(),
+            records: Vec::new(),
+            one_ofs: Vec::new(),
+            unit_groups: NO_UNIT_GROUPS.get_or_init(std::sync::Arc::default).clone(),
+        }
+    }
 }
 
 impl TypeTable {
