@@ -3427,3 +3427,28 @@ to settle a clash?", the owner chose: "yea"
 **Tankun's words.** "Why those names?", "No, i meant the group name", "What about` dist`?", then, asked "Should Seal
 start with `time`, `angle` and `distance` as its built-in unit groups, with `frames` and `tiles` converting only
 through rates, and the angle built-ins taking angle units in place of `.degrees`?", the owner chose: "yea"
+
+## D114. `lerp(a, to: b, by: t)`
+
+2026-11-25.
+
+**Chosen.** `lerp(a, to: b, by: t)` gives the `Float` part of the way from `a` to `b`: `a` when `t` is `0.0`, `b` when
+it's `1.0`, and past either end when `t` is outside 0 to 1, as in every engine, with `clamp` for when that isn't
+wanted.
+
+```
+x = lerp(x, to: target_x, by: ~0.1)       // 10% closer each frame
+```
+
+- **`a` and `b` are `Float`s of one unit group, or both plain,** and the result has their unit (D111); `t` is a plain
+  `Float`.
+- **It's correctly rounded** and the same on every machine (D50).
+- The name is short for "linear interpolation", the word Unity, Godot, Roblox and most game tutorials use.
+
+**Weighed.**
+- A plainer name, as `blend` or GLSL's `mix`. `lerp` is the word people search for.
+
+**Why this won.** After `clamp`, it's the maths call games use most: smooth cameras, fades and sliding bars.
+
+**Tankun's words.** "`0.1` what" (the design session's first example wrote `0.1` without its `~`), then, asked "Should
+Seal have `lerp(a, to: b, by: t)`?", the owner chose: "yea"

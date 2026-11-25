@@ -14,6 +14,7 @@ text, asking, files, time, sound and randomness aren't built in: they're doors, 
 | `sin(x)`, `cos(x)`, `tan(x)` | an angle's sine, cosine and tangent; the angle in any `angle` unit, or a plain `Float` in radians | D109, D113 |
 | `asin(x)`, `acos(x)`, `atan2(y:, x:)` | the angle, in `rads`, for a sine, a cosine, or a point; `asin` and `acos` stop outside -1 to 1 | D109, D113 |
 | `pi` | the `Float` nearest π | D109 |
+| `lerp(a, to: b, by: t)` | the `Float` part of the way from `a` to `b`: `a` at `t` 0, `b` at `t` 1, past either end outside 0 to 1; `a` and `b` in one unit group | D114 |
 | lists' and arrays' methods and facts | `.add`, `.remove`, `.len` | D22, Unio D77 to D80 |
 
 Unio's standard, chapter 9, has `range` and `sqrt` in full.
