@@ -53,3 +53,7 @@ goblin_script.call("on_hit", (10,))?;
   benchmark in every kind, six things reported with correctness first, D57's goals judged Normal against Normal, and a
   Purpose benchmark for the cost of checks.
   Binary-trees joins the benchmarks now that a type can hold itself (D72).
+
+- **An oracle,** if Seal ever has one, not soon: proven to match the standard entirely, trusting only the third-party
+  tools it's built on, such as Rocq or SPARK at Platinum (D138). Until then, the shared parts are checked against
+  Ralph (D19).

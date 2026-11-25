@@ -4143,3 +4143,26 @@ actually", "Nope" (to looking at it again before the first public release), then
 a compatibility promise, so any version may break scripts and hosts, with no plan to look at it again?", the owner
 chose: "yea. Btw, when we do the Seal oracle (which is definitely not soon, if ever). It would proven, to match the
 spec, entirely (except the 3rd parties we rely on, like SPARK Platinum, or Rocq)"
+
+## D138. A Seal oracle, if there's ever one, is proven to match the standard entirely
+
+2026-11-25.
+
+**Chosen.** Not soon, if ever. If Seal gets an oracle of its own, a reference implementation that decides what every
+script means, as Ralph does for Unio, it's proven to match Seal's standard entirely, every part of it, with nothing
+trusted except the third-party tools it's built on, such as Rocq, or SPARK at its Platinum level (proofs that the code
+does exactly what its specification says).
+
+- **The standard is turned into a formal specification,** written in the prover's own language, and the oracle is
+  proven against that. Whether the formal specification says what the standard says is the one step no proof can
+  check, so it's reviewed by the design session, as Ralph's theorems' statements are (Unio Building rule 14).
+- **Until then, D19 stands:** what Seal shares with Unio is checked against Ralph.
+
+**Weighed.** Nothing yet; it was stated, not proposed.
+
+**Why this won.** Tankun's choice: an oracle exists to be trusted, so all of it is proven, not only its key parts, as
+Ralph's are.
+
+**Tankun's words.** Unasked, in the answer quoted whole in D137: "yea. Btw, when we do the Seal oracle (which is
+definitely not soon, if ever). It would proven, to match the spec, entirely (except the 3rd parties we rely on, like
+SPARK Platinum, or Rocq)"
