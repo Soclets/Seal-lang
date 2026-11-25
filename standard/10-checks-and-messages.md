@@ -7,7 +7,7 @@
 - **While running:** `Whole` overflow, a bad list position, division by zero, a `Float` becoming infinite or NaN, and
   the limits. A failed check stops the script at its exact line (D14, D17, D18).
 - **Floats are checked after every operation,** so every failed float check names its exact line (D18).
-- **No check is ever dropped for speed.** One is removed only where it's proved unable to fail, as for a `for each`
+- **No check is ever dropped for speed.** One is removed only where it's proved unable to fail, as for a `for_each`
   position or maths on plain numbers (D17).
 
 ## Build modes

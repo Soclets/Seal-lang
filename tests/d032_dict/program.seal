@@ -5,7 +5,7 @@ potions = stock[key: "potion"] ?? 0
 axes = stock[key: "axe"] ?? 0
 show_msg("{potions} potions, {axes} axes")
 stock.remove(key: "sword") ?? ignore
-for each count at key item in stock
+for_each count at key item in stock
     show_msg("{item}: {count}")
 end
 if stock.has(key: "sword")

@@ -35,7 +35,7 @@ examples in Seal's syntax (README).
   side of an operator included, so `gold + 0.5` and `gold > 0.5` just work with `gold` a `Decimal`; likewise a whole
   number too big for a `Whole` beside a `HugeWhole` (D116, D119).
 - **Text counts graphemes by default,** what a person sees as one character: `.len` counts them, and `[pos:]`,
-  `[offset:]` and `for each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
+  `[offset:]` and `for_each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
   UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).
 - **`.split(by: t)` gives a `List<Text>`,** keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
 - **Splitting by empty text is refused while loading** wherever the empty text can be seen, as `split(by: "")`; one
@@ -205,10 +205,10 @@ potions = stock[key: "potion"] ?? 0
 - **A missing key is the failure `missing`,** handled with `??` or `otherwise` (D32, Unio D23).
 - **It keeps the order keys were added in,** and is copied as a whole, a Rust `HashMap` at the doors (D15, D32).
 
-`for each` goes through a `Dict`'s values in the order their keys were added, and `at key name` gives each key (D33):
+`for_each` goes through a `Dict`'s values in the order their keys were added, and `at key name` gives each key (D33):
 
 ```
-for each count at key item in stock
+for_each count at key item in stock
     show_msg("{item}: {count}")
 end
 ```

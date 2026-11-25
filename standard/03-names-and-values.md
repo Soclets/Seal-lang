@@ -21,8 +21,8 @@ where `name` is the name and `value` its value. `mut`, `unused` and `=` are writ
   meant: a typo such as `tires = tries + 1` is caught this way (D2, Unio D54).
 - **`unused` marks a name that's never read on purpose,** so it isn't refused, and reading it later is refused.
   Throwing a value away is the same: give it a name and mark it `unused` (D3).
-- **The same holds for parameters and `for each` names,** as `proc on_hit[unused amount: Whole]` and `for each unused round
-  in …`, and to a `for each`'s `at` name, as `at key unused item` (D86); a `case` instead takes out only the values it
+- **The same holds for parameters and `for_each` names,** as `proc on_hit[unused amount: Whole]` and `for_each unused round
+  in …`, and to a `for_each`'s `at` name, as `at key unused item` (D86); a `case` instead takes out only the values it
   reads (D61).
 
 ```
@@ -54,7 +54,7 @@ beyond plain English, as in `café`, are refused in any name for now (D93).
   language server only says what kind each piece of code is, for any theme, and a host shows Seal's messages however
   it likes (D7, D78).
 - **A name can't be made where its spelling already means something,** a top-level name, another name in use, a
-  procedure, a door or a built-in, whether as a name, a parameter, a `for each` name or a `case` value: there's no
+  procedure, a door or a built-in, whether as a name, a parameter, a `for_each` name or a `case` value: there's no
   shadowing (D71). A procedure can't take a built-in's or a door's name either (D93).
 - **The host's doors and their narrowings follow the same spelling,** checked when the host opens them (D24).
 

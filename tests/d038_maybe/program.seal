@@ -1,5 +1,5 @@
 proc first_above[scores: List<Whole>, limit: Whole] -> Maybe<Whole>
-    for each score in scores
+    for_each score in scores
         if score > limit
             ret Maybe.some[value: score]
         end

@@ -35,13 +35,15 @@ end
 `while` runs its body as long as its condition holds, and `break` leaves the loop (D22, Unio D19, D32). `==` and `!=`
 between two `Float`s are refused in a `while` condition (Unio D184).
 
-## `for each`
+## `for_each`
+
+`for_each` is one keyword, its two words joined as `one_of`'s and `at_least`'s are (D146).
 
 ```
-for each name at pos i in names
+for_each name at pos i in names
     show_msg("{i}. {name}")
 end
-for each round in range[from: 1, to: 3]
+for_each round in range[from: 1, to: 3]
     show_msg("Round {round}!")
 end
 ```
@@ -49,7 +51,7 @@ end
 As in Unio (D22, Unio D171 to D174):
 - **It goes through a `List`, an `Array` or a `range[…]`,** in order, or a `Dict`'s values, with `at key name` giving
   each key (D33); `at pos` and `at offset` on a `Dict` are refused, with `at key` as the fix (D105).
-- **The item's name is new for each pass,** made by the `for each` line, and ends with the loop.
+- **The item's name is new for each pass,** made by the `for_each` line, and ends with the loop.
 - **`at pos i` or `at offset i`** gives the position too, counting from 1 or from 0.
 - **What it goes through can't change inside it,** nor through a call that can change it, and a loop going through a
   top-level name can't pause; copying it into a name of its own first is the fix (D69).
@@ -57,6 +59,6 @@ As in Unio (D22, Unio D171 to D174):
 
 `range` is in chapter 8. Unio's standard, chapter 5, has the rules in full.
 
-`for each` goes through a text by graphemes, what a person sees as one character (D65, D66).
+`for_each` goes through a text by graphemes, what a person sees as one character (D65, D66).
 
 **Not decided:** leaving an outer loop; other loops.

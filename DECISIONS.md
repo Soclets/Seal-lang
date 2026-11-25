@@ -4401,3 +4401,35 @@ often.
 `incl` and `ret`, no `instead` abbrev, though (idk what to say)", "Let me see that synt", a question about the `ret` in a pasted example, "Wait, where are
 the `!` stuff? It has `otherwise`", then, asked "Should `return` become `ret` and `include` become `incl`, shortening a
 keyword only where a common short form already exists?", the owner chose: "yea"
+
+## D146. `for each` is written `for_each`
+
+2026-11-25.
+
+**Chosen.** A keyword made of several words is one keyword, so its words are joined with `_`, as `one_of`, `at_least`
+and `at_most` already are (D36). `for each`, the one written with a space, becomes `for_each`:
+
+```
+for_each enemy in enemies
+    enemy.hp = enemy.hp - 1
+end
+for_each count at key item in stock
+    show_msg("{item}: {count}")
+end
+```
+
+Nothing else about the loop changes. The Unio translator (D19) writes `for each`.
+
+**Weighed.**
+- Spaces for every keyword of several words, as `one of`, `at least` and `at most`, which the design session briefly
+  recommended, since names use `_` and a joined keyword looks like a name. Tankun: a space makes it read as two
+  keywords side by side, as `let mut` is `let` changed by `mut`, while `one_of` and `for_each` are each one thing.
+  Code colouring tells keywords from names anyway (D78).
+- `for each` as it was, from Unio D171, the one multi-word keyword written differently from the rest.
+
+**Why this won.** One rule, and the right one: words that make up a single keyword are written as one.
+
+**Tankun's words.** "Should it be `for_each` or `for each`?", "`one_of`", "Here's the thing. Why not `one of`? The `of`
+is not really another thing, it's the same shit", "What? Why?", "It's not the same fucking thing, though. It's not
+like `let mut`", "Bro, what is going onnn", "It's one keyword, right? It doesn't modify like `let mut`?", "Wait, `in`
+has two meanings?", then, asked "Should `for each` become `for_each`?", the owner chose: "yea"

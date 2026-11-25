@@ -49,7 +49,7 @@ where `opening line` is the block's first line and `body` its statements.
 
 ```
 proc on_hit[amount: Whole]
-    for each enemy in enemies
+    for_each enemy in enemies
         if amount > enemy.hp
             show_msg("{enemy.name} falls")
         else

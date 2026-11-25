@@ -33,6 +33,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `instead 0;` in a `case` | `use 0` | D144 |
 | `return x;` | `ret x` | D145 |
 | `include family.handler;` | `incl ::handler` | D110, D145 |
+| `for each $x in $xs:` | `for_each x in xs` | D146 |
 | `show_msg`, `ask`, `random` | doors, if the host opens them, under the names it chooses | D11 |
 | `.unio` | `.seal` | D25 |
 
@@ -42,7 +43,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 2. [Lines and blocks](02-lines-and-blocks.md): lines, `end`, indentation, files
 3. [Names and values](03-names-and-values.md): making and changing names, `mut`, `unused`, names' spelling, values
 4. [Procedures](04-procedures.md): definitions, families, worked-out types, calls, labels, defaults and slides
-5. [Control flow](05-control-flow.md): `if`, `elif`, comparisons, logic, `while`, `for each` and `break`
+5. [Control flow](05-control-flow.md): `if`, `elif`, comparisons, logic, `while`, `for_each` and `break`
 6. [Types](06-types.md): `Whole`, `Float`, `Bool`, `Text`, lists and arrays, records, dictionaries, options and `match`, `Maybe`, filling in text, converting
 7. [Failures](07-failures.md): `?`, `??` and `otherwise`
 8. [Built in](08-built-in.md): what Seal provides itself
