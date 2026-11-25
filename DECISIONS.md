@@ -3191,3 +3191,26 @@ overflow is bad", "I meant those aswell", "Idk about that, I mean `len.max` is a
 `hp.clamp`?", "Does `from` and `to` make sensE?", "Why, again", "Why low & high", then, asked "Should Seal have ranged
 types with `min:`/`max:` and `min.clamp:`/`max.clamp:`, `clamp(x, low:, high:)`, and `abs`, `min` and `max`?", the
 owner chose: "yea"
+
+## D108. `**` raises to a power
+
+2026-11-25.
+
+**Chosen.** `a ** b` raises `a` to the power `b`, binding tighter than `*` and `/`, as in maths, so `2 * x ** 2` is
+`2 * (x ** 2)`. It's spaced as every operator is (D63).
+- **`Whole ** Whole`** gives a `Whole`, stopping with the overflow check when it's too big; a negative power of a
+  `Whole` is refused, since `2 ** -1` isn't whole.
+- **`Float ** Float`** gives a `Float`, correctly rounded and checked as every float operation is (D18, D50).
+- **The two don't mix,** as everywhere (Unio D162): `be.Float(n) ** 0.5`.
+
+Its wordings come with a later batch.
+
+**Weighed.**
+- `^`, as school maths, calculators, Lua and Luau write it, which the design session recommended for Seal's users
+  coming from Lua. In C, JavaScript, Python and Rust, `^` is something else (XOR).
+- `pow(a, b)`, a procedure, as in C.
+
+**Why this won.** Tankun's choice: `**` explains itself, and with Seal's spacing it's always written `x ** 2`.
+
+**Tankun's words.** "Why not just `**`? We're not gonna allow `x**`, so it wouldn't look like a stroke", "It's self
+explainatory, though?", then, asked "Should Seal write powers with `^`?", the owner chose: "No, use `**`"

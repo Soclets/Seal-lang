@@ -32,6 +32,9 @@ examples in Seal's syntax (README).
   the braces form as the fix.
 - **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (D22, Unio D27, D70, D71, D185). Floats
   are checked after every operation (D18).
+- **`**` raises to a power,** binding tighter than `*`, so `2 * x ** 2` is `2 * (x ** 2)` (D108). `Whole ** Whole`
+  gives a `Whole`, stopping with the overflow check when it's too big, and a negative power of a `Whole` is refused;
+  `Float ** Float` gives a `Float`, correctly rounded (D50). The two don't mix.
 - **Lists:** `[ ]` literals, `pos:` and `offset:`, `.add`, `.remove`, `.len`, `len.max` with its failure `full`, and
   `[all: value]` (D22, Unio D75 to D80, D167 to D169).
 - **A list's `len.max` is part of its type:** moving a list into a limit at least as big, or none, is allowed, and into
