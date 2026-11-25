@@ -265,8 +265,11 @@ impl Translator<'_> {
                 let Some(found) = self.program.procedure(*procedure) else {
                     return not_shared("a procedure that isn't there");
                 };
-                let labelled =
-                    found.labels.iter().zip(arguments).map(|(label, argument)| (label.clone(), argument)).collect();
+                // A procedure whose parameters have no labels has an empty list of them.
+                let labelled = (0..)
+                    .zip(arguments)
+                    .map(|(position, argument)| (found.labels.get(position).cloned().flatten(), argument))
+                    .collect();
                 Some((found.name.clone(), labelled))
             }
             ExpressionKind::DoorCall { door, arguments } => {

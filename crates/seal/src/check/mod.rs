@@ -232,7 +232,7 @@ pub fn check(
         record_names: HashMap::new(),
         one_of_names: HashMap::new(),
         // Room for Seal's own failures and a few of the script's, so they don't grow one at a time.
-        failure_ids: HashMap::with_capacity(12),
+        failure_ids: HashMap::new(),
         globals: HashMap::new(),
         made: std::mem::take(&mut spare.made),
         context: Context::default(),
@@ -265,6 +265,24 @@ pub fn check(
 
 /// The failures Seal's own operations give (D32, D73, D101, D126, Unio D95).
 const BUILT_IN_FAILURES: [&str; 6] = ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"];
+
+/// How many failures' names are found by looking down their list, before a table is made for finding them.
+const FEW_FAILURES: usize = 32;
+
+/// A failure's number by its name: while there are few, by looking down their list, which is quicker than a table;
+/// past that, through the table, so a script with many can't make finding one slow (D140).
+fn find_failure(
+    names: &[std::borrow::Cow<'static, str>],
+    table: &HashMap<std::borrow::Cow<'static, str>, FailureId>,
+    name: &str,
+) -> Option<FailureId> {
+    if names.len() <= FEW_FAILURES {
+        let position = names.iter().position(|known| known == name)?;
+        u16::try_from(position + 1).ok().map(FailureId)
+    } else {
+        table.get(name).copied()
+    }
+}
 
 /// The most entries a table may have room for and still be kept for the next script, and the most scope tables kept.
 const SPARE_LIMIT: usize = 64;
@@ -989,7 +1007,7 @@ impl<'a> Checker<'a> {
     }
 
     fn failure(&mut self, name: &str) -> FailureId {
-        if let Some(&id) = self.failure_ids.get(name) {
+        if let Some(id) = find_failure(&self.program.failure_names, &self.failure_ids, name) {
             return id;
         }
         // Seal's own failures' names are kept without copying them; a script's own are copied once.
@@ -997,9 +1015,16 @@ impl<'a> Checker<'a> {
             Some(known) => std::borrow::Cow::Borrowed(known),
             None => std::borrow::Cow::Owned(name.to_owned()),
         };
-        self.program.failure_names.push(kept.clone());
-        let id = FailureId(u16::try_from(self.program.failure_names.len()).unwrap_or(u16::MAX));
-        self.failure_ids.insert(kept, id);
+        self.program.failure_names.push(kept);
+        let count = self.program.failure_names.len();
+        let id = FailureId(u16::try_from(count).unwrap_or(u16::MAX));
+        // Past a few names, they're found through a table, which then holds them all.
+        if count > FEW_FAILURES {
+            let from = if self.failure_ids.is_empty() { 0 } else { count - 1 };
+            for (number, known) in (1u16..).zip(&self.program.failure_names).skip(from) {
+                self.failure_ids.insert(known.clone(), FailureId(number));
+            }
+        }
         id
     }
 
@@ -1128,7 +1153,9 @@ impl<'a> Checker<'a> {
             Some(written) => self.written_type(written),
             None => NOTHING,
         };
-        let mut labels: Vec<Option<String>> = vec![None; parameters.len()];
+        // A procedure with no labels, or no defaults, has an empty list of them, which makes nothing (D140).
+        let mut labels: Vec<Option<String>> =
+            if procedure.labels.is_empty() { Vec::new() } else { vec![None; parameters.len()] };
         for declaration in &procedure.labels {
             let position =
                 procedure.parameters.iter().position(|parameter| parameter.name.text == declaration.parameter.text);
@@ -1155,7 +1182,8 @@ impl<'a> Checker<'a> {
                 ),
             }
         }
-        let mut defaults: Vec<Option<Expression>> = vec![None; parameters.len()];
+        let mut defaults: Vec<Option<Expression>> =
+            if procedure.defaults.is_empty() { Vec::new() } else { vec![None; parameters.len()] };
         for declaration in &procedure.defaults {
             let position = labels.iter().position(|label| label.as_deref() == Some(declaration.label.text));
             let Some(position) = position else {

@@ -296,7 +296,8 @@ impl TypeTable {
 
     fn base() -> Self {
         let mut table = TypeTable::default();
-        for basic in [
+        // In the order of their fixed numbers, `ERROR` first; they're found by those, never through the table.
+        table.types.extend([
             Type::Error,
             Type::Nothing,
             Type::Whole,
@@ -306,9 +307,7 @@ impl TypeTable {
             Type::HugeWhole,
             Type::Decimal,
             Type::HugeDecimal,
-        ] {
-            table.intern(basic);
-        }
+        ]);
         table.unit_groups = std::sync::Arc::new(seal_unit_groups());
         table
     }
@@ -319,6 +318,22 @@ impl TypeTable {
     }
 
     pub fn intern(&mut self, kind: Type) -> TypeId {
+        // Seal's own plain types have fixed numbers, so they're found without looking in the table (D140).
+        let fixed = match kind {
+            Type::Error => Some(ERROR),
+            Type::Nothing => Some(NOTHING),
+            Type::Whole => Some(WHOLE),
+            Type::Float => Some(FLOAT),
+            Type::Bool => Some(BOOL),
+            Type::Text => Some(TEXT),
+            Type::HugeWhole => Some(HUGE_WHOLE),
+            Type::Decimal => Some(DECIMAL),
+            Type::HugeDecimal => Some(HUGE_DECIMAL),
+            _ => None,
+        };
+        if let Some(id) = fixed {
+            return id;
+        }
         if let Some(&id) = self.interned.get(&kind) {
             return id;
         }
@@ -332,7 +347,10 @@ impl TypeTable {
     pub fn fresh(&mut self) -> TypeId {
         let variable = u32::try_from(self.bindings.len()).unwrap_or(u32::MAX);
         self.bindings.push(None);
-        self.intern(Type::Variable(variable))
+        // A type to be worked out is a new one every time, so it's never looked for, and isn't put in the table.
+        let id = TypeId(u32::try_from(self.types.len()).unwrap_or(u32::MAX));
+        self.types.push(Type::Variable(variable));
+        id
     }
 
     pub fn list(&mut self, item: TypeId) -> TypeId {

@@ -208,7 +208,7 @@ struct Facts<'p> {
 
 impl Facts<'_> {
     fn known_failure(&self, name: &str) -> Option<FailureId> {
-        self.failure_ids.get(name).copied()
+        super::find_failure(&self.program.failure_names, self.failure_ids, name)
     }
 
     /// The failures an expression can give, itself, before any handling.

@@ -58,11 +58,11 @@ pub struct Procedure {
     /// The full name, narrowings included, as `spawn.boss`.
     pub name: String,
     pub parameters: Vec<VariableId>,
-    /// Each parameter's label, when it has one (D41).
+    /// Each parameter's label, when it has one (D41); empty when none has one.
     pub labels: Vec<Option<String>>,
     /// Written `labels.any_order`: labelled arguments go in any order (D87).
     pub labels_any_order: bool,
-    /// Each parameter's default, when it has one (D42).
+    /// Each parameter's default, when it has one (D42); empty when none has one.
     pub defaults: Vec<Option<Expression>>,
     pub result: TypeId,
     /// Whether the procedure can fail at all: its body has a `fail` or a `?` (D44).

@@ -291,8 +291,10 @@ impl Script {
         let _ = name;
         let tree = parse(source).map_err(|message| vec![message])?;
         let signatures = doors.shared_signatures();
-        let program = check(&tree, &signatures, &doors.shared_types(), doors.unit_groups())?;
-        compile_taking(program, &signatures, plain).map_err(|message| vec![message])
+        let program = check(&tree, &signatures, &doors.shared_types(), doors.unit_groups());
+        // The tree's lists are kept for the next script loaded on this thread (D140).
+        crate::syntax::spare::recycle(tree);
+        compile_taking(program?, &signatures, plain).map_err(|message| vec![message])
     }
 
     /// Sets the script's memory up and runs its top level (D4).

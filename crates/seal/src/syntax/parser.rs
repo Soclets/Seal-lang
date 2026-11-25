@@ -4,6 +4,7 @@
 //! line's depth, which may carry a checked note naming its block (D20, D102).
 
 use super::lexer::{Gap, Keyword, Line, Symbol, Token, TokenKind, lex};
+use super::spare::SpareLists;
 use super::tree::{
     BinaryOperator, Block, CaseDeclaration, DefaultDeclaration, Entry, Expression, ExpressionKind, Fallback, Family,
     FieldDeclaration, Handler, HandlerGroup, HandlerUse, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration,
@@ -36,6 +37,10 @@ struct Parser<'a> {
     next_id: u32,
     block_depth: u32,
     expression_depth: u32,
+    /// A value already read, with an operator after it, for the next operand to give (D140).
+    pending: Option<Expression<'a>>,
+    /// Lists kept from scripts read before on this thread, for this one's tree (D140).
+    spare: SpareLists,
 }
 
 /// What a block's body ran into: the line that isn't part of it.
@@ -99,9 +104,11 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
         next_id: 0,
         block_depth: 0,
         expression_depth: 0,
+        pending: None,
+        spare: SpareLists::take(),
     };
     parser.enter_line();
-    let mut items = Vec::new();
+    let mut items = parser.spare.items();
     while parser.line_index < parser.lines.len() {
         let indentation = parser.indentation();
         if indentation != 0 {
@@ -112,6 +119,7 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
     }
     let expression_count = parser.next_id;
     super::lexer::keep(parser.tokens, parser.lines);
+    parser.spare.give_back();
     Ok(Script { items, expression_count, source })
 }
 
@@ -304,7 +312,7 @@ impl<'a> Parser<'a> {
                 format!("blocks nested more than {MAX_BLOCK_DEPTH} deep (D20) aren't"),
             ));
         }
-        let mut block = Vec::new();
+        let mut block = self.spare.statements();
         while self.in_body(opener)? {
             block.push(self.statement()?);
         }
@@ -432,7 +440,8 @@ impl<'a> Parser<'a> {
     }
 
     fn path(&mut self) -> Result<Vec<Word<'a>>, Message> {
-        let mut path = vec![self.expect_name("a procedure's name")?];
+        let mut path = self.spare.words();
+        path.push(self.expect_name("a procedure's name")?);
         while self.at_symbol(Symbol::Dot) {
             self.advance();
             path.push(self.expect_name("a narrowing's name")?);
@@ -505,7 +514,7 @@ impl<'a> Parser<'a> {
     /// A procedure's or a handler's parameters in `[ ]`, each with its type or in a group sharing one (D21, D60, D81,
     /// D88). `written` is how it's written with no parameters, for the message when `[ ]` is empty.
     fn parameters(&mut self, written: &str, name: &str) -> Result<Vec<Parameter<'a>>, Message> {
-        let mut parameters = Vec::new();
+        let mut parameters = self.spare.parameters();
         // trace: D60. A procedure that takes nothing has no brackets.
         if self.at_symbol(Symbol::OpenSquare) {
             self.advance();
@@ -1324,7 +1333,20 @@ impl<'a> Parser<'a> {
     /// A whole expression: slides come last, taking everything on their left (Unio D73).
     fn full_expression(&mut self) -> Result<Expression<'a>, Message> {
         let saved = self.expression_depth;
-        let start = self.or_expression()?;
+        // Most values are one operand with no operator after it, so the operand is read first, and the operators'
+        // levels, from `or` down, are gone through only when an operator follows: each level gives back what it reads
+        // unchanged when its operator isn't next, so this reads the same (D140).
+        let start = if self.at_keyword(Keyword::Not) || self.at_symbol(Symbol::Negate) {
+            self.or_expression()?
+        } else {
+            let operand = self.operand()?;
+            if self.at_operator() {
+                self.pending = Some(operand);
+                self.or_expression()?
+            } else {
+                operand
+            }
+        };
         let result = if self.at_symbol(Symbol::Slide) { self.slide(start) } else { Ok(start) };
         self.expression_depth = saved;
         result
@@ -1377,6 +1399,35 @@ impl<'a> Parser<'a> {
         Ok(self.expression(ExpressionKind::Slide { start: Box::new(start), steps }, place))
     }
 
+    /// Whether an operator that one of the operators' levels reads is next, after an operand.
+    fn at_operator(&self) -> bool {
+        matches!(
+            self.peek_kind(),
+            Some(
+                TokenKind::Keyword(
+                    Keyword::Or
+                        | Keyword::And
+                        | Keyword::AtLeast
+                        | Keyword::AtMost
+                        | Keyword::In
+                        | Keyword::Div
+                        | Keyword::Rem
+                ) | TokenKind::Symbol(
+                    Symbol::EqualEqual
+                        | Symbol::NotEqual
+                        | Symbol::Less
+                        | Symbol::Greater
+                        | Symbol::Ampersand
+                        | Symbol::Plus
+                        | Symbol::Minus
+                        | Symbol::Star
+                        | Symbol::Slash
+                        | Symbol::Power
+                )
+            )
+        )
+    }
+
     fn binary(
         &mut self,
         operator: BinaryOperator,
@@ -1417,7 +1468,7 @@ impl<'a> Parser<'a> {
 
     /// trace: Unio D34: `not` comes after comparisons and before `and`.
     fn not_expression(&mut self) -> Result<Expression<'a>, Message> {
-        if self.at_keyword(Keyword::Not) {
+        if self.pending.is_none() && self.at_keyword(Keyword::Not) {
             self.deeper()?;
             let place = self.here();
             self.advance();
@@ -1616,7 +1667,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self) -> Result<Expression<'a>, Message> {
-        if self.at_symbol(Symbol::Negate) {
+        if self.pending.is_none() && self.at_symbol(Symbol::Negate) {
             self.deeper()?;
             let place = self.here();
             self.advance();
@@ -1643,6 +1694,9 @@ impl<'a> Parser<'a> {
 
     /// A single value with everything that sticks to it: `.name`, `( )`, `[ ]`, `?` and `??` (Unio D81).
     fn operand(&mut self) -> Result<Expression<'a>, Message> {
+        if let Some(value) = self.pending.take() {
+            return Ok(value);
+        }
         self.deeper()?;
         let mut value = self.primary()?;
         while let Some(token) = self.peek() {
@@ -1708,7 +1762,7 @@ impl<'a> Parser<'a> {
 
     /// The entries up to `closer`, after `first` when there is one, all in one list.
     fn entries_after(&mut self, first: Option<Entry<'a>>, closer: Symbol) -> Result<Vec<Entry<'a>>, Message> {
-        let mut entries = Vec::with_capacity(4);
+        let mut entries = self.spare.entries();
         entries.extend(first);
         if self.at_symbol(closer) {
             self.advance();

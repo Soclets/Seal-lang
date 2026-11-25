@@ -24,6 +24,19 @@ impl Labels for [Option<String>] {
     }
 }
 
+/// A procedure's parameters when none has a label: only how many there are.
+struct Unlabelled(usize);
+
+impl Labels for Unlabelled {
+    fn count(&self) -> usize {
+        self.0
+    }
+
+    fn label(&self, _index: usize) -> Option<&str> {
+        None
+    }
+}
+
 impl Labels for [Option<&str>] {
     fn count(&self) -> usize {
         self.len()
@@ -597,8 +610,12 @@ impl<'a> Checker<'a> {
         let parameters = procedure.parameters.clone();
         let result = procedure.result;
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
-        let Some(bound) = self.bind_arguments(name, (labels.as_slice(), any_order), &has_default, arguments, place)
-        else {
+        let bound = if labels.is_empty() {
+            self.bind_arguments(name, (&Unlabelled(parameters.len()), any_order), &has_default, arguments, place)
+        } else {
+            self.bind_arguments(name, (labels.as_slice(), any_order), &has_default, arguments, place)
+        };
+        let Some(bound) = bound else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
