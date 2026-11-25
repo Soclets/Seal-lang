@@ -16,9 +16,9 @@ end
 
 ```
 spawn_enemy(kind: "goblin", x: 10, y: 20,
-            health: 30, speed: 2)
+    health: 30, speed: 2)
 total = (first_round + second_round +
-         third_round)
+    third_round)
 ```
 
 - **A line that ends where a value is still wanted is refused,** as `total = a + b +` with the rest on the next line; the
@@ -63,7 +63,8 @@ end \\ proc on_hit
 Indentation is required: a body is indented one level deeper than its opening line (D9, D20). One level is 4 spaces,
 and anything else, a tab included, is refused, with the corrected line as the fix (D63, Unio D10).
 
-**Not decided:** how a statement's later lines are indented.
+A statement's later lines, inside an open bracket, are indented one level deeper than its first line, 4 spaces; any
+other indentation is refused, with the corrected line as the fix (D106).
 
 ## Spacing and comments
 

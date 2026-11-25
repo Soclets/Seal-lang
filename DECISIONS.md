@@ -3130,3 +3130,25 @@ key` as the fix. A count for showing is kept with a `mut` name.
 **Why this won.** How something is gone through matches how it's reached.
 
 **Tankun's words.** Asked "Should `at pos` and `at offset` be refused on a `Dict`?", the owner chose: "yea"
+
+## D106. A statement's later lines are indented one level deeper than its first
+
+2026-11-25.
+
+**Chosen.** When a statement carries on inside an open bracket (D8), its later lines are indented one level, 4 spaces,
+deeper than its first line, checked like all indentation, with the corrected line as the fix:
+
+```
+spawn_enemy(kind: "goblin", x: 10, y: 20,
+    health: 30, speed: 2)
+```
+
+**Weighed.**
+- Lining later lines up under the open bracket, as the standard's own example had it. Renaming what's before the
+  bracket means moving every later line to keep it lined up.
+- Leaving it unchecked, as now. Scripts would each look their own way.
+
+**Why this won.** One rule, the same 4 spaces as a block's body, as Rust's and Python's standard formatters do.
+
+**Tankun's words.** Asked "Should a statement's later lines be indented one level deeper than its first?", the owner
+chose: "yea"
