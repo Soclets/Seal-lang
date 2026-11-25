@@ -2353,6 +2353,8 @@ follow Unio, and maybe add named `end`s, because I'm not used to bare" (quoted w
 btw, that is illegal Seal?", "IDEs could fucking auto insert end", then, asked "Should Seal close blocks with Unio's
 named `end`s, replacing D20's plain `end`?", the owner chose: "yea"
 
+(Replaced by D102: bare `end` again, with an optional, checked `\\` note.)
+
 ## D77. Text is joined only with braces; `&` goes
 
 2026-11-24.
@@ -3021,3 +3023,42 @@ braces exactly as they'd be written in Seal?", the owner chose: "??" (yes)
 
 **Tankun's words.** Asked "Should Seal add `be.Bool` from text, and refuse every other new conversion?", the owner
 chose: "??" (yes)
+
+## D102. Bare `end` again, with an optional, checked `\\` note naming the block
+
+2026-11-25.
+
+**Chosen.** Every block closes with a bare `end`, replacing D76's named closers, as D20 had it. After `\\`, an `end`
+can carry a note naming its block, which the language server writes when it closes a block:
+
+```
+proc on_hit[amount: Whole]
+    for each enemy in enemies
+        if amount > enemy.hp
+            show_msg("{enemy.name} falls")
+        else
+            show_msg("{enemy.name} is hit")
+        end \\ if
+    end \\ for
+end \\ proc on_hit
+```
+
+- **The note is optional,** and coloured like a comment (D78), so closers stay quiet and `end` is always the real one.
+- **The note is checked:** naming any block but the one the `end` closes is refused, so it can't go stale.
+- **It names what the block is, with its name when it has one:** `\\ if`, `\\ while`, `\\ for`, `\\ match`,
+  `\\ otherwise`, `\\ proc heal`, `\\ record Enemy`, `\\ one_of Event`, `\\ fam.proc spawn`, a family member's own
+  name as `\\ spawn.boss`, and `\\ comment old_scoring`.
+- `\\` outside text marks only this note; inside text it's still an escaped backslash (D92).
+
+**Weighed.**
+- Named closers, required (D76). Every block's closer written out, coloured like code, as loud as the code.
+- The name after `end` with no mark, optional, as `end proc on_hit`, as the design session first proposed, and argued
+  for over several turns before coming back to Tankun's version. Coloured like code, and not marked as optional.
+- The note after `//`. `//` would then be a free comment everywhere but after `end`, where it would be checked, so an
+  ordinary comment there, as `end // done with enemies`, would be refused.
+
+**Why this won.** Short closers by default, a full note when wanted that can never lie, and the note looks like what it
+is: something for the reader.
+
+**Tankun's words.** "Show `end` vs `end details`", has code, "But the comment is checked, though", "Why `//`?", "Why did
+you drop `\\`?", then, as their answer, quoting their first message back, has code.

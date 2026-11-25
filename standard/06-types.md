@@ -62,7 +62,7 @@ record Enemy
     hp: Whole
     x: Float
     y: Float
-end record Enemy
+end
 
 mut goblin = Enemy[name: "Goblin", hp: 30, x: 0.0, y: 0.0]
 goblin.hp = goblin.hp - 5
@@ -103,7 +103,7 @@ potions = stock[key: "potion"] ?? 0
 ```
 for each count at key item in stock
     show_msg("{item}: {count}")
-end for
+end
 ```
 
 - **`.remove(key: k)`** takes a key out, failing with `missing` if it isn't there; **`.has(key: k)`** gives a `Bool`;
@@ -119,13 +119,13 @@ one_of Event
     idle
     hurt[amount: Whole]
     healed[amount: Whole, by: Text]
-end one_of Event
+end
 
 mut last = Event.hurt[amount: 5]
 ```
 
-- **`one_of` declares a type whose value is exactly one of its cases,** listed one per line, closed with `end
-  one_of` and its name; one with no cases is refused, since no value of it could exist (D35, D36, D76, D93).
+- **`one_of` declares a type whose value is exactly one of its cases,** listed one per line, closed with `end`; one with no
+  cases is refused, since no value of it could exist (D35, D36, D93).
 - **A case may carry values, named in `[ ]`,** built as a record is (D27, D35).
 - **A case is written as a narrowing of its type,** as `Event.hurt[amount: 5]` and `State.idle`; one the type doesn't
   have is refused at load time (D35, Unio D41).
@@ -139,13 +139,13 @@ match last
     case healed[by]
         show_msg("{by} healed you")
     case idle
-end match
+end
 ```
 
 - **Every case must be covered;** there's no catch-all (D37).
 - **A case's values come out by name,** read-only, for that case's body, and a case takes out only the values it
   reads, in their declared order (D37, D61, D87).
-- **A case runs until the next `case`,** and `end match` closes the `match` (D37, D76).
+- **A case runs until the next `case`,** and one `end` closes the `match` (D37, D102).
 
 ## `Maybe`
 
@@ -159,7 +159,7 @@ match target
     case some[value]
         attack(value)
     case none
-end match
+end
 id = nearest_enemy() ?? 0
 ```
 

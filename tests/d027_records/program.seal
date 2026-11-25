@@ -1,7 +1,7 @@
 record Enemy
     name: Text
     hp: Whole
-end record Enemy
+end
 
 mut goblin = Enemy[name: "Goblin", hp: 30]
 goblin.hp = goblin.hp - 5

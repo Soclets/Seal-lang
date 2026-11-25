@@ -5,7 +5,7 @@
 ```
 proc name[parameters] -> Type ! [failures]
     body
-end proc name
+end
 ```
 
 where `name` is the procedure's name, `parameters` its parameters separated by commas, `Type` the type it gives back,
@@ -15,11 +15,11 @@ as they are (D20, D21, D45).
 ```
 proc on_hit[points: Whole]
     score = score + points
-end proc on_hit
+end
 
 proc average[a: Float, b: Float] -> Float
     return (a + b) / 2.0
-end proc average
+end
 ```
 
 - **Each parameter is its name, `:` and its type,** as `points: Whole`; a parameter with no type is refused (D21, D81).
@@ -48,11 +48,11 @@ A script gives its procedures narrowings in a family, a word and its kinds decla
 fam.proc spawn
     spawn[kind: Text]
         ...
-    end spawn
+    end
     spawn.boss[kind: Text]
         ...
-    end spawn.boss
-end fam.proc spawn
+    end
+end
 ```
 
 where each `...` stands for that procedure's body.
@@ -78,7 +78,7 @@ values (D2, D30).
   with `while true` still needs a `return` after it (D68, Unio D57, D149).
 - **Nothing may follow `return`, `break` or `fail` in the same block,** and a bare `return` as a procedure's last line
   is refused (D68, Unio D57).
-- **When any way through an `if` or a `match` leaves, nothing may follow its `end if` or `end match`;** the rest goes in
+- **When any way through an `if` or a `match` leaves, nothing may follow its `end`;** the rest goes in
   the ways that don't leave (D68, D86, Unio D9).
 
 ## Calls
@@ -106,7 +106,7 @@ proc heal[hp: Whole, amount: Whole, times: Whole] -> Whole
     labels [amount as by, times as times]
     defaults [times: 1]
     return hp + amount * times
-end proc heal
+end
 
 // means heal(hp, by: 10, times: 1)
 hp = heal(hp, by: 10)

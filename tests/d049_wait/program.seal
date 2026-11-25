@@ -4,6 +4,6 @@ proc countdown[start: Whole]
         show_msg("{n}")
         wait(seconds: 1)
         n = n - 1
-    end while
+    end
     show_msg("go")
-end proc countdown
+end

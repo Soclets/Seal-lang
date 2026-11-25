@@ -5,7 +5,7 @@ mut tries = 0
 while tries < 3
     show_msg("Try {tries}")
     tries = tries + 1
-end while
+end
 ```
 
 ## Lines
@@ -28,34 +28,35 @@ total = (first_round + second_round +
 ## Blocks
 
 A block's opening line, such as `if`, `while` or `proc`, has no `:` at its end (D9). Its body is the deeper-indented
-lines after it, and it closes at the opening line's depth with `end` followed by what it closes, as Unio's do (D20,
-D76, Unio D8):
+lines after it, and it closes with `end` at the opening line's depth (D20, D102):
 
 ```
 opening line
     body
-end what
+end
 ```
 
-where `opening line` is the block's first line, `body` its statements, and `what` is what the block is:
+where `opening line` is the block's first line and `body` its statements.
 
-| Block | Closer |
-|---|---|
-| `if`, with its `elif` and `else` | `end if` |
-| `while` | `end while` |
-| `for each` | `end for` |
-| `match` | `end match` |
-| a call's `otherwise` | `end otherwise` |
-| `proc heal[…]` | `end proc heal` |
-| `record Enemy` | `end record Enemy` |
-| `one_of Event` | `end one_of Event` |
-| `fam.proc spawn`, `fam.handler level_failed` | `end fam.proc spawn`, `end fam.handler level_failed` |
-| a family member, as `spawn.boss[…]` or `start_over` | `end spawn.boss`, `end start_over` |
+- **An `end` can carry a note naming its block,** written after `\\`: `end \\ proc on_hit`. The note is optional, it's
+  coloured like a comment, and it's checked: a note naming any other block is refused, so it can't go stale (D102).
+- **The language server writes the note** when it closes a block, as `\\ if`, `\\ while`, `\\ for`, `\\ match`,
+  `\\ otherwise`, `\\ proc heal`, `\\ record Enemy`, `\\ one_of Event`, `\\ fam.proc spawn`, `\\ spawn.boss` or
+  `\\ comment old_scoring`: what the block is, with its name when it has one (D102).
+- **An `end` at the wrong depth is refused** (D20).
+- **A missing `end` is reported naming the block it should close,** as in "the `while` on line 3 has no `end`" (D20).
 
-- **A closer at the wrong depth, or naming another block, is refused** (D20, D76).
-- **A missing closer is reported naming the block it should close,** as in "the `while` on line 3 has no `end
-  while`" (D20, D76).
-- **The language server types the closer** when a block is opened (D76).
+```
+proc on_hit[amount: Whole]
+    for each enemy in enemies
+        if amount > enemy.hp
+            show_msg("{enemy.name} falls")
+        else
+            show_msg("{enemy.name} is hit")
+        end \\ if
+    end \\ for
+end \\ proc on_hit
+```
 
 ## Indentation
 
@@ -76,8 +77,8 @@ and anything else, a tab included, is refused, with the corrected line as the fi
   D145).
 - **`///` is a doc comment** on the lines right before a declaration: a procedure, a family, a record, a `one_of`, a
   field, a case or a top-level name (D63, D91, Unio D74).
-- **`comment name` on its own line starts a block comment,** closed by `end comment name`, as in Unio; everything
-  between is ignored. `comment` is a keyword, so it can't be a name (D63, D76, D91, Unio D74).
+- **`comment name` on its own line starts a block comment,** closed by `end`, as any block is; everything
+  between is ignored. `comment` is a keyword, so it can't be a name (D63, D91, Unio D74).
 - **One blank line in a row is fine; two or more are refused** (D63, Unio D97).
 - **`\r\n` counts as one line break,** and in text **`\`** makes the next character literal (D63, Unio D30, D144):
   `\"`, `\\` and `\{`. A `\` before any other character, as in `"\n"`, is refused, and so is a tab character inside

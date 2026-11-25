@@ -10,11 +10,11 @@ load_level(name) ?? crash
 best = load_best() otherwise
     case not_found
         instead 0
-end otherwise
+end
 bag.add("Gem") otherwise
     case full
         show_msg("Your bag is full!")
-end otherwise
+end
 ```
 
 - **`?`** passes the failure up (Unio D23).
@@ -43,8 +43,8 @@ proc load_level[name: Text] -> Level ! [not_found, broken]
         fail not_found
     else
         return read_level(name)?
-    end if
-end proc load_level
+    end
+end
 ```
 
 ## Handlers
@@ -59,14 +59,14 @@ fam.handler level_failed
             instead 1
         case broken
             instead 1
-    end start_over
+    end
     start_at[level: Whole]
         case not_found
             instead level
         case broken
             instead level
-    end start_at
-end fam.handler level_failed
+    end
+end
 
 a = load_level("forest") ?? level_failed.start_over
 b = load_level("cave") ?? level_failed.start_at(level: 3)

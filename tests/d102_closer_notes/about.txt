@@ -1,0 +1,1 @@
+Bare end closes every block, and an end may carry a checked note naming its block after \\. D20, D102.

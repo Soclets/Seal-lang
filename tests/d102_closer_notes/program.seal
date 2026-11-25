@@ -1,0 +1,13 @@
+proc count_down[start: Whole]
+    mut n = start
+    while n > 0
+        if n == 1
+            show_msg("one")
+        else
+            show_msg("{n}")
+        end \\ if
+        n = n - 1
+    end \\ while
+end \\ proc count_down
+
+count_down(3)

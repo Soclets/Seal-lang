@@ -3,8 +3,8 @@ proc doubled_level[level: Whole] -> Whole ! [too_high]
         fail too_high
     else
         return level * 2
-    end if
-end proc doubled_level
+    end
+end
 
 a = doubled_level(3) ?? 0
 b = doubled_level(12) ?? -1
@@ -13,5 +13,5 @@ c = doubled_level(20) otherwise
     case too_high
         show_msg("too high")
         instead 99
-end otherwise
+end
 show_msg("{c}")

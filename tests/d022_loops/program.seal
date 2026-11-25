@@ -1,7 +1,7 @@
 for each round in range[from: 1, to: 3]
     show_msg("Round {round}")
-end for
+end
 names = ["Fern", "Plern"]
 for each name at pos i in names
     show_msg("{i}. {name}")
-end for
+end

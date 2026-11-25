@@ -9,7 +9,7 @@ elif guess > secret
     show_msg("Too high")
 else
     show_msg("Correct!")
-end if
+end
 ```
 
 - **No `:`** after `if`, `elif` or `else` (D9), **one `end`** for the whole `if` (D20).
@@ -29,7 +29,7 @@ Unio's standard, chapter 5, has the rules in full.
 mut tries = 0
 while tries < 7 and not won
     tries = tries + 1
-end while
+end
 ```
 
 `while` runs its body as long as its condition holds, and `break` leaves the loop (D22, Unio D19, D32). `==` and `!=`
@@ -40,10 +40,10 @@ between two `Float`s are refused in a `while` condition (Unio D184).
 ```
 for each name at pos i in names
     show_msg("{i}. {name}")
-end for
+end
 for each round in range[from: 1, to: 3]
     show_msg("Round {round}!")
-end for
+end
 ```
 
 As in Unio (D22, Unio D171 to D174):

@@ -11,8 +11,8 @@ while tries < 7 and not won
     else
         show_msg("Correct! You got it in {tries} tries")
         won = true
-    end if
-end while
+    end
+end
 if not won
     show_msg("Out of tries! It was {secret}.")
-end if
+end
