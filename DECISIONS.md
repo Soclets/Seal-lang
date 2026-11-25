@@ -1733,6 +1733,8 @@ Seal has records inside records.
 
 (Changed by D139: the row loading each tiny script from a text of its own may stay unmet until a later rework.)
 
+(Changed by D140: that rework is done now, so the row meets goal 1 like every other.)
+
 **Weighed.**
 - A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
 - Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
@@ -4192,3 +4194,23 @@ current work is done.
 
 **Tankun's words.** Asked "Should that row be measured for reference only, with no target, and the rework left until
 NginSeal shows a need?", the owner chose: "No, fuck it, We'll do it, but later"
+
+(Changed by D140: the rework is done now, as part of the current work.)
+
+## D140. The loading rework is done now, as part of the current work
+
+2026-11-25.
+
+**Chosen.** The rework D139 put off, names stored as numbers and each script's tree in one block of memory across the
+reader, checker and compiler, is done now, as part of the current work, so the row loading each tiny script from a
+text of its own meets D57's goal 1 like every other. This replaces D139's "later"; no row is allowed to stay unmet.
+
+**Weighed.**
+- The rework later, as D139 had it. The building session had said it would start the rework unless told otherwise,
+  so keeping it for later meant messaging it now, ahead of the batch the other answers are waiting in.
+
+**Why this won.** Tankun's choice: let the building session carry on and finish it.
+
+**Tankun's words.** "Fuck it, then. Let it finish", then, asked "do you mean let it do the rework now, as part of the
+current work, so D139 changes from "later" to "now" and nothing needs sending?", the owner chose: "yea, I'll go shower
+soon anyways"
