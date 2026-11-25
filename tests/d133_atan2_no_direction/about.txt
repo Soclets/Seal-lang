@@ -1,0 +1,1 @@
+atan2 of a point with no direction gives 0 rads, a negative zero included. D133, D109, D113, Unio D177.

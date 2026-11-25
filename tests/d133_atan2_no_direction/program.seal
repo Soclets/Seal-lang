@@ -1,0 +1,5 @@
+z = -0.0
+a = cos(atan2(y: 0.0, x: 0.0))
+b = cos(atan2(y: z, x: z))
+c = cos(atan2(y: 0.0, x: z))
+show_msg("{a} {b} {c}")

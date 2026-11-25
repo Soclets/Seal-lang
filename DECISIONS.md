@@ -3991,3 +3991,27 @@ rule for precedence?", "How do you know?", "No, I meant the people", "Or just fu
 gives -2 x 2 x 2. So -4?", "No, it's just that I don't fucking know power", "Like, it's math's domain", then, asked
 "Should Seal follow maths order for `**`: chains from the right, and `-2 ** 2` as `-(2 ** 2)`, with no brackets
 required?", the owner chose: "yea"
+
+## D133. `atan2` of a point with no direction gives 0 rads
+
+2026-11-25.
+
+**Chosen.** `atan2(y: 0.0, x: 0.0)`, the angle from a place to the same place, gives `0 rads`, pointing right, as IEEE
+754 and every common language and engine give. A zero that's negative, -0.0, gives 0 too, where IEEE 754 gives ±π,
+since -0.0 acts as zero in every way (Unio D177, D183).
+
+```
+aim = atan2(y: target_y - y, x: target_x - x)     // 0 rads when the target is right here
+```
+
+**Weighed.**
+- Refusing it while loading where Seal can see it, and stopping with a failed check otherwise, as D89 treats splitting
+  by empty text, as the building session recommended. Two things in the same place happens in normal play, as a
+  homing missile reaching its target or an enemy walking onto the player, so the game would crash at a moment that's
+  nobody's mistake; splitting by empty text is almost always a mistake.
+
+**Why this won.** Any angle is as right as any other there, nothing usually needs a direction at that moment, and code
+from Python, Lua, JavaScript, Unity or Godot behaves the same in Seal.
+
+**Tankun's words.** "why", then, asked "Should `atan2` give 0 rads when both arguments are zero, as IEEE 754 and every
+engine do?", the owner chose: "yea"
