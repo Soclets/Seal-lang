@@ -49,6 +49,11 @@ A written type can leave out what the value shows and write only the rest, such 
 `board: Array[len: 64] = [all: 0]` takes `Whole` from the `0`. What the value doesn't show must still be written, as
 the item type of an empty list: `bag: List[len.max: 10] = []` is refused (D82).
 
+A type's setting, as `len.max:` or `len:`, is a whole number written there, or a name made at the top level from a
+whole number written there and never changed, with no `mut`, as `max_items = 10` and then
+`bag: List<Text>[len.max: max_items] = []`. Any other name, a calculation or a call is refused, since its value isn't
+known while loading (D103).
+
 A type with more than one blank to fill in labels each one, as `Dict<key: Text, value: Whole>`; one with a single
 blank, as `List<Text>`, doesn't (D31).
 

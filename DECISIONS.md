@@ -3062,3 +3062,29 @@ is: something for the reader.
 
 **Tankun's words.** "Show `end` vs `end details`", has code, "But the comment is checked, though", "Why `//`?", "Why did
 you drop `\\`?", then, as their answer, quoting their first message back, has code.
+
+## D103. A type's setting can be a top-level name made from a plain number
+
+2026-11-25.
+
+**Chosen.** A type's setting, such as `len.max:` or `len:`, takes a whole number written there, or a name made at the
+script's top level from a whole number written there, with no `mut`:
+
+```
+max_items = 10
+bag: List<Text>[len.max: max_items] = []
+slots: Array<Text>[len: max_items] = [all: ""]
+```
+
+A `mut` name, a name made from a calculation or a call, and a name made inside a procedure are refused, since their
+value isn't known while loading. The wording comes with a later batch.
+
+**Weighed.**
+- Only a number written there, as the building session stops on now. A limit used in several places would be written
+  several times, and changed in several.
+
+**Why this won.** A name made once from a number and never changed is known while loading as surely as the number,
+and one name for a limit changes in one place.
+
+**Tankun's words.** Asked "Should a type's setting accept a top-level, non-`mut` name made from a plain number, as in
+`len.max: max_items`?", the owner chose: "yea"
