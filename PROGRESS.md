@@ -15,7 +15,7 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
 2. **Decisions built.** D1 to D135 are built, except the language server's parts and what's listed under "Not built
-   yet" below (units and limits on a `HugeWhole`). All 21 tests in `tests/` pass.
+   yet" below. All 21 tests in `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -61,8 +61,7 @@ checker, compiler or VM.
   (D109), `lerp` (D114), each correctly rounded (D50).
 - [x] **C12. Units** (D111 to D113, D120 to D123): numbers with units, Seal's three groups, a script's and a host's own
   groups, conversions, rates, points, `in`, the angle built-ins taking angles, and units at a host's doors.
-- [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116, D119, D124 to D127), timed in the benchmarks.
-  Built and timed, all but units and limits on a `HugeWhole` (D115), which stop as not built yet.
+- [x] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116, D119, D124 to D127), timed in the benchmarks.
 - [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
   and sent to the design session.
 
@@ -209,7 +208,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   amount. D126's conversions, with `too_big` and `not_a_number` as failures that `handles [ … ]` can name. A host
   passes them as `seal::big::Big`, `seal::decimal::Decimal` and `seal::decimal::HugeDecimal`. Their work is paid for
   before it's done, refused when the steps left can't pay, and a `HugeDecimal`'s exponent counts against the memory
-  cap, since lining two up writes its zeros out. the whole lands where
+  cap, since lining two up writes its zeros out. A `HugeWhole` takes limits, whose edges are `Whole`s, a clamp making
+  a new number in place of the old, and units: a `Whole` with a unit widens beside one, and a change of unit
+  multiplies by the exact whole factor. the whole lands where
   it's used, so `sqrt(7.0 secs / ~1.1 secs)` and `Whole[max: 5] = 10 - 7` check as the whole, not each part.
 
 ## How it's built (the building session's design)
@@ -346,6 +347,10 @@ New from C13, not sent yet:
   more is refused. A text whose number is past a `Decimal`'s range fails with `not_a_number`.
 - `be.Float` on a `HugeWhole`, `Decimal` or `HugeDecimal` past a `Float`'s range fails with `too_big` (D126 says only
   "to the nearest `Float`").
+- Units and limits on a `Decimal` or `HugeDecimal`: D115 gives them to a `HugeWhole`, and nothing says whether decimals
+  take them (stops).
+- A `HugeWhole` with a unit measured in a coarser one, as `450 cents in dollars`, which isn't whole: a `Whole` gives a
+  `Float` there, which a `HugeWhole` doesn't mix with (stops).
 
 ## Not designed yet: every stop left in the code
 
@@ -358,6 +363,8 @@ New from C13, not sent yet:
 - maths on units whose answer's unit has no written form, as `px * px`, and maths on points beyond `±` a span
 - a `clamp` whose `low:` is more than its `high:` (it stops while running too)
 - converting a `Float` to a `HugeWhole` or a `HugeDecimal`, which D126 doesn't list
+- units and limits on a `Decimal` or `HugeDecimal`
+- a `HugeWhole` with a unit measured in a coarser unit, which isn't whole
 
 ## Not built yet
 
@@ -368,7 +375,7 @@ New from C13, not sent yet:
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
 - Passing a value of a type that holds itself between a host and a script (D72).
-- Units and limits on a `HugeWhole` (D115).
+- A `HugeWhole`'s limit past a `Whole`'s range, as `HugeWhole[max: 100000000000000000000]` (refused as too big).
 - The language server (D47): an empty package, as the prompt says.
 
 ## Draft wordings

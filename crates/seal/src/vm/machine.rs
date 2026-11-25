@@ -377,8 +377,15 @@ fn rare_instruction(
             let Some(limits) = compiled.limits.get(usize::from(site)) else {
                 return Err(broken("a ranged number's check that isn't there", pc));
             };
-            let value = land(get(registers, register)?, limits, pc)?;
-            set(registers, register, value)?;
+            let held = get(registers, register)?;
+            if limits.huge {
+                // trace: D115
+                let value = super::numbers::land(held, limits, heap, &compiled.layouts).map_err(stop)?;
+                set(registers, register, value)?;
+            } else {
+                let value = land(held, limits, pc)?;
+                set(registers, register, value)?;
+            }
         }
         Instruction::Scale { to, from, site } => {
             let Some(&(size, from_whole)) = compiled.scales.get(usize::from(site)) else {

@@ -329,3 +329,12 @@ fn d127_operations_on_the_new_number_types() {
     );
     assert!(refusal("x: HugeWhole = 4\ny = sqrt(x)\nshow_msg(\"{y}\")\n").contains("`sqrt` takes"));
 }
+
+// trace: D107, D115, D120
+#[test]
+fn d115_a_huge_whole_takes_units_and_limits() {
+    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    return v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold in cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
+    assert_eq!(shows(script), ["1000 7 10 450 cents 450 true"]);
+    assert!(refusal("h: HugeWhole[min: 0] = -5\nshow_msg(\"{h}\")\n").contains("below its type's `min: 0`"));
+    assert!(refusal("d: Decimal[min: 0] = 5\nshow_msg(\"{d}\")\n").contains("isn't decided yet"));
+}

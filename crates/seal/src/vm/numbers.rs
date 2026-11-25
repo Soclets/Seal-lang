@@ -383,3 +383,42 @@ fn read_whole(text: &str) -> Option<Big> {
 pub fn with_places(number: &Number, places: u8) -> String {
     exact(number).with_places(places)
 }
+
+/// trace: D107, D115, D128. A `HugeWhole` landing where its type has limits: stopped past a hard edge, or pulled
+/// back to a `.clamp` edge as a new number, the old one let go of.
+///
+/// # Errors
+///
+/// A hard edge passed, the memory cap, or a bug in Seal.
+pub fn land(
+    slot: u64,
+    limits: &crate::check::types::Limits,
+    heap: &mut Heap,
+    layouts: &[crate::compile::bytecode::Layout],
+) -> Result<u64, Stop> {
+    let Number::Huge(value) = heap.number(slot).map_err(Stop::from)? else {
+        return Err(internal("a ranged `HugeWhole` that isn't one"));
+    };
+    for (edge, is_min) in [(limits.min, true), (limits.max, false)] {
+        let Some(edge) = edge else { continue };
+        let edge_value = Big::from_i64(edge.bits.cast_signed());
+        let order = value.compare(&edge_value);
+        let outside = if is_min { order == Ordering::Less } else { order == Ordering::Greater };
+        if !outside {
+            continue;
+        }
+        if edge.clamp {
+            let made = heap.new_number(Number::Huge(edge_value)).map_err(Stop::from)?;
+            heap.release(slot, layouts);
+            return Ok(made);
+        }
+        let (word, side) = if is_min { ("min", "below") } else { ("max", "above") };
+        let edge_text = edge.bits.cast_signed().to_string();
+        return Err(failed(
+            &format!("this value is {side} its type's `{word}: {edge_text}`"),
+            format!("`{}` lands where the type says `{word}: {edge_text}`", value.to_decimal()),
+            "a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.",
+        ));
+    }
+    Ok(slot)
+}

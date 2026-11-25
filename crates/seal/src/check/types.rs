@@ -227,6 +227,8 @@ pub struct Limits {
     pub max: Option<Edge>,
     /// The values are `Float`s' bits, not `Whole`s'.
     pub float: bool,
+    /// The value is a `HugeWhole`'s handle, its edges `Whole`s (D115).
+    pub huge: bool,
 }
 
 /// One edge of a ranged number (D107).
@@ -552,6 +554,8 @@ impl TypeTable {
                 .one_ofs
                 .get(*one_of as usize)
                 .is_some_and(|one_of| one_of.cases.iter().any(|case| !case.fields.is_empty())),
+            // A number with a unit is held as its number is: a `HugeWhole` on the heap (D115).
+            Type::Measured { base, .. } => self.is_reference(*base),
             _ => false,
         }
     }

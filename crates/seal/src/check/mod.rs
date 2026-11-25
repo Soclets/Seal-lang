@@ -553,7 +553,8 @@ impl<'a> Checker<'a> {
         base: TypeId,
         float: bool,
     ) -> TypeId {
-        let mut limits = types::Limits { min: None, max: None, float };
+        let huge = written.name.text == "HugeWhole";
+        let mut limits = types::Limits { min: None, max: None, float, huge };
         for (path, value) in settings {
             let setting = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
             let place = path.first().map_or(written.place, |word| word.place);
@@ -655,6 +656,11 @@ impl<'a> Checker<'a> {
                     let limit = f64::from_bits(edge.bits);
                     if below { number < limit } else { number > limit }
                 }
+                // trace: D115. A `HugeWhole` written out is seen too.
+                ExpressionKind::Number(crate::decimal::Number::Huge(ref number)) => {
+                    let order = number.compare(&crate::big::Big::from_i64(edge.bits.cast_signed()));
+                    if below { order == std::cmp::Ordering::Less } else { order == std::cmp::Ordering::Greater }
+                }
                 _ => false,
             };
             outside.then_some(edge)
@@ -749,13 +755,18 @@ impl<'a> Checker<'a> {
             self.refuse(written.place, what);
             return ERROR;
         }
-        if matches!(name, "HugeWhole" | "Decimal" | "HugeDecimal") && !written.settings.is_empty() {
-            // trace: D115. A `HugeWhole` takes units and limits as a `Whole` does; that's still to build.
-            self.not_built(written.place, format!("units and limits on a `{name}` (D115) aren't"));
+        if matches!(name, "Decimal" | "HugeDecimal") && !written.settings.is_empty() {
+            // D115 gives a `HugeWhole` units and limits; nothing says whether a decimal takes them.
+            self.not_designed(written.place, format!("units and limits on a `{name}`"));
             return ERROR;
         }
-        if matches!(name, "Whole" | "Float") && !written.settings.is_empty() {
-            let plain = if name == "Float" { FLOAT } else { WHOLE };
+        // trace: D107, D112, D115. A `HugeWhole` takes units and limits as a `Whole` does.
+        if matches!(name, "Whole" | "Float" | "HugeWhole") && !written.settings.is_empty() {
+            let plain = match name {
+                "Float" => FLOAT,
+                "HugeWhole" => types::HUGE_WHOLE,
+                _ => WHOLE,
+            };
             // trace: D112. `unit:` gives the number a unit; its other settings are its limits (D107).
             let unit =
                 written.settings.iter().find(|(path, _)| matches!(path.as_slice(), [word] if word.text == "unit"));

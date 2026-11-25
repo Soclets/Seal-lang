@@ -618,16 +618,16 @@ impl Checker<'_> {
                     let right = self.expression_as_written(right, (!left_measured).then_some(left.type_id));
                     (left, right)
                 };
+                if self.program.types.measured(left.type_id).is_some()
+                    || self.program.types.measured(right.type_id).is_some()
+                {
+                    return self.measured_binary(operator, left, right, operator_place, place);
+                }
                 if self.big_number(left.type_id).is_some() || self.big_number(right.type_id).is_some() {
                     if operator == BinaryOperator::Power {
                         return self.number_power(left, right_syntax, operator_place, place);
                     }
                     return self.number_binary(operator, left, right, operator_place, place);
-                }
-                if self.program.types.measured(left.type_id).is_some()
-                    || self.program.types.measured(right.type_id).is_some()
-                {
-                    return self.measured_binary(operator, left, right, operator_place, place);
                 }
                 if !self.program.types.unify(left.type_id, right.type_id) {
                     let left_type = self.program.types.resolve(left.type_id);

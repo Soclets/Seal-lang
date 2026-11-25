@@ -2644,7 +2644,13 @@ impl<'p> Compiler<'p> {
             }
             // trace: D107, D128. The value is checked, or pulled back, as it lands.
             ExpressionKind::Land { value, target } => {
-                let held = self.value_into(value, to);
+                let mut held = self.value_into(value, to);
+                // A `HugeWhole` pulled back to its edge is a new number in place of the old, which only an owner
+                // can let go of (D115).
+                if !held && self.program.types.limits(*target).is_some_and(|limits| limits.huge) {
+                    self.emit(Instruction::Retain { register: to });
+                    held = true;
+                }
                 self.check_limits(*target, to);
                 held
             }

@@ -5,8 +5,10 @@
 //! becomes a multiplication by an exact whole number, or a scaling rounded once.
 
 use super::Checker;
-use super::tree::{Conversion, Expression, ExpressionKind};
-use super::types::{FLOAT, Size, Type, TypeId, Unit, UnitGroupType, UnitMemberType, UnitRef, WHOLE};
+use super::tree::{Conversion, Expression, ExpressionKind, NumberConversion, NumberHow, NumberType};
+use super::types::{FLOAT, HUGE_WHOLE, Size, Type, TypeId, Unit, UnitGroupType, UnitMemberType, UnitRef, WHOLE};
+use crate::big::Big;
+use crate::decimal::Number;
 use crate::message::{Message, Place};
 use crate::syntax::tree::{self as syntax, BinaryOperator};
 
@@ -253,6 +255,9 @@ impl<'a> Checker<'a> {
         if from == to && from_base == to_base {
             return Ok(Expression { type_id: target, ..value });
         }
+        if from_base == HUGE_WHOLE || to_base == HUGE_WHOLE {
+            return self.converted_huge(value, (from_base, from), to, target);
+        }
         let Some(size) = self.factor(from, to) else {
             let (from_text, to_text) = (self.program.types.unit_text(from), self.program.types.unit_text(to));
             return Err(format!("`{from_text}` doesn't convert to `{to_text}` by itself"));
@@ -278,6 +283,71 @@ impl<'a> Checker<'a> {
             type_id: target,
             place,
         })
+    }
+
+    /// trace: D115, D120. A value with a unit becoming a `HugeWhole` in another unit: a `Whole` widens first, and the
+    /// unit changes only by a whole number of times, so nothing is lost.
+    fn converted_huge(
+        &mut self,
+        value: Expression,
+        (from_base, from): (TypeId, Unit),
+        to: Unit,
+        target: TypeId,
+    ) -> Result<Expression, String> {
+        if self.program.types.measured(target).map(|(base, _)| base) != Some(HUGE_WHOLE) {
+            return Err("a `HugeWhole` becomes another type only with `be.`".to_owned());
+        }
+        if from_base != WHOLE && from_base != HUGE_WHOLE {
+            return Err("a `Float` doesn't become a `HugeWhole` by itself".to_owned());
+        }
+        let value = if from_base == WHOLE { self.widen_measured(value) } else { value };
+        if from == to {
+            return Ok(Expression { type_id: target, ..value });
+        }
+        let Some(size) = self.factor(from, to) else {
+            let (from_text, to_text) = (self.program.types.unit_text(from), self.program.types.unit_text(to));
+            return Err(format!("`{from_text}` doesn't convert to `{to_text}` by itself"));
+        };
+        if !size.is_whole() {
+            let (from_text, to_text) = (self.program.types.unit_text(from), self.program.types.unit_text(to));
+            return Err(format!("`{from_text}` in `{to_text}` isn't always a whole number"));
+        }
+        let place = value.place;
+        let factor = Expression {
+            kind: ExpressionKind::Number(Number::Huge(Big::from_u128(size.numerator))),
+            type_id: HUGE_WHOLE,
+            place,
+        };
+        Ok(Expression {
+            kind: ExpressionKind::Binary {
+                operator: BinaryOperator::Multiply,
+                left: Box::new(value),
+                right: Box::new(factor),
+            },
+            type_id: target,
+            place,
+        })
+    }
+
+    /// A `Whole`, with a unit or without, made a `HugeWhole` with the same unit (D115).
+    fn widen_measured(&mut self, value: Expression) -> Expression {
+        let place = value.place;
+        let type_id = match self.program.types.measured(value.type_id) {
+            Some((_, unit)) => self.measured_type(HUGE_WHOLE, unit),
+            None => HUGE_WHOLE,
+        };
+        let kind = match value.kind {
+            ExpressionKind::Whole(whole) => ExpressionKind::Number(Number::Huge(Big::from_i64(whole))),
+            _ => ExpressionKind::Convert {
+                conversion: Conversion::Number(NumberConversion {
+                    from: NumberType::Whole,
+                    to: NumberType::Huge,
+                    how: NumberHow::Exact,
+                }),
+                value: Box::new(value),
+            },
+        };
+        Expression { kind, type_id, place }
     }
 
     /// trace: D111, D120. A value landing where a unit is wanted: converted when it's another unit of the group and
@@ -399,6 +469,28 @@ impl<'a> Checker<'a> {
             );
             return Self::error(place);
         };
+        if base == HUGE_WHOLE {
+            // trace: D115. A `HugeWhole` is measured in a finer unit by a whole number of times.
+            if !size.is_whole() {
+                self.not_designed(unit.place, "a `HugeWhole` measured in a unit it isn't always a whole number of");
+                return Self::error(place);
+            }
+            let factor = Expression {
+                kind: ExpressionKind::Number(Number::Huge(Big::from_u128(size.numerator))),
+                type_id: HUGE_WHOLE,
+                place,
+            };
+            let value = Expression { type_id: HUGE_WHOLE, ..checked };
+            return Expression {
+                kind: ExpressionKind::Binary {
+                    operator: BinaryOperator::Multiply,
+                    left: Box::new(value),
+                    right: Box::new(factor),
+                },
+                type_id: HUGE_WHOLE,
+                place,
+            };
+        }
         let whole = base == WHOLE && size.is_whole();
         let plain = if whole { WHOLE } else { FLOAT };
         if size == Size::ONE && base == plain {
@@ -482,6 +574,19 @@ impl<'a> Checker<'a> {
         place: Place,
     ) -> Expression {
         let quoted = format!("`{}`", operator.text());
+        // trace: D115. A `Whole` beside a `HugeWhole` becomes one, units and all.
+        let base_of = |checker: &Self, value: &Expression| {
+            checker
+                .program
+                .types
+                .measured(value.type_id)
+                .map_or_else(|| checker.program.types.resolve(value.type_id), |(base, _)| base)
+        };
+        let (left, right) = match (base_of(self, &left), base_of(self, &right)) {
+            (WHOLE, HUGE_WHOLE) => (self.widen_measured(left), right),
+            (HUGE_WHOLE, WHOLE) => (left, self.widen_measured(right)),
+            _ => (left, right),
+        };
         let left_measured = self.program.types.measured(left.type_id);
         let right_measured = self.program.types.measured(right.type_id);
         let left_base = left_measured.map_or_else(|| self.program.types.resolve(left.type_id), |(base, _)| base);
@@ -566,8 +671,7 @@ impl<'a> Checker<'a> {
                     return Self::error(place);
                 };
                 if matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual)
-                    || self.program.types.resolve(left_base) == WHOLE
-                    || self.program.types.resolve(left_base) == FLOAT
+                    || [WHOLE, FLOAT, HUGE_WHOLE].contains(&self.program.types.resolve(left_base))
                 {
                     return binary(left, right, super::types::BOOL);
                 }

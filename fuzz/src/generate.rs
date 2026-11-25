@@ -743,12 +743,13 @@ impl Generator {
         let (e1, e2) = (exact(&mut self.random), exact(&mut self.random));
         let power = self.random.below(40);
         if kind == Kind::Whole {
-            return match self.random.below(6) {
+            return match self.random.below(7) {
                 0 => format!("(be.Whole({h1} * {h2} + 5) ?? 0)"),
                 1 => format!("(be.Whole({h1} div.floor {h2}) ?? 0)"),
                 2 => format!("(be.Whole.floor({d1} * {d2}) ?? 0)"),
                 3 => format!("(be.Whole.nearest(sqrt({e1} * {e1})) ?? 0)"),
                 4 => format!("(be.Whole.trunc({e1} rem.trunc {e2}) ?? 0)"),
+                5 => format!("(be.Whole(({h1} * 1 secs + 500 ms) in ms) ?? 0)"),
                 _ => format!("(be.Whole({h1} ** {power} rem.floor 1000) ?? 0)"),
             };
         }
