@@ -1,0 +1,26 @@
+proc load_level[name: Text] -> Whole ! [not_found]
+    if name == "cave"
+        return 5
+    else
+        fail not_found
+    end
+end
+
+proc noisy[n: Whole] -> Whole
+    show_msg("worked out {n}")
+    return n
+end
+
+group.handler level_failed
+    handles [load_level]
+    ::start_at[level: Whole]
+        case not_found
+            instead level
+    end
+end
+
+a = load_level("cave") ?? noisy(1)
+b = load_level("swamp") ?? noisy(2)
+c = load_level("cave") ?? ::start_at(noisy(3))
+d = load_level("swamp") ?? ::start_at(noisy(4))
+show_msg("{a} {b} {c} {d}")

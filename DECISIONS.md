@@ -3884,3 +3884,28 @@ a failing procedure wherever it comes from, and braces are how text gets a line 
 
 **Tankun's words.** "Should it be `{newln}` outside too?", has code, then, asked "Should all three work that way?", the
 owner chose: "yea"
+
+## D130. A handler's arguments, and a fallback after `??`, are worked out only when the call fails
+
+2026-11-25.
+
+**Chosen.** What deals with a failure is worked out only when there's a failure to deal with:
+
+```
+a = load_level("cave") ?? default_level()
+b = load_level("cave") ?? ::start_at(roll_dice())
+```
+
+- **A fallback after `??`,** as `default_level()`, runs only when the call fails.
+- **A handler's arguments,** as `roll_dice()`, are worked out only when the call fails, right before the handler's
+  cases run. This is how Seal reads Unio D44's "at the call, before the cases run".
+- When the call succeeds, neither runs, so nothing they do happens: no message shown, no dice rolled, no door called.
+
+**Weighed.**
+- Working the arguments out before the call, as D44's words could also be read. A dice roll or a message would happen
+  on every successful call, for a handler that's never used, and could change the game.
+
+**Why this won.** A fallback is there for when things go wrong, so it shouldn't do anything when nothing went wrong.
+
+**Tankun's words.** Asked "Should a handler's arguments, and any fallback after `??`, be worked out only when the call
+fails?", the owner chose: "yea"

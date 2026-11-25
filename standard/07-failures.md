@@ -19,6 +19,8 @@ end
 
 - **`?`** passes the failure up (Unio D23).
 - **`??`** handles it on one line, with a value, `ignore`, `crash` or a handler (Unio D23, D121, D98).
+- **What deals with a failure runs only when there is one:** a fallback after `??`, as `?? default_level()`, and a
+  handler's arguments are worked out only when the call fails (D130).
 - **`otherwise`** handles each failure in its own `case`, ending in `instead`, `return`, `break` or failing on
   purpose, or simply ending when the call gives back nothing (Unio D40, D186).
 - **`instead` is the last line of its case:** a line after it can never run, so it's refused, as one after `return`
@@ -94,3 +96,4 @@ end
 - **`include`** inside an `otherwise` block brings in a handler's cases beside the block's own; together they cover
   every failure, none twice (Unio D43).
 - **A handler can take parameters,** written as a procedure's are, and is given arguments where it's used (Unio D44).
+  The arguments are worked out only when the call fails, right before the handler's cases run (D130).
