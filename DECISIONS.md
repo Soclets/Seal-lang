@@ -3834,3 +3834,29 @@ then, asked "should `Float` into `Decimal` be written `be.Decimal.shown` or `be.
 **Tankun's words.** "Why `.nearest` and `.shown`? First", "Why no squirting on Huge D", "Do we usually do that?",
 then, asked "Should the new number types take the operations in the table, with `sqrt` on a `HugeDecimal` exact or
 stopping?", the owner chose: "yea"
+
+## D128. A ranged number is its type plus a check, wherever a value lands
+
+2026-11-25.
+
+**Chosen.** `Whole[min: 0]` is a `Whole` with a check, not a type of its own: a plain `Whole` goes into it freely and is
+checked, or pulled back with `.clamp`, as it lands, and a ranged `Whole` goes anywhere a `Whole` does with nothing to do.
+A value lands wherever it's stored: a name, a field, a list item, a parameter and a procedure's `return`:
+
+```
+proc set_volume[v: Whole[min: 0, max: 100]]
+set_volume(150)            // refused while loading
+set_volume(level + 60)     // checked when it runs
+```
+
+So a parameter typed `Whole[min.clamp: 0, max.clamp: 100]` pulls an argument of `150` back to `100`, and a `return`
+outside a ranged result type stops the script.
+
+**Weighed.**
+- A separate type, needing conversion each way. Every plain number going into a ranged name would need `be.`.
+- Checking names only. A parameter or a result would let a value past its limit unseen.
+
+**Why this won.** The limit holds wherever the type is written, with nothing more to write.
+
+**Tankun's words.** Asked "Should a ranged number be its type plus a check, applied everywhere a value lands,
+parameters and `return`s included?", the owner chose: "yea"

@@ -146,6 +146,9 @@ mut speed: Float[min: 0.0, max: 12.5] = 0.0
   Seal can see while loading, as `gold: Whole[min: 0] = -5`, is refused (D18, D54, D107).
 - **`min.clamp:` and `max.clamp:` pull a value back to that edge** each time one is stored, so `hp = hp - 150` leaves
   `hp` at 0. Each edge chooses for itself (D107).
+- **A ranged number is its type plus a check:** a plain `Whole` goes into a `Whole[min: 0]` freely, checked or pulled
+  back as it lands, and comes out with nothing to do. It lands wherever a value is stored: a name, a field, a list
+  item, a parameter, and a `return` (D128).
 - **Either can be left off,** and both are type settings, so each is a number written there or a top-level name made
   from one (D103).
 
