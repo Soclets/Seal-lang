@@ -30,6 +30,8 @@ Seal is an interpreted, embeddable, sandboxed, Unio-based scripting language (me
 implmented in Rust.", "Bro, Luna was a troll languag", "Well, it's at least mostly inspired. Show me the Unio game,
 and I'll rewrite it in Seal sketch".
 
+(Changed by D156: Seal's licences are Unio's three.)
+
 ## D2. `x = …` makes a name only when it's new, changes it only when it's `mut`, and an unused name is refused
 
 2026-11-23.
@@ -4703,3 +4705,28 @@ compiled, typed scripts should win.
 **Tankun's words.** "So, does it beat Python?", "It should beat all of Python big stuff?", then, asked "Should Seal
 have a goal of beating Python on a benchmark for each new number type: `HugeWhole` against `int`, and `Decimal` and
 `HugeDecimal` against `decimal`?", the owner chose: "yes, later"
+
+## D156. Seal's licences are Unio's: Apache-2.0 WITH LLVM-exception, MIT-0 and CC BY 4.0
+
+2026-11-25.
+
+**Chosen.** Seal takes Unio's three licences (Unio D138), replacing D1's "no license yet":
+- **The implementation,** meaning `crates/` (the `seal` library, `seal-c`, the `seal` command and the other tools),
+  the fuzzer and the benchmark tools: Apache-2.0 WITH LLVM-exception (`LICENSE`).
+- **Examples and demos,** meaning the test scripts in `tests/`, the benchmark programs in `bench/programs/` and every
+  code sample in the Markdown files: MIT-0 (`LICENSE-MIT-0`), with no conditions, not even credit.
+- **Prose,** the text of the Markdown files apart from their code samples: CC BY 4.0 (`LICENSE-CC-BY-4.0`).
+- The README says which is which, and `REUSE.toml` maps each file to its licence for `reuse lint`.
+
+**Weighed.**
+- No licence, as D1 left it. Public, but nobody else could legally use, copy or embed Seal.
+- MIT, as Lua has. Short and loved by game studios, but with no patent promise, and Tankun's other projects use
+  Apache-2.0 WITH LLVM-exception.
+
+**Why this won.** Studios can embed Seal in commercial games with a patent promise, a kid remixing an example owes
+nothing, the prose keeps its protection against being passed off, and it's the same setup as Unio, Cyborg, CyborgPL and
+Lyftar.
+
+**Tankun's words.** "No license? This shit is illegal to use. Same licensing as Unio?", then, asked "Should Seal use
+Unio's three licences: Apache-2.0 WITH LLVM-exception for the implementation, MIT-0 for examples, and CC BY 4.0 for
+prose?", the owner chose: "yea"

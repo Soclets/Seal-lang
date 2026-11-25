@@ -1,0 +1,16 @@
+version = 1
+
+# Which licence covers which files (D156). `reuse lint` checks that every file has one.
+
+[[annotations]]
+path = ["crates/**", "fuzz/**", "bench/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "test-status.json", ".claude/**"]
+SPDX-License-Identifier = "Apache-2.0 WITH LLVM-exception"
+
+[[annotations]]
+path = ["tests/**", "bench/programs/**"]
+precedence = "override"
+SPDX-License-Identifier = "MIT-0"
+
+[[annotations]]
+path = ["**/*.md", "LICENSE", "LICENSE-MIT-0", "LICENSE-CC-BY-4.0", "REUSE.toml"]
+SPDX-License-Identifier = "CC-BY-4.0"

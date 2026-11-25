@@ -94,4 +94,16 @@ A fuller example, a small game host with records, failures and a door that pause
 - [IMPLEMENTATION.md](IMPLEMENTATION.md): the rules the implementation is built by.
 - [PROGRESS.md](PROGRESS.md): what's built, what's still open, and the wording drafted for each message.
 
-There's no license yet.
+## Licences
+
+- [`LICENSE`](LICENSE): Apache-2.0 WITH LLVM-exception, for the implementation: the `seal` library, its C API, the
+  `seal` command and the other tools. It allows commercial use and gives a patent promise; a game shipping Seal
+  includes this licence, as Apache-2.0 asks, and scripts Seal compiles owe nothing.
+- [`LICENSE-MIT-0`](LICENSE-MIT-0): MIT-0, for examples and demos: the test scripts in `tests/`, the benchmark programs
+  in `bench/programs/`, and every code sample inside the Markdown files. Copy and remix them freely, with no credit
+  needed.
+- [`LICENSE-CC-BY-4.0`](LICENSE-CC-BY-4.0): CC BY 4.0, for the text of this repo's Markdown files, including this
+  README, `DECISIONS.md` and the standard, apart from their code samples. Credit them as `Seal GitHub repo text:
+  https://github.com/Soclets/Seal-lang`, say they're under CC BY 4.0, and say whether you changed them.
+
+[`REUSE.toml`](REUSE.toml) maps each file to its licence.
