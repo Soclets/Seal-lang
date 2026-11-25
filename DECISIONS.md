@@ -4675,3 +4675,31 @@ verifying keeps it as safe as loading text.
 **Tankun's words.** "What about cache?", "`" (a stray key, after the question was first asked), then, asked "Should
 Seal have an optional on-disk cache of compiled scripts, switched on by the host with a folder it chooses, using
 D141's verified `.sealc` files?", the owner chose: "yea"
+
+## D155. Seal's big number types must beat Python's, later
+
+2026-11-25.
+
+**Chosen.** D57 gets a goal for the number types D115 and D116 added, which so far were only timed: on a benchmark for
+each, Seal is faster than Python, `HugeWhole` against Python's `int`, and `Decimal` and `HugeDecimal` against its
+`decimal` module (`Decimal` set to decimal128's rules). The benchmarks are script-sized work, as money adding up,
+interest compounding, an idle game's numbers growing and a factorial, judged Normal against Normal under D58's rules,
+not numbers of millions of digits. It's for later, after the current work; the benchmarks are the building session's
+to write, and fixed once written (D57).
+
+A first, quick timing by the design session on Tankun's Mac (2026-11-25, not under D58's rules): 20,000 factorial,
+divided by 10,000 factorial and written as text, took Seal about 233 ms and Python 3.14 about 88 ms, most of Seal's in
+multiplying a huge number by a small `Whole` over and over, where Python has a fast path and changes the number in
+place.
+
+**Weighed.**
+- No goals, as D115 and D116 had it: the new types timed only, so their cost is known.
+- Million-digit benchmarks. They'd mostly measure libmpdec's most advanced multiplication against Seal's, which games
+  never reach.
+
+**Why this won.** Python's big numbers are the ones most people know, and the work games give them is where Seal's
+compiled, typed scripts should win.
+
+**Tankun's words.** "So, does it beat Python?", "It should beat all of Python big stuff?", then, asked "Should Seal
+have a goal of beating Python on a benchmark for each new number type: `HugeWhole` against `int`, and `Decimal` and
+`HugeDecimal` against `decimal`?", the owner chose: "yes, later"
