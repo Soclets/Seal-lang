@@ -76,6 +76,6 @@ A script's top level runs once, top to bottom, when it's loaded (D4). Three thin
 (D67):
 - **reaching a top-level name before the line that makes it,** directly or through a procedure it calls;
 - **pausing,** through a door or procedure that can pause;
-- **`return`, `fail` and `?`,** since nothing called the top level; a failure there is handled with `??` or `otherwise`.
+- **`ret`, `fail` and `?`,** since nothing called the top level; a failure there is handled with `??` or `otherwise`.
 
 `record`, `one_of`, `proc` and `fam` are declared at the top level only; inside a block they're refused (D93).

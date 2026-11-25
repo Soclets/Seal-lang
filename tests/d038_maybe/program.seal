@@ -1,10 +1,10 @@
 proc first_above[scores: List<Whole>, limit: Whole] -> Maybe<Whole>
     for each score in scores
         if score > limit
-            return Maybe.some[value: score]
+            ret Maybe.some[value: score]
         end
     end
-    return Maybe.none
+    ret Maybe.none
 end
 
 results = [3, 12, 7]

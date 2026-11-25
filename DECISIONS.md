@@ -2109,6 +2109,8 @@ for. `elif` keeps long chains flat.
 **Tankun's words.** "Hm, why no `if` rule?", then, asked "Should Seal take Unio's `return` rules (D57, D149) and its D9,
 so that nothing follows an `if` that can leave?", the owner chose: "incl".
 
+(Changed by D145: `return` is written `ret`.)
+
 ## D69. A `for each` refuses calls that can change what it goes through, and pausing over a top-level name
 
 2026-11-23.
@@ -3972,6 +3974,8 @@ another; a case written for one call has no such reason.
 **Tankun's words.** "what", "What about `otherwise`?", "Is it `include` or `incl`", then, asked "allow a handler's
 extra cases to go unused, and keep `otherwise`'s own cases strict?", the owner chose: "Yes, and don't change `incl`"
 
+(Changed by D145: `include` is written `incl`.)
+
 ## D132. `**` follows maths order: chains from the right, and `-2 ** 2` is `-(2 ** 2)`
 
 2026-11-25.
@@ -4354,3 +4358,46 @@ being inside an `otherwise` case already says that it replaces the failed result
 "Well, this `use` is in a case. So, idk about the confusion, and Seal doesn't even like paths that much", "What's the
 diff between those two? ret and use", "Ah, so `use` just replaces the failed result?", then, asked "Should `instead`
 become `use`?", the owner chose: "yea"
+
+## D145. `return` is written `ret`, and `include` `incl`
+
+2026-11-25.
+
+**Chosen.** Two keywords take their common short forms:
+
+```
+proc pick[name: Text] -> Whole
+    level = load_level(name) otherwise
+        case not_found
+            ret 1
+        case broken
+            use 0
+    end
+    ret level + 10
+end
+
+slot = load_save("slot1") otherwise
+    incl ::start_over
+end
+```
+
+- **`ret`** replaces `return` everywhere, and **`incl`** replaces `include`, with every rule about them unchanged
+  (D68, D86, D143, Unio D43, D57). This replaces D131's "`include` keeps its name".
+- **A keyword is shortened only where a common short form already exists,** as `proc`, `mut` and `elif` are: `ret` is
+  assembly's, and "incl." is everyday writing's. A word with none, as `otherwise`, `case` or `while`, stays whole.
+- The docs teach each once, as "`ret` is short for return", as Unio's D2 does. The Unio translator (D19) writes
+  `return` and `include`.
+
+**Weighed.**
+- `return` and `include` in full, as nearly every language spells `return`. A beginner reads `return` without being
+  taught it.
+- Shortening `instead` too, which Tankun wanted but found no short form for: `inst` reads as instance and `ins` as
+  insert. D144 gave it a shorter word, `use`, instead.
+
+**Why this won.** Seal's keywords are short where people already know a short form, and every one of these is written
+often.
+
+**Tankun's words.** "Show me Seal using `ret` instead of `return`", "Wait, doesn't `match` use `instead`?", "Kinda want
+`incl` and `ret`, no `instead` abbrev, though (idk what to say)", "Let me see that synt", a question about the `ret` in a pasted example, "Wait, where are
+the `!` stuff? It has `otherwise`", then, asked "Should `return` become `ret` and `include` become `incl`, shortening a
+keyword only where a common short form already exists?", the owner chose: "yea"

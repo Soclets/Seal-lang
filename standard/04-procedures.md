@@ -18,7 +18,7 @@ proc on_hit[points: Whole]
 end
 
 proc average[a: Float, b: Float] -> Float
-    return (a + b) / 2.0
+    ret (a + b) / 2.0
 end
 ```
 
@@ -70,13 +70,15 @@ is checked against the header, so a mistake is reported in the procedure that ha
 against the header at load time (chapter 9). Names made inside a body still have their types worked out from their
 values (D2, D30).
 
-## `return`
+## `ret`
 
-`return value` gives back a value, and a bare `return` leaves early, as in Unio (Unio's standard, chapter 4, D57).
+`ret` is short for return (D145).
 
-- **If any `return` gives a value, every way through must end in one;** a `while` counts as able to end, so a loop
-  with `while true` still needs a `return` after it (D68, Unio D57, D149).
-- **Nothing may follow `return`, `break` or `fail` in the same block,** and a bare `return` as a procedure's last line
+`ret value` gives back a value, and a bare `ret` leaves early, as Unio's `return` does (Unio's standard, chapter 4, D57).
+
+- **If any `ret` gives a value, every way through must end in one;** a `while` counts as able to end, so a loop
+  with `while true` still needs a `ret` after it (D68, Unio D57, D149).
+- **Nothing may follow `ret`, `break` or `fail` in the same block,** and a bare `ret` as a procedure's last line
   is refused (D68, Unio D57).
 - **When any way through an `if` or a `match` leaves, nothing may follow its `end`;** the rest goes in
   the ways that don't leave (D68, D86, Unio D9).
@@ -107,7 +109,7 @@ would write it (D42):
 proc heal[hp: Whole, amount: Whole, times: Whole] -> Whole
     labels [amount as by, times as times]
     defaults [times: 1]
-    return hp + amount * times
+    ret hp + amount * times
 end
 
 // means heal(hp, by: 10, times: 1)

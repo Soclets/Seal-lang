@@ -2,7 +2,7 @@ proc doubled_level[level: Whole] -> Whole ! [too_high]
     if level > 10
         fail too_high
     else
-        return level * 2
+        ret level * 2
     end
 end
 
