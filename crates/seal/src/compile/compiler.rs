@@ -480,6 +480,45 @@ impl<'p> Compiler<'p> {
         self.out.top_level_frame_size = self.function.high_water + 1;
     }
 
+    /// A default written out plainly, as the host's value, for a call from the host that leaves it out (D42, D104).
+    fn constant_value(&self, expression: &Expression) -> Option<Value> {
+        Some(match &expression.kind {
+            ExpressionKind::Whole(value) => Value::Whole(*value),
+            ExpressionKind::Float(value) => Value::Float(*value),
+            ExpressionKind::Bool(value) => Value::Bool(*value),
+            ExpressionKind::Text(value) => Value::Text(value.clone()),
+            ExpressionKind::List(items) => {
+                Value::List(items.iter().map(|item| self.constant_value(item)).collect::<Option<Vec<_>>>()?)
+            }
+            ExpressionKind::Repeat { value, count } => {
+                let value = self.constant_value(value)?;
+                Value::List(vec![value; usize::try_from(*count).ok()?])
+            }
+            ExpressionKind::Dict(pairs) => Value::Dict(
+                pairs
+                    .iter()
+                    .map(|(key, value)| Some((self.constant_value(key)?, self.constant_value(value)?)))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            ExpressionKind::BuildRecord { fields, .. } => {
+                let mut ordered: Vec<&(u32, Expression)> = fields.iter().collect();
+                ordered.sort_by_key(|(index, _)| *index);
+                Value::Record(ordered.iter().map(|(_, value)| self.constant_value(value)).collect::<Option<Vec<_>>>()?)
+            }
+            ExpressionKind::BuildCase { case, fields } => {
+                let mut ordered: Vec<&(u32, Expression)> = fields.iter().collect();
+                ordered.sort_by_key(|(index, _)| *index);
+                let values = ordered.iter().map(|(_, value)| self.constant_value(value)).collect::<Option<Vec<_>>>()?;
+                if matches!(self.kind(expression.type_id), Type::Maybe(_)) {
+                    Value::Maybe(values.into_iter().next().map(Box::new))
+                } else {
+                    Value::Case { case: *case, fields: values }
+                }
+            }
+            _ => return None,
+        })
+    }
+
     fn procedure(&mut self, procedure: &Procedure) {
         let parameter_count = u32::try_from(procedure.parameters.len()).unwrap_or(u32::MAX);
         self.start_function(parameter_count.saturating_add(1));
@@ -494,14 +533,12 @@ impl<'p> Compiler<'p> {
                 self.hold(register);
             }
             let Some(variable) = self.program.variable(parameter) else { continue };
-            let default =
-                procedure.defaults.get(position as usize).cloned().flatten().and_then(|default| match default.kind {
-                    ExpressionKind::Whole(value) => Some(Value::Whole(value)),
-                    ExpressionKind::Float(value) => Some(Value::Float(value)),
-                    ExpressionKind::Bool(value) => Some(Value::Bool(value)),
-                    ExpressionKind::Text(value) => Some(Value::Text(value)),
-                    _ => None,
-                });
+            let default = procedure
+                .defaults
+                .get(position as usize)
+                .cloned()
+                .flatten()
+                .and_then(|default| self.constant_value(&default));
             parameters.push(CompiledParameter {
                 name: variable.name.clone(),
                 label: procedure.labels.get(position as usize).cloned().flatten(),
@@ -1769,9 +1806,10 @@ impl<'p> Compiler<'p> {
                     jumps
                 }
             }
-            // Two texts are compared while both are still held, so they take the plain way below (D64).
+            // Two texts, or two bigger values, are compared while both are still held, so they take the plain way
+            // below (D64, D95).
             ExpressionKind::Binary { operator, left, right }
-                if operator.is_comparison() && !matches!(self.kind(left.type_id), Type::Text) =>
+                if operator.is_comparison() && !self.is_reference(left.type_id) =>
             {
                 let held_mark = self.function.held.len();
                 let register_mark = self.function.next;
@@ -2154,6 +2192,14 @@ impl<'p> Compiler<'p> {
                         self.emit(Instruction::WholeToFloat { to, from });
                         false
                     }
+                    Conversion::TextToBool => {
+                        let failure = (1u16..)
+                            .zip(&self.program.failure_names)
+                            .find(|(_, name)| *name == "not_a_bool")
+                            .map_or(0, |(number, _)| number);
+                        self.emit(Instruction::TextToBool { to, from, failure });
+                        false
+                    }
                     Conversion::TextToWhole => {
                         self.emit(Instruction::TextToWhole { to, from });
                         false
@@ -2395,6 +2441,33 @@ impl<'p> Compiler<'p> {
                 let here = self.here();
                 self.patch_all(&ends, here);
                 self.merge_after_handling(fine, to, held, reference)
+            }
+            // trace: D99. A range kept as a list is built at once, with its memory counted first.
+            ExpressionKind::Range { from, end, inclusive, step } => {
+                let base = self.allocate_many(3);
+                self.value_into(from, base);
+                self.value_into(end, base.wrapping_add(1));
+                match step {
+                    Some(step) => {
+                        self.value_into(step, base.wrapping_add(2));
+                    }
+                    None => self.load_whole(base.wrapping_add(2), 1),
+                }
+                self.place = expression.place;
+                self.emit(Instruction::MakeRange { to, base, inclusive: *inclusive });
+                true
+            }
+            ExpressionKind::MaybeCrash(maybe) => {
+                let maybe = self.value(maybe);
+                let number = self.allocate();
+                self.place = expression.place;
+                self.emit(Instruction::CaseNumber { to: number, from: maybe });
+                self.emit(Instruction::CrashIfNone { number });
+                self.emit(Instruction::GetCaseValue { to, case: maybe, field: 0 });
+                if reference {
+                    self.emit(Instruction::Retain { register: to });
+                }
+                reference
             }
             ExpressionKind::MaybeOr { maybe, fallback } => {
                 let maybe = self.value(maybe);
@@ -2689,6 +2762,32 @@ impl<'p> Compiler<'p> {
         }
     }
 
+    /// trace: D95. Two bigger values are equal when their contents are.
+    fn compare_contents(
+        &mut self,
+        operator: BinaryOperator,
+        left: &Expression,
+        right: &Expression,
+        whole: &Expression,
+        to: Register,
+    ) {
+        let compared = self.program.types.resolve(left.type_id).0;
+        let (left, right) = (self.value(left), self.value(right));
+        let pair = self.allocate_many(2);
+        self.emit(Instruction::Move { to: pair, from: left });
+        self.emit(Instruction::Move { to: pair.wrapping_add(1), from: right });
+        let site = u16::try_from(self.out.compared_types.len()).unwrap_or(u16::MAX);
+        if site == u16::MAX {
+            return self.too_big("comparisons of bigger values");
+        }
+        self.out.compared_types.push(compared);
+        self.place = whole.place;
+        self.emit(Instruction::EqualValues { to, left: pair, site });
+        if operator == BinaryOperator::NotEqual {
+            self.emit(Instruction::Not { to, from: to });
+        }
+    }
+
     fn binary(
         &mut self,
         operator: BinaryOperator,
@@ -2741,6 +2840,9 @@ impl<'p> Compiler<'p> {
             return;
         }
         let is_text = matches!(self.kind(left.type_id), Type::Text);
+        if !is_text && self.is_reference(left.type_id) {
+            return self.compare_contents(operator, left, right, whole, to);
+        }
         let left = self.value(left);
         let right = self.value(right);
         self.place = whole.place;
@@ -2835,6 +2937,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::MaybeCrash(inner)
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
@@ -2854,6 +2957,9 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
             fields.iter().any(|(_, value)| uses(value))
         }
         ExpressionKind::Dict(pairs) => pairs.iter().any(|(key, value)| uses(key) || uses(value)),
+        ExpressionKind::Range { from, end, step, .. } => {
+            uses(from) || uses(end) || step.as_ref().is_some_and(|step| uses(step))
+        }
         ExpressionKind::Handle { call, fallback } => {
             uses(call) || matches!(fallback, HandleFallback::Value(value) if uses(value))
         }
@@ -2920,6 +3026,7 @@ fn size(expression: &Expression) -> usize {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::MaybeCrash(inner)
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner) => add(inner),
@@ -2966,6 +3073,7 @@ fn mentions(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::MaybeCrash(inner)
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)

@@ -282,6 +282,7 @@ impl Translator<'_> {
                     Conversion::ToText => "be.Text",
                     Conversion::WholeToFloat => "be.Float",
                     Conversion::TextToWhole => "be.Whole",
+                    Conversion::TextToBool => return not_shared("`be.Bool`"),
                     Conversion::FloatToWhole(Rounding::Floor) => "be.Whole.floor",
                     Conversion::FloatToWhole(Rounding::Trunc) => "be.Whole.trunc",
                     Conversion::FloatToWhole(Rounding::Ceil) => "be.Whole.ceil",
@@ -474,10 +475,11 @@ impl Translator<'_> {
                 return not_shared("a `Dict`");
             }
             ExpressionKind::BuildRecord { .. } => return not_shared("a record"),
-            ExpressionKind::BuildCase { .. } | ExpressionKind::MaybeOr { .. } => {
+            ExpressionKind::BuildCase { .. } | ExpressionKind::MaybeOr { .. } | ExpressionKind::MaybeCrash(_) => {
                 return not_shared("a `one_of` or a `Maybe`");
             }
             ExpressionKind::ShowPlaces { .. } => return not_shared("`places:` in braces"),
+            ExpressionKind::Range { .. } => return not_shared("a `range` kept as a list"),
             ExpressionKind::Try(_) | ExpressionKind::Otherwise { .. } => {
                 return not_shared("a procedure that fails on purpose");
             }

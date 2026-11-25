@@ -39,8 +39,10 @@ enum Leaving {
     Always,
     /// Some way through an `if` leaves (Unio D9).
     SomeWayOfIf,
-    /// Some case of a `match` leaves, which no decision covers.
+    /// Some case of a `match` leaves (D86).
     SomeWayOfMatch,
+    /// An `instead`, which ends its case (D80).
+    Instead,
 }
 
 /// Why a spelling can't be taken twice (D71).
@@ -104,8 +106,14 @@ pub(crate) struct Checker<'a> {
     doors: &'a [DoorSignature],
     /// The records and `one_of`s the host opens, used with nothing declared (D85).
     host_types: &'a [HostType],
+    /// Top-level names made with no `mut` from a value written out plainly, which are known while loading (D103,
+    /// D104), and the top-level names made with `mut`, which aren't.
+    plain_names: HashMap<String, &'a syntax::Expression>,
+    changing_names: HashSet<String>,
     /// Their names.
     host_type_names: HashSet<String>,
+    /// Whether a type being read may leave out the parts its value shows: a name's written type (D82).
+    partial_types: bool,
     /// The script as it's written, for fixes that show a whole line put right.
     script: &'a syntax::Script,
     /// Each door's types in the script's terms, worked out the first time the door is used.
@@ -157,6 +165,9 @@ pub fn check(
         doors,
         host_types,
         host_type_names: HashSet::new(),
+        partial_types: false,
+        plain_names: HashMap::new(),
+        changing_names: HashSet::new(),
         script,
         door_types: HashMap::new(),
         messages: Vec::new(),
@@ -228,9 +239,10 @@ impl<'a> Checker<'a> {
     // ---- the whole script ----
 
     fn run(&mut self, script: &'a syntax::Script) {
+        self.collect_plain_names(script);
+        self.declare_globals(script);
         self.declare_types(script);
         self.declare_procedures(script);
-        self.declare_globals(script);
         self.context.scopes.push(HashMap::new());
         let mut top_level = Vec::new();
         let mut left: Option<(Place, Leaving)> = None;
@@ -390,7 +402,12 @@ impl<'a> Checker<'a> {
                 cases.push(CaseType { name: case.name.text.clone(), fields });
             }
             if cases.is_empty() {
-                self.not_designed(one_of.name.place, "a `one_of` with no cases");
+                // trace: D93
+                self.refuse_why(
+                    one_of.name.place,
+                    format!("`{}` has no cases, so no value of it could exist", one_of.name.text),
+                    "a `one_of`'s value is exactly one of its cases, listed one per line.",
+                );
             }
             if let Some(slot) = self.program.types.one_ofs.get_mut(index as usize) {
                 slot.cases = cases;
@@ -509,9 +526,37 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A whole number written plainly, as a type's setting needs.
+    /// A type's setting: a whole number written there, or a top-level name made from one with no `mut` (D103).
     fn plain_whole(&mut self, expression: &syntax::Expression) -> Option<i64> {
-        if let syntax::ExpressionKind::Whole(digits) = &expression.kind {
+        let written = match &expression.kind {
+            syntax::ExpressionKind::Name(name) => {
+                let value = self.plain_names.get(name).copied();
+                if let Some(value) = value.filter(|value| matches!(value.kind, syntax::ExpressionKind::Whole(_))) {
+                    if let Some(&global) = self.globals.get(name) {
+                        self.mark_read(global);
+                    }
+                    value
+                } else {
+                    if let Some(&global) = self.globals.get(name) {
+                        self.mark_read(global);
+                    }
+                    // trace: D103
+                    let what = if self.changing_names.contains(name) {
+                        format!("`{name}` is made with `mut`, so its value isn't known while loading")
+                    } else {
+                        format!("`{name}` isn't a top-level name made from a whole number written out")
+                    };
+                    self.refuse_why(
+                        expression.place,
+                        what,
+                        "a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.",
+                    );
+                    return None;
+                }
+            }
+            _ => expression,
+        };
+        if let syntax::ExpressionKind::Whole(digits) = &written.kind {
             if let Ok(value) = digits.parse::<i64>() {
                 Some(value)
             } else {
@@ -519,7 +564,12 @@ impl<'a> Checker<'a> {
                 None
             }
         } else {
-            self.not_designed(expression.place, "a type's setting that isn't a plain whole number");
+            // trace: D103
+            self.refuse_why(
+                expression.place,
+                "a type's setting is a whole number known while loading, never a calculation or a call",
+                "a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.",
+            );
             None
         }
     }
@@ -533,7 +583,9 @@ impl<'a> Checker<'a> {
             "Dict" => 2,
             _ => 0,
         };
-        if written.blanks.len() != blank_count {
+        // trace: D82. A name's written type may leave out the parts its value shows: they're worked out from it.
+        let left_out = written.blanks.is_empty() && blank_count > 0 && self.partial_types;
+        if written.blanks.len() != blank_count && !left_out {
             let what = match blank_count {
                 0 => format!("`{name}` has no `< >`"),
                 1 => format!("`{name}` takes one type in `< >`, as in `{name}<Text>`"),
@@ -567,17 +619,21 @@ impl<'a> Checker<'a> {
             "Bool" => BOOL,
             "Text" => TEXT,
             "List" | "Array" | "Maybe" => {
-                let Some((label, inner)) = written.blanks.first() else { return ERROR };
-                if let Some(label) = label {
-                    // trace: D31
-                    self.refuse_why(
-                        label.place,
-                        format!("`{name}` has one blank, so it takes no label"),
-                        "a type with a single blank leaves it unlabelled, since nothing can be mixed up.",
-                    );
-                    return ERROR;
-                }
-                let item = self.written_type(inner);
+                let item = if left_out {
+                    self.program.types.fresh()
+                } else {
+                    let Some((label, inner)) = written.blanks.first() else { return ERROR };
+                    if let Some(label) = label {
+                        // trace: D31
+                        self.refuse_why(
+                            label.place,
+                            format!("`{name}` has one blank, so it takes no label"),
+                            "a type with a single blank leaves it unlabelled, since nothing can be mixed up.",
+                        );
+                        return ERROR;
+                    }
+                    self.written_type(inner)
+                };
                 match name {
                     "List" => self.program.types.intern(Type::List { item, max: settings.get("len.max").copied() }),
                     "Maybe" => self.program.types.maybe(item),
@@ -595,6 +651,10 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
+            }
+            "Dict" if left_out => {
+                let (key, value) = (self.program.types.fresh(), self.program.types.fresh());
+                self.program.types.dict(key, value)
             }
             "Dict" => {
                 let mut key = None;
@@ -827,8 +887,8 @@ impl<'a> Checker<'a> {
                 );
                 continue;
             };
-            let Some(value) = self.plain_value(&declaration.value) else { continue };
             let parameter_type = parameters.get(position).map_or(ERROR, |&parameter| self.variable_type(parameter));
+            let Some(value) = self.plain_value(&declaration.value, parameter_type) else { continue };
             if !self.program.types.unify(value.type_id, parameter_type) {
                 let found = self.describe(value.type_id);
                 let wanted = self.describe(parameter_type);
@@ -843,11 +903,13 @@ impl<'a> Checker<'a> {
             }
         }
         let can_fail = procedure.failures.is_some() || block_can_fail(&procedure.body);
+        let labels_any_order = procedure.labels_any_order;
         let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
         self.program.procedures.push(Procedure {
             name: name.clone(),
             parameters,
             labels,
+            labels_any_order,
             defaults,
             result,
             can_fail,
@@ -864,36 +926,74 @@ impl<'a> Checker<'a> {
         self.words.insert(word);
     }
 
-    /// A plain value, as a default must be: never a calculation or a call (D42).
-    fn plain_value(&mut self, expression: &syntax::Expression) -> Option<Expression> {
-        let plain = match &expression.kind {
-            syntax::ExpressionKind::Whole(_)
-            | syntax::ExpressionKind::Float { .. }
-            | syntax::ExpressionKind::Bool(_)
-            | syntax::ExpressionKind::Text(_) => true,
-            syntax::ExpressionKind::Unary { operator: syntax::UnaryOperator::Negate, operand } => {
-                matches!(operand.kind, syntax::ExpressionKind::Whole(_) | syntax::ExpressionKind::Float { .. })
-            }
-            _ => false,
-        };
-        if plain {
-            Some(self.expression(expression, None))
-        } else if matches!(
-            expression.kind,
-            syntax::ExpressionKind::Call { .. }
-                | syntax::ExpressionKind::Binary { .. }
-                | syntax::ExpressionKind::Slide { .. }
-        ) {
-            // trace: D42
+    /// A default: a value written out plainly, or a top-level name made from one with no `mut`, of the parameter's
+    /// type, never a calculation or a call (D42, D104).
+    fn plain_value(&mut self, expression: &syntax::Expression, wanted: TypeId) -> Option<Expression> {
+        if !is_plain(expression, &self.plain_names) {
+            // trace: D104
             self.refuse_why(
                 expression.place,
-                "a default is a plain value, never a calculation or a call",
-                "a default is worked out when the script loads.",
+                "a default is a value written out plainly, never a calculation or a call",
+                "a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or a top-level name made from one with no `mut`.",
             );
-            None
-        } else {
-            self.not_designed(expression.place, "a default that isn't a number, a `Bool` or text");
-            None
+            return None;
+        }
+        let written = self.inline_plain_names(expression);
+        Some(self.expression(&written, Some(wanted)))
+    }
+
+    /// A plain value with each top-level name in it replaced by the value it was made from, which is the same every
+    /// time (D103, D104). Each name so used counts as read.
+    fn inline_plain_names(&mut self, expression: &syntax::Expression) -> syntax::Expression {
+        let mut copy = expression.clone();
+        let mut waiting = vec![&mut copy];
+        while let Some(current) = waiting.pop() {
+            if let syntax::ExpressionKind::Name(name) = &current.kind
+                && let Some(&value) = self.plain_names.get(name)
+            {
+                if let Some(&global) = self.globals.get(name) {
+                    self.mark_read(global);
+                }
+                let place = current.place;
+                *current = (*value).clone();
+                current.place = place;
+                waiting.push(current);
+                continue;
+            }
+            match &mut current.kind {
+                syntax::ExpressionKind::List(items) => waiting.extend(items.iter_mut()),
+                syntax::ExpressionKind::Pairs(pairs) => {
+                    for (key, value) in pairs {
+                        waiting.push(key);
+                        waiting.push(value);
+                    }
+                }
+                syntax::ExpressionKind::Bracketed { entries, .. } => {
+                    waiting.extend(entries.iter_mut().map(|entry| &mut entry.value));
+                }
+                syntax::ExpressionKind::Unary { operand, .. } | syntax::ExpressionKind::Group(operand) => {
+                    waiting.push(operand);
+                }
+                _ => {}
+            }
+        }
+        copy
+    }
+
+    /// trace: D103, D104. The top-level names made with no `mut` from a value written out plainly, which are known
+    /// while loading, and the ones made with `mut`, which aren't.
+    fn collect_plain_names(&mut self, script: &'a syntax::Script) {
+        for item in &script.items {
+            let syntax::Item::Statement(statement) = item else { continue };
+            let syntax::StatementKind::Name { marker, name, value, .. } = &statement.kind else { continue };
+            if self.plain_names.contains_key(&name.text) || self.changing_names.contains(&name.text) {
+                continue;
+            }
+            if *marker == syntax::Marker::Mut {
+                self.changing_names.insert(name.text.clone());
+            } else if *marker == syntax::Marker::None && is_plain(value, &self.plain_names) {
+                self.plain_names.insert(name.text.clone(), value);
+            }
         }
     }
 
@@ -968,6 +1068,15 @@ impl<'a> Checker<'a> {
     /// procedure, a door or one of Seal's own words (D71).
     fn check_new_name(&mut self, name: &syntax::Word) -> bool {
         let word = name.text.as_str();
+        if word == "all" {
+            // trace: D83
+            self.refuse_why(
+                name.place,
+                "a name can't be `all`",
+                "`[all: value]` always means a list or array whose every item starts as `value`, so `all` can't name anything else.",
+            );
+            return false;
+        }
         let taken_by = if BUILT_IN_WORDS.contains(&word) {
             "one of Seal's own words"
         } else if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
@@ -1017,7 +1126,17 @@ impl<'a> Checker<'a> {
         // A value taken out twice is refused as a name made twice.
         let twice = written.iter().enumerate().any(|(at, name)| written.iter().skip(at + 1).any(|later| later == name));
         if !in_order && !twice {
-            self.not_designed(case.name.place, "taking out a case's values in another order than they're declared");
+            // trace: D87. A case takes out its values in their declared order.
+            let ordered: Vec<&str> = declared.iter().filter(|name| written.contains(name)).copied().collect();
+            self.refuse_why(
+                case.name.place,
+                format!(
+                    "the case `{}`'s values are taken out in the order they're declared: `{}`",
+                    case.name.text,
+                    ordered.join("`, `")
+                ),
+                "a case's values come out in the order its type declares them, skipping any that aren't read.",
+            );
         }
     }
 
@@ -1090,7 +1209,7 @@ impl<'a> Checker<'a> {
                 VariableKind::LoopPosition => self.refuse_why(
                     place,
                     format!("`{name}` is never used"),
-                    "a `for each` that doesn't read where it is leaves its `at` part out.",
+                    &format!("an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out."),
                 ),
                 VariableKind::CaseValue => self.refuse_why(
                     place,
@@ -1207,15 +1326,29 @@ impl<'a> Checker<'a> {
                         "when any way through an `if` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the ways that don't leave.",
                     ),
             ),
-            Leaving::SomeWayOfMatch => {
-                self.not_designed(place, "a line after a `match` where some case leaves, by `return`, `break` or `fail`,");
-            }
+            // trace: D86. D68's rule covers `match`.
+            Leaving::SomeWayOfMatch => self.messages.push(
+                Message::refused(place, "this line follows a `match` that can leave")
+                    .with_because(format!("line {} opens that `match`", before.line), before)
+                    .with_why(
+                        "when any case of a `match` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the cases that don't leave.",
+                    ),
+            ),
+            // trace: D80, Unio D57
+            Leaving::Instead => self.messages.push(
+                Message::refused(place, "this line can never run")
+                    .with_because(format!("line {} gives the case its value with `instead`", before.line), before)
+                    .with_why("`instead` ends its case: the call has its value and the script carries on after the `otherwise`, so anything else the case does goes before it."),
+            ),
         }
     }
 
     /// How a statement can leave the block it's in, when it can: always, or by some way through an `if` or a
     /// `match`.
     fn leaving(statement: &Statement) -> Option<Leaving> {
+        if matches!(statement.kind, StatementKind::Instead(_)) {
+            return Some(Leaving::Instead);
+        }
         if Self::leaves(statement) {
             return Some(Leaving::Always);
         }
@@ -1325,8 +1458,8 @@ impl<'a> Checker<'a> {
                 self.context.loop_depth -= 1;
                 StatementKind::While { condition, body }
             }
-            syntax::StatementKind::ForEach { item, item_unused, position, source, body } => {
-                self.for_each(item, *item_unused, position.as_ref(), source, body)?
+            syntax::StatementKind::ForEach { item, item_unused, position, position_unused, source, body } => {
+                self.for_each(item, (*item_unused, *position_unused), position.as_ref(), source, body)?
             }
             syntax::StatementKind::Match { subject, cases } => self.match_statement(subject, cases),
             syntax::StatementKind::Break => {
@@ -1474,11 +1607,31 @@ impl<'a> Checker<'a> {
             return None;
         }
         let name_is_free = self.check_new_name(name);
+        self.partial_types = true;
         let wanted = written_type.map(|written| self.written_type(written));
+        self.partial_types = false;
         let checked = self.expression(value, wanted);
         let type_id = match wanted {
             Some(wanted) => {
                 self.expect(&checked, wanted, &format!("`{}`", name.text));
+                if let Some(written) = written_type
+                    && !self.program.types.is_settled(wanted)
+                {
+                    // trace: D82. What the value doesn't show must be written.
+                    let kind = written.name.text.as_str();
+                    let example = if kind == "Dict" {
+                        "Dict<key: Text, value: Whole>".to_owned()
+                    } else {
+                        format!("{kind}<Text>")
+                    };
+                    self.refuse_why(
+                        written.place,
+                        format!("`{kind}` leaves out what it holds, and the value doesn't show it"),
+                        &format!("a written type leaves out only what its value shows, so this one writes it, as `{example}`."),
+                    );
+                    // The name is still made, so that its uses aren't refused as well.
+                    self.program.types.settle_as_error(wanted);
+                }
                 wanted
             }
             None => checked.type_id,
@@ -1885,9 +2038,11 @@ impl<'a> Checker<'a> {
                             reached = self.program.types.resolve(item);
                         }
                         (Type::Dict { .. }, _) => {
-                            self.not_designed(
+                            // trace: D90. A missing key would have nowhere to be dealt with.
+                            self.refuse_why(
                                 place,
-                                "a `Dict`'s key partway along a change, with more steps after it,",
+                                "a change can't go through a `Dict`'s key on its way, since the key might be missing",
+                                "a lookup is dealt with on its own line: the value is taken out, as `mut north = shops[key: \"north\"] ?? crash`, changed, and put back, as `shops[key: \"north\"] = north`.",
                             );
                             return None;
                         }
@@ -1993,7 +2148,7 @@ impl<'a> Checker<'a> {
     fn for_each(
         &mut self,
         item: &syntax::Word,
-        item_unused: bool,
+        (item_unused, position_unused): (bool, bool),
         position: Option<&(syntax::PositionKind, syntax::Word)>,
         source: &syntax::Expression,
         body: &[syntax::Statement],
@@ -2003,37 +2158,7 @@ impl<'a> Checker<'a> {
             && matches!(&receiver.kind, syntax::ExpressionKind::Name(name) if name == "range")
             && self.lookup("range", receiver.place).is_none()
         {
-            let mut from = None;
-            let mut end = None;
-            let mut step = None;
-            for entry in entries {
-                let label = entry.label.as_ref().map(|label| label.text.as_str());
-                let checked = self.expression(&entry.value, Some(WHOLE));
-                self.expect(&checked, WHOLE, "a `range`'s number");
-                match label {
-                    Some("from") if from.is_none() => from = Some(checked),
-                    Some("to") if end.is_none() => end = Some((checked, true)),
-                    Some("before") if end.is_none() => end = Some((checked, false)),
-                    Some("step_by") if step.is_none() => step = Some(checked),
-                    _ => {
-                        self.refuse_why(
-                            entry.value.place,
-                            "a `range` takes `from:`, one of `to:` or `before:`, and an optional `step_by:`",
-                            "`to:` includes its number and `before:` stops short of it.",
-                        );
-                        return None;
-                    }
-                }
-            }
-            let (Some(from), Some((end, inclusive))) = (from, end) else {
-                self.refuse_why(
-                    source.place,
-                    "a `range` takes `from:`, one of `to:` or `before:`, and an optional `step_by:`",
-                    "`to:` includes its number and `before:` stops short of it.",
-                );
-                return None;
-            };
-            self.refuse_plain_range(&from, &end, inclusive, step.as_ref(), source.place);
+            let (from, end, inclusive, step) = self.range_parts(entries, source.place)?;
             self.context.scopes.push(HashMap::new());
             let item_id = self.make_local(item, WHOLE, VariableKind::LoopItem);
             self.mark_unused(item_id, item_unused);
@@ -2042,10 +2167,11 @@ impl<'a> Checker<'a> {
                     self.refuse(word.place, "`at key` is for going through a `Dict`");
                     None
                 }
-                Some((kind, word)) => Some((
-                    self.make_local(word, WHOLE, VariableKind::LoopPosition),
-                    *kind == syntax::PositionKind::Offset,
-                )),
+                Some((kind, word)) => {
+                    let id = self.make_local(word, WHOLE, VariableKind::LoopPosition);
+                    self.mark_unused(id, position_unused);
+                    Some((id, *kind == syntax::PositionKind::Offset))
+                }
                 None => None,
             };
             self.context.loop_depth += 1;
@@ -2071,8 +2197,16 @@ impl<'a> Checker<'a> {
                 self.program.types.unify(item_type, value);
                 position_type = key;
             }
-            (Type::Dict { .. }, Some(_)) => {
-                self.not_designed(source.place, "`at pos` or `at offset` when going through a `Dict`");
+            (Type::Dict { .. }, Some(kind)) => {
+                // trace: D105. How something is gone through matches how it's reached.
+                let word = if kind == syntax::PositionKind::Pos { "pos" } else { "offset" };
+                let line = self.source_line(source.place.line);
+                let fixed = line.replacen(&format!(" at {word} "), " at key ", 1);
+                self.messages.push(
+                    Message::refused(source.place, format!("`at {word}` is for going through a list; a `Dict` is gone through `at key`"))
+                        .with_fix(fixed)
+                        .with_why("a `Dict` is never reached by position, so going through one gives each key; a count for showing is kept with a `mut` name."),
+                );
             }
             (Type::Variable(_), Some(syntax::PositionKind::Key)) => {
                 let key = self.program.types.fresh();
@@ -2097,8 +2231,11 @@ impl<'a> Checker<'a> {
         self.context.scopes.push(HashMap::new());
         let item_id = self.make_local(item, item_type, VariableKind::LoopItem);
         self.mark_unused(item_id, item_unused);
-        let position_id =
-            position.map(|(kind, word)| (self.make_local(word, position_type, VariableKind::LoopPosition), *kind));
+        let position_id = position.map(|(kind, word)| {
+            let id = self.make_local(word, position_type, VariableKind::LoopPosition);
+            self.mark_unused(id, position_unused);
+            (id, *kind)
+        });
         if let Some(root) = root {
             self.context.iterating.push(root);
         }
@@ -2111,6 +2248,47 @@ impl<'a> Checker<'a> {
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
         Some(StatementKind::ForEach { item: item_id, position: position_id, source: checked, body })
+    }
+
+    /// A `range[…]`'s numbers: where it starts, where it ends and whether the end is in it, and its step (D22, Unio
+    /// D170, D172). A range of plain numbers that could never end is refused.
+    pub(super) fn range_parts(
+        &mut self,
+        entries: &[syntax::Entry],
+        place: Place,
+    ) -> Option<(Expression, Expression, bool, Option<Expression>)> {
+        let mut from = None;
+        let mut end = None;
+        let mut step = None;
+        for entry in entries {
+            let label = entry.label.as_ref().map(|label| label.text.as_str());
+            let checked = self.expression(&entry.value, Some(WHOLE));
+            self.expect(&checked, WHOLE, "a `range`'s number");
+            match label {
+                Some("from") if from.is_none() => from = Some(checked),
+                Some("to") if end.is_none() => end = Some((checked, true)),
+                Some("before") if end.is_none() => end = Some((checked, false)),
+                Some("step_by") if step.is_none() => step = Some(checked),
+                _ => {
+                    self.refuse_why(
+                        entry.value.place,
+                        "a `range` takes `from:`, one of `to:` or `before:`, and an optional `step_by:`",
+                        "`to:` includes its number and `before:` stops short of it.",
+                    );
+                    return None;
+                }
+            }
+        }
+        let (Some(from), Some((end, inclusive))) = (from, end) else {
+            self.refuse_why(
+                place,
+                "a `range` takes `from:`, one of `to:` or `before:`, and an optional `step_by:`",
+                "`to:` includes its number and `before:` stops short of it.",
+            );
+            return None;
+        };
+        self.refuse_plain_range(&from, &end, inclusive, step.as_ref(), place);
+        Some((from, end, inclusive, step))
     }
 
     /// The name an expression reads from, when it's a name or a part of one.
@@ -2293,6 +2471,31 @@ impl<'a> Checker<'a> {
     }
 }
 
+/// Whether an expression is a value written out plainly, which is the same every time (D104): a number, text with
+/// nothing filled in, a `Bool`, a list, an array's `[all: …]`, a `Dict`, a record or a case built from plain values,
+/// or a top-level name made from one with no `mut`.
+fn is_plain(expression: &syntax::Expression, names: &HashMap<String, &syntax::Expression>) -> bool {
+    use syntax::ExpressionKind as Kind;
+    match &expression.kind {
+        Kind::Whole(_) | Kind::Float { .. } | Kind::Bool(_) | Kind::EmptyDict => true,
+        Kind::Text(text) => !text.replace("\\{", "").contains('{'),
+        Kind::Unary { operator: syntax::UnaryOperator::Negate, operand } => {
+            matches!(operand.kind, Kind::Whole(_) | Kind::Float { .. })
+        }
+        Kind::Name(name) => names.contains_key(name),
+        Kind::List(items) => items.iter().all(|item| is_plain(item, names)),
+        Kind::Pairs(pairs) => pairs.iter().all(|(key, value)| {
+            (matches!(&key.kind, Kind::Name(name) if name == "all") || is_plain(key, names)) && is_plain(value, names)
+        }),
+        Kind::Group(inner) => is_plain(inner, names),
+        Kind::Member { .. } | Kind::TypeName(_) => expressions::type_path(expression).is_some(),
+        Kind::Bracketed { receiver, entries } => {
+            expressions::type_path(receiver).is_some() && entries.iter().all(|entry| is_plain(&entry.value, names))
+        }
+        _ => false,
+    }
+}
+
 /// A procedure's header line with something added after its name and parameters: `-> Type` before any `! [ … ]`,
 /// or `! [ … ]` in place of the one written, at the line's end (D81, D84).
 pub(super) fn header_with(line: &str, result: &str, failures: Option<&str>) -> String {
@@ -2436,14 +2639,14 @@ pub(crate) mod tests {
         );
     }
 
-    // trace: D64
+    // trace: D64, D96
     #[test]
     fn d64_two_texts_compare_with_equals_and_nothing_else() {
         assert!(whats("answer = \"yes\"\nif answer == \"yes\"\n    show_msg(answer)\nend\n").is_empty());
         assert!(whats("answer = \"yes\"\nif answer != \"\"\n    show_msg(answer)\nend\n").is_empty());
         assert_eq!(
             whats("answer = \"yes\"\nif answer < \"zebra\"\n    show_msg(answer)\nend\n"),
-            vec!["NotDesignedYet: putting two texts in order, as `<` and `>` would, isn't decided yet"]
+            vec!["refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most`"]
         );
     }
 

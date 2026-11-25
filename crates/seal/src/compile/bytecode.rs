@@ -484,6 +484,23 @@ pub enum Instruction {
     ClearFailure,
     /// `?? crash`: stops the script on the failure just given.
     Crash,
+    /// `==` on two bigger values, in `left` and the register after it, by their contents, of the type
+    /// `compared_types` lists at `site`; `equal` is false for `!=` (D95).
+    EqualValues {
+        to: Register,
+        left: Register,
+        site: u16,
+    },
+    /// A `range[…]` kept as a list: from, end and step in `base` and the two registers after it (D99).
+    MakeRange {
+        to: Register,
+        base: Register,
+        inclusive: bool,
+    },
+    /// `?? crash` on a `Maybe`: a failed check when the case number in `number` is `none`'s, 0 (D79).
+    CrashIfNone {
+        number: Register,
+    },
 
     // ---- text ----
     /// A new text joined from the pieces `site` lists, in one go (D12, D29).
@@ -497,6 +514,12 @@ pub enum Instruction {
         site: u32,
     },
     /// `be.Whole` on text, which can fail with `not_a_whole` (Unio D95, D156).
+    /// `be.Bool` on text: `"true"` or `"false"`, or the failure numbered `failure`, `not_a_bool` (D101).
+    TextToBool {
+        to: Register,
+        from: Register,
+        failure: u16,
+    },
     TextToWhole {
         to: Register,
         from: Register,
@@ -912,6 +935,8 @@ pub struct Compiled {
     pub door_sites: Vec<DoorSite>,
     /// The pieces each text join is made of, by the join's number.
     pub joins: Vec<Vec<JoinPiece>>,
+    /// The type each `EqualValues` compares, by its site (D95).
+    pub compared_types: Vec<u32>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame

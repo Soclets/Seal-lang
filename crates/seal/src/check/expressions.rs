@@ -248,9 +248,19 @@ impl Checker<'_> {
                     let Some(length) =
                         characters.get(index..).and_then(|rest| rest.iter().position(|&next| next == '}'))
                     else {
-                        self.not_designed(
-                            Place::new(place.line, column_of(index), 1),
-                            "a `{` with no `}` after it in text",
+                        // trace: D75. A brace shown as it is, is written `\{`.
+                        let mut fixed: Vec<char> = self.source_line(place.line).chars().collect();
+                        let at = (column_of(index) as usize).saturating_sub(1);
+                        if at <= fixed.len() {
+                            fixed.insert(at, '\\');
+                        }
+                        self.messages.push(
+                            crate::message::Message::refused(
+                                Place::new(place.line, column_of(index), 1),
+                                "this `{` opens braces that are never closed",
+                            )
+                            .with_fix(fixed.into_iter().collect::<String>())
+                            .with_why("braces in text fill in a name, as `{score}`; a brace shown as it is, is written `\\{`."),
                         );
                         return Self::error(place);
                     };
@@ -626,8 +636,21 @@ impl Checker<'_> {
         if matches!(&receiver.kind, syntax::ExpressionKind::Name(name) if name == "range")
             && self.visible("range").is_none()
         {
-            self.not_designed(place, "a `range[…]` anywhere but after `in` in a `for each`");
-            return Self::error(place);
+            // trace: D99. A `range` is a `List<Whole>`, usable anywhere a list is.
+            let Some((from, end, inclusive, step)) = self.range_parts(entries, place) else {
+                return Self::error(place);
+            };
+            let type_id = self.program.types.list(WHOLE);
+            return Expression {
+                kind: ExpressionKind::Range {
+                    from: Box::new(from),
+                    end: Box::new(end),
+                    inclusive,
+                    step: step.map(Box::new),
+                },
+                type_id,
+                place,
+            };
         }
         if !self.is_value(receiver) {
             let path = name_path(receiver).unwrap_or_default().join(".");
@@ -837,6 +860,13 @@ impl Checker<'_> {
     /// trace: D30, Unio D75, D76, D167
     fn list_literal(&mut self, items: &[syntax::Expression], wanted: Option<TypeId>, place: Place) -> Expression {
         let wanted_kind = wanted.map(|wanted| self.program.types.get(wanted).clone());
+        if wanted_kind == Some(Type::Error) {
+            // A written type that was refused has had its message already.
+            for item in items {
+                self.expression(item, None);
+            }
+            return Self::error(place);
+        }
         match wanted_kind {
             Some(Type::List { item, max }) => {
                 let checked: Vec<Expression> = items.iter().map(|value| self.item(value, item)).collect();
@@ -901,13 +931,6 @@ impl Checker<'_> {
         if let [(key, value)] = pairs
             && matches!(&key.kind, syntax::ExpressionKind::Name(name) if name == "all")
         {
-            if self.visible("all").is_some() {
-                self.not_designed(
-                    key.place,
-                    "a name spelt `all` as a dictionary's key, which reads like `[all: value]`,",
-                );
-                return Self::error(place);
-            }
             let Some(Type::Array { item, length }) = wanted_kind else {
                 // trace: Unio D169
                 self.refuse_why(
@@ -975,7 +998,12 @@ impl Checker<'_> {
             ExpressionKind::Inside { change, .. } => self.is_failable(change),
             ExpressionKind::Lookup { .. } | ExpressionKind::DictRemove { .. } => true,
             ExpressionKind::Convert { conversion, .. } => {
-                matches!(conversion, super::tree::Conversion::TextToWhole | super::tree::Conversion::ListToLimit(_))
+                matches!(
+                    conversion,
+                    super::tree::Conversion::TextToWhole
+                        | super::tree::Conversion::TextToBool
+                        | super::tree::Conversion::ListToLimit(_)
+                )
             }
             ExpressionKind::ListAdd { variable, .. } => {
                 matches!(self.program.types.get(self.variable_type(*variable)), Type::List { max: Some(_), .. })
@@ -1053,8 +1081,16 @@ impl Checker<'_> {
                         type_id: inner,
                         place,
                     }
+                } else if matches!(fallback, syntax::Fallback::Crash) {
+                    // trace: D79. `?? crash` says the `Maybe` can't be `none` here.
+                    Expression { kind: ExpressionKind::MaybeCrash(Box::new(checked)), type_id: inner, place }
                 } else {
-                    self.not_designed(place, "`?? ignore` or `?? crash` on a `Maybe`");
+                    // trace: D79. The name would be left with nothing in it, the `nil` D38 rules out.
+                    self.refuse_why(
+                        place,
+                        "`?? ignore` would leave nothing in place of a `Maybe` that's `none`",
+                        "a `Maybe` is given a value to use when it's `none`, as `?? 0`, or `?? crash` when it can't be `none`; `?? ignore` goes after a call that gives nothing.",
+                    );
                     Self::error(place)
                 }
             }
@@ -1108,11 +1144,6 @@ impl Checker<'_> {
             self.context.instead_types.pop();
             let ends_with_instead =
                 matches!(body.last().map(|last| &last.kind), Some(super::tree::StatementKind::Instead(_)));
-            for statement in body.iter().rev().skip(1) {
-                if matches!(statement.kind, super::tree::StatementKind::Instead(_)) {
-                    self.not_designed(statement.place, "an `instead` that isn't the last line of its case");
-                }
-            }
             if gives_nothing && ends_with_instead {
                 self.refuse_why(
                     body.last().map_or(place, |last| last.place),

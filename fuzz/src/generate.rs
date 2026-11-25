@@ -425,7 +425,31 @@ impl Generator {
                 if simple {
                     return if self.random.chance(1, 2) { "true".to_owned() } else { "false".to_owned() };
                 }
-                match self.random.below(8) {
+                match self.random.below(10) {
+                    // Two bigger values compared by their contents (D95), or text read as a `Bool` (D101).
+                    8 if self.seal() => {
+                        let kind = *self
+                            .random
+                            .pick(&[
+                                Kind::WholeList,
+                                Kind::Record,
+                                Kind::Dict,
+                                Kind::Spot,
+                                Kind::Tree,
+                                Kind::Event,
+                                Kind::Maybe,
+                            ])
+                            .unwrap_or(&Kind::WholeList);
+                        let operator = if self.random.chance(1, 2) { "==" } else { "!=" };
+                        let left = self.read_name(kind).unwrap_or_else(|| self.value(kind, 1));
+                        let right = self.read_name(kind).unwrap_or_else(|| self.value(kind, 1));
+                        format!("{} {operator} {}", Self::bracketed(left), Self::bracketed(right))
+                    }
+                    9 if self.seal() => {
+                        let text =
+                            *self.random.pick(&["\"true\"", "\"false\"", "\"yes\"", "\"\""]).unwrap_or(&"\"true\"");
+                        format!("(be.Bool({text}) ?? false)")
+                    }
                     // Two texts compared exactly (D64); Unio leaves comparing text open, so only Seal's dialect has it.
                     7 if self.seal() => {
                         let operator = if self.random.chance(1, 2) { "==" } else { "!=" };
@@ -489,6 +513,22 @@ impl Generator {
                         Some(record) if self.seal() => format!("{record}.name"),
                         _ => self.text_literal(),
                     },
+                }
+            }
+            // A range kept as a list (D99).
+            Kind::WholeList if self.seal() && self.random.chance(1, 5) => {
+                let edge = if self.random.chance(1, 2) { "to" } else { "before" };
+                // Now and then a range whose numbers are only known while running, which may stop there.
+                if self.random.chance(1, 6) {
+                    let from = self.value(Kind::Whole, 0);
+                    return format!("range[from: {from}, {edge}: {}]", self.random.below(12));
+                }
+                let from = self.random.below(8);
+                if self.random.chance(1, 3) {
+                    format!("range[from: {from}, {edge}: {}, step_by: -1]", self.random.below(from + 1))
+                } else {
+                    let step = *self.random.pick(&["", ", step_by: 2"]).unwrap_or(&"");
+                    format!("range[from: {from}, {edge}: {}{step}]", from + self.random.below(8))
                 }
             }
             Kind::WholeList => {
@@ -581,6 +621,15 @@ impl Generator {
                     format!("Maybe.some[value: {}]", self.value(Kind::Whole, level.saturating_sub(1)))
                 }
             }
+        }
+    }
+
+    /// A value as one side of `==`: anything that isn't a single word gets brackets.
+    fn bracketed(value: String) -> String {
+        if value.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
+            value
+        } else {
+            format!("({value})")
         }
     }
 

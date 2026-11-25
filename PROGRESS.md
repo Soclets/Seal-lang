@@ -50,9 +50,9 @@ checker, compiler or VM.
   header types required (D81), `! [ … ]` required and exact (D84), grouped parameters (D88); every text fills its
   braces, `fmt` and `&` go (D75, D77); `{newln}` and `{tab}` (D118). Every test passes again; the benchmark programs
   are rewritten in today's spellings. Every D57 goal still met; most programs got faster (see "Benchmarks").
-- [ ] **C8. The smaller decisions.** D79, D80, D82, D83, D85, D86, D87, D89 to D96, D99 to D101, D103 to D106: each
+- [x] **C8. The smaller decisions.** D79, D80, D82, D83, D85, D86, D87, D89 to D96, D99 to D101, D103 to D106: each
   stop the code had becomes the decided refusal or feature, `==` on bigger values (D95), a `range` as a list (D99),
-  every value shown as written (D100), `places:` (D94), `be.Bool` (D101).
+  every value shown as written (D100), `places:` (D94), `be.Bool` (D101). Every D57 goal still met after it.
 - [x] **C9. The translator writes Unio's current spellings** (Unio D190 to D203) and the comparison with Ralph runs
   again: 404 the same, 0 different, from seed 1, with 4 of the 15 tests compared.
 - [ ] **C10. Handlers** (D97, D98, D110): `group.handler`, `::name`, `handles [ … ]`, `??` with a handler, `include`,
@@ -120,6 +120,29 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D102** Bare `end`, with an optional `\\ note` checked against the block it closes, block comments included.
 - **D106** A statement's later lines are indented one level deeper than its first.
 - **D118** `{newln}` and `{tab}`; `newln` and `tab` can't be names. Outside braces they stop as not designed yet.
+- **D79** `?? crash` on a `Maybe` is a failed check when it's `none`; `?? ignore` on one is refused.
+- **D80** A line after `instead` in its case is refused.
+- **D82** A name's written type may leave out the parts its value shows (`Array[len: 4]`, `List[len.max: 3]`); what
+  the value doesn't show is refused. Only a name with a value; parameters and fields write their types whole.
+- **D83** A name can't be `all`, so `[all: v]` always means the list form.
+- **D86** A line after a `match` where a case leaves is refused; `at key unused item`.
+- **D87** Arguments go in the declared order, refused otherwise with the call put in order as the fix;
+  `labels.any_order [ … ]`; a case's values in declared order.
+- **D89** Splitting by an empty text the checker can see (written, or a top-level name made from `""`) is refused;
+  one only known while running is a failed check.
+- **D90** A `Dict` key partway along a change is refused.
+- **D93** A `one_of` with no cases is refused.
+- **D95** `==` and `!=` on lists, arrays, `Dict`s (whatever their order), records, `one_of`s and `Maybe`s compare
+  contents, walking both without nesting in the host's stack, counted as bulk work.
+- **D96** `<`, `>`, `at_least` and `at_most` on text are refused.
+- **D99** `range[…]` is a `List<Whole>` anywhere; a `for each` over one written there still builds nothing. A kept
+  range's memory is counted before it's built.
+- **D101** `be.Bool` reads exactly `"true"` or `"false"`, failing with `not_a_bool`; other undecided conversions are
+  refused.
+- **D103, D104** A type's setting, and a default, can be a top-level name made with no `mut` from a value written
+  out plainly; a default can be any plain value (lists, `Dict`s, records, cases), and reaches the host's calls too.
+- **D105** `at pos` and `at offset` on a `Dict` are refused, with `at key` as the fix.
+- An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
 
 ## How it's built (the building session's design)
 
@@ -212,40 +235,18 @@ In short, judged Normal against Normal (D58):
 
 ## Questions for the design session
 
-The first batch of 14 went on 2026-11-23. Answered so far: 1 (D60), 2 (D61), 3 (D62), 4 (D63), 5 (D64 to D66),
-6 (D67), 7 (D68), 8 (D69), 9 (D70), 10 (D71), 11 (D72), 12 (D73). Still open from that batch, each a "not designed
-yet" stop:
+Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D124), 12 (D119), 15 (D125), and most of
+1 to 10 by D120 to D123 (units convert by themselves when exact, `per`, `.point`, `in`, `group.unit`). Still open:
+- 13, 14: which `be.` conversions and which operations the new number types take.
+- 16: what crosses a door for each new number type (mine to choose; to report).
+- 17: whether a ranged number is its own type, and whether "storing" covers parameters, fields, items and `return`s.
+- 18 to 20: a handler's parameter labels (chapter 7's example), `fail` in a handler as a jump, what `handles` can name.
+- 21: `newln` outside braces.
+- D58: whether n-body's Normal program is rightly the one written with D62's direct changes.
 
-13. `?? ignore` or `?? crash` on a `Maybe`; `instead` not last in its case; `[all: v]` with a name `all` in reach.
-14. A host's record or `one_of` the script doesn't declare (built: the script must declare the same type).
-
-New questions the new decisions raised, each built as a stop or noted beside what was built:
-
-- **D61.** `unused` on a `for each`'s `at` name (stops). A `case` taking its values out in another order than they're
-  declared (stops).
-- **D62.** A `Dict` key partway along a change (stops, as D62 says).
-- **D63.** A `//` comment touching what's before it, and a comment inside an open bracket (both stop). A `//` line's
-  own indentation isn't checked. A block comment closes at the first `end` at its own depth, so commented-out code
-  must be indented inside it. `comment` isn't a reserved word: a name can be spelt `comment`. A `///` before a name,
-  a field or a case (stops). A `\` before anything but `"`, `\` or `{`, and a tab inside text (both stop).
-- **D65.** Splitting by an empty text (stops the script, as not designed yet, when it happens).
-- **D68.** Does Unio's D9 cover a `match` where some case leaves? (A line after one stops.) Built: a `return` or `fail`
-  anywhere inside an `if`, loops included, counts as a way that leaves; `?` doesn't count.
-- **D69.** Built as written: pausing is refused while going through any top-level name, `mut` or not.
-- **D72.** Passing a value of a type that holds itself between a host and a script (stops as not built yet): the
-  host's side needs a way to name a type inside itself, and a deep value mustn't overrun the host's stack.
-- **D73.** Built wherever a list goes where a type is wanted: a name, an argument, a field, a `return`.
-- **D58.** Is n-body's Normal program rightly the one written with D62's direct changes, with the copy-out one as
-  Ceil.source? (Built that way; both beat Luau.)
-
-Disagreements reported: chapter 9's "Not decided: labels and defaults on doors" against D51, D55 and tests/README.md
-(built: labels on doors, no defaults).
-
-Proposals sent (D14 leaves them to the building session): a step is one jump taken or one call, plus one per 64 units of
-bulk work; memory in Seal's own sizes; no default limits; a limit's kind is `limit reached:`; the `seal` command's exit
-statuses follow Unio's; a Rust `HashMap`'s keys go in sorted.
-
-Also asked for a `.gitignore` with `target/` (not a file the building session may edit).
+New questions from C7 and C8, not sent yet:
+- D91 lists the declarations `///` goes on; a name made inside a block isn't among them (stops).
+- A comment after code inside an open bracket, as `foo(a, // the first`: D91 allows a comment line there (stops).
 
 ## What Ralph can't compare yet
 
@@ -257,35 +258,11 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 
 ## Not designed yet: every stop left in the code
 
-- arguments written in another order than the parameters
-- empty braces in `fmt` text; `places:` in `fmt`'s braces
-- converting with `be` to anything but `Text`, `Whole` or `Float`, or from a type no conversion is decided for
-- a `range[…]` anywhere but after `in` in a `for each`
-- a name spelt `all` as a dictionary's key, which reads like `[all: value]`
-- `?? ignore` or `?? crash` on a `Maybe`
-- an `instead` that isn't the last line of its case
-- putting two texts in order, as `<` and `>` would; comparing two records, lists, dictionaries or `one_of`s with `==`
-- showing anything but a `Whole`, a `Float`, a `Bool` or a `Text` in `fmt`'s braces, or converting it to text
-- a `one_of` with no cases
-- a type's setting that isn't a plain whole number
-- a `Dict` key that isn't a `Text`, a `Whole` or a `Bool`
-- a procedure named after a built-in or one of the host's doors
-- a default that isn't a number, a `Bool` or text
-- taking out a case's values in another order than they're declared
-- a line after a `match` where some case leaves
-- a `Dict`'s key partway along a change
-- `at pos` or `at offset` when going through a `Dict`
-- using the host's record or `one_of` without declaring it in the script
-- a comment inside an open bracket; a `//` comment touching what's before it
-- a `///` before anything but a procedure, a family, a record or a `one_of`
-- a tab outside indentation; a character beyond plain English ones outside text
-- a `\` in text before anything but `"`, `\` or `{`; a tab inside text; a `\r` that isn't right before a line break
-- a `_` in a type's name; a number written with a leading zero
-- `fam.handler` and a handler after `otherwise`, which come with handlers (D43)
-- a `record`, `one_of`, `proc` or `fam.proc` inside a block
-- `unused` on a `for each`'s `at` name
-- a blank line inside an open bracket; how a statement's later lines are indented (not checked)
-- splitting a text by an empty text
+- a `\r` that isn't right before a line break
+- a comment after code inside an open bracket
+- a `///` before a name made inside a block
+- `newln` or `tab` outside braces (question 21)
+- a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
 
 ## Not built yet
 
@@ -296,6 +273,7 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
 - Passing a value of a type that holds itself between a host and a script (D72).
+- Converting to `HugeWhole`, `Decimal` and `HugeDecimal` (C13).
 - The language server (D47): an empty package, as the prompt says.
 
 ## Draft wordings

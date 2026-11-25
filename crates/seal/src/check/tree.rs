@@ -58,6 +58,8 @@ pub struct Procedure {
     pub parameters: Vec<VariableId>,
     /// Each parameter's label, when it has one (D41).
     pub labels: Vec<Option<String>>,
+    /// Written `labels.any_order`: labelled arguments go in any order (D87).
+    pub labels_any_order: bool,
     /// Each parameter's default, when it has one (D42).
     pub defaults: Vec<Option<Expression>>,
     pub result: TypeId,
@@ -244,6 +246,8 @@ pub enum Conversion {
     WholeToFloat,
     /// `be.Whole` on text, which fails with `not_a_whole` (Unio D95, D156).
     TextToWhole,
+    /// `be.Bool` on text, which fails with `not_a_bool` (D101).
+    TextToBool,
     /// A list moved into a name whose `len.max` it might not fit, which fails with `full` (D73).
     ListToLimit(i64),
     FloatToWhole(Rounding),
@@ -339,6 +343,13 @@ pub enum ExpressionKind {
         fields: Vec<(u32, Expression)>,
     },
     List(Vec<Expression>),
+    /// `range[…]` kept as a list (D99); a `for each` over one is [`StatementKind::ForRange`], which builds no list.
+    Range {
+        from: Box<Expression>,
+        end: Box<Expression>,
+        inclusive: bool,
+        step: Option<Box<Expression>>,
+    },
     /// `[all: value]` for an array of `count` items (Unio D169).
     Repeat {
         value: Box<Expression>,
@@ -352,6 +363,8 @@ pub enum ExpressionKind {
         call: Box<Expression>,
         fallback: HandleFallback,
     },
+    /// `maybe ?? crash`: the value inside, or a failed check when it's `none` (D79).
+    MaybeCrash(Box<Expression>),
     /// `maybe ?? fallback` on a `Maybe` (D38).
     MaybeOr {
         maybe: Box<Expression>,

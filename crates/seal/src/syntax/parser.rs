@@ -911,6 +911,7 @@ impl Parser<'_> {
             self.advance();
         }
         let item = self.expect_name("the item's name")?;
+        let mut position_unused = false;
         let position = if self.at_keyword(Keyword::At) {
             self.advance();
             let kind = match self.peek_kind() {
@@ -920,8 +921,10 @@ impl Parser<'_> {
                 _ => return Err(self.unexpected("`pos`, `offset` or `key`")),
             };
             self.advance();
+            // trace: D86. An `at` name that's never read is marked `unused`.
             if self.at_keyword(Keyword::Unused) {
-                return Err(Message::not_designed_yet(self.here(), "`unused` on a `for each`'s `at` name"));
+                self.advance();
+                position_unused = true;
             }
             Some((kind, self.expect_name("a name")?))
         } else {
@@ -933,7 +936,7 @@ impl Parser<'_> {
         let body = self.body(&opener)?;
         self.end_of(&opener)?;
         Ok(Statement {
-            kind: StatementKind::ForEach { item, item_unused, position, source, body },
+            kind: StatementKind::ForEach { item, item_unused, position, position_unused, source, body },
             place: opener.place,
         })
     }

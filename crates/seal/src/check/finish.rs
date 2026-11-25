@@ -102,6 +102,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }
         | ExpressionKind::Sqrt(inner)
+        | ExpressionKind::MaybeCrash(inner)
         | ExpressionKind::ShowPlaces { value: inner, .. }
         | ExpressionKind::Negate(inner)
         | ExpressionKind::Not(inner)
@@ -134,6 +135,13 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
             for (key, value) in pairs {
                 plain(key);
                 plain(value);
+            }
+        }
+        ExpressionKind::Range { from, end, step, .. } => {
+            plain(from);
+            plain(end);
+            if let Some(step) = step {
+                plain(step);
             }
         }
         ExpressionKind::ListAdd { value, position, .. } => {
@@ -188,6 +196,7 @@ impl Facts<'_> {
                 .unwrap_or_default(),
             ExpressionKind::Lookup { .. } | ExpressionKind::DictRemove { .. } => named("missing"),
             ExpressionKind::Convert { conversion: Conversion::TextToWhole, .. } => named("not_a_whole"),
+            ExpressionKind::Convert { conversion: Conversion::TextToBool, .. } => named("not_a_bool"),
             ExpressionKind::Convert { conversion: Conversion::ListToLimit(_), .. } => named("full"),
             ExpressionKind::ListAdd { variable, .. } => {
                 let limited = self.program.variable(*variable).is_some_and(|variable| {
@@ -451,15 +460,16 @@ impl Checker<'_> {
             }
             Requirement::Ordered => match kind {
                 Type::Whole | Type::Float => {}
-                // trace: D64
-                Type::Text => self.not_designed(place, "putting two texts in order, as `<` and `>` would,"),
+                // trace: D96
+                Type::Text => self.refuse_why(
+                    place,
+                    "two texts aren't put in order with `<`, `>`, `at_least` or `at_most`",
+                    "text has no one right order: by character codes `\"Zebra\"` comes before `\"apple\"`, and alphabetical order differs between languages.",
+                ),
                 _ => self.refuse(place, format!("{purpose}, but this is {found}")),
             },
-            Requirement::Comparable => match kind {
-                // trace: D64. Two texts are equal when they hold the same characters in the same order.
-                Type::Whole | Type::Float | Type::Bool | Type::Text => {}
-                _ => self.not_designed(place, format!("comparing two values of the type {found}")),
-            },
+            // trace: D64, D95. Two values are equal when their contents are.
+            Requirement::Comparable => {}
             Requirement::Joinable => match kind {
                 Type::Text | Type::Whole | Type::Bool => {}
                 Type::Float => {
@@ -587,7 +597,6 @@ impl Checker<'_> {
     fn candidates(&mut self, requirement: &Requirement) -> Option<Vec<TypeId>> {
         match requirement {
             Requirement::Number | Requirement::Ordered => Some(vec![WHOLE, FLOAT]),
-            Requirement::Comparable => Some(vec![WHOLE, FLOAT, BOOL, TEXT]),
             Requirement::Joinable => Some(vec![TEXT, WHOLE, BOOL]),
             Requirement::Member { name, .. } => {
                 if name == "len" {
@@ -600,7 +609,10 @@ impl Checker<'_> {
                     .collect();
                 Some(records.into_iter().map(|record| self.program.types.intern(Type::Record(record))).collect())
             }
-            Requirement::Textable | Requirement::Indexable { .. } | Requirement::Iterable { .. } => None,
+            Requirement::Comparable
+            | Requirement::Textable
+            | Requirement::Indexable { .. }
+            | Requirement::Iterable { .. } => None,
         }
     }
 
@@ -741,7 +753,7 @@ impl Checker<'_> {
     /// pauses (D52), and what isn't decided about loops over shared names.
     #[allow(clippy::too_many_lines)] // the whole-script passes, run one after another over the same facts
     pub(super) fn finish(&mut self) {
-        for name in ["missing", "not_a_whole", "full"] {
+        for name in ["missing", "not_a_whole", "full", "not_a_bool"] {
             self.failure(name);
         }
         let door_failures: Vec<String> = self.doors.iter().flat_map(|door| door.failures.clone()).collect();

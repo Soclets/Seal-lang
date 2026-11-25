@@ -187,11 +187,12 @@ impl Checker<'_> {
     fn bind_arguments(
         &mut self,
         name: &str,
-        labels: &[Option<String>],
+        (labels, any_order): (&[Option<String>], bool),
         has_default: &[bool],
         arguments: &[syntax::Entry],
         place: Place,
     ) -> Option<Vec<Option<usize>>> {
+        let mut out_of_order = false;
         let mut bound: Vec<Option<usize>> = vec![None; labels.len()];
         let mut last: Option<usize> = None;
         let mut failed = false;
@@ -237,9 +238,8 @@ impl Checker<'_> {
                 failed = true;
                 continue;
             }
-            if last.is_some_and(|last| parameter < last) {
-                self.not_designed(entry.value.place, "arguments written in another order than the parameters");
-                failed = true;
+            if last.is_some_and(|last| parameter < last) && !any_order {
+                out_of_order = true;
             }
             if let Some(slot) = bound.get_mut(parameter) {
                 *slot = Some(index);
@@ -247,6 +247,11 @@ impl Checker<'_> {
             last = Some(parameter);
         }
         if failed {
+            return None;
+        }
+        if out_of_order {
+            // trace: D87. A call writes its arguments in the order the procedure declares them.
+            self.refuse_order(name, &bound, arguments, place);
             return None;
         }
         let missing: Vec<usize> = (0..labels.len())
@@ -277,15 +282,51 @@ impl Checker<'_> {
         Some(bound)
     }
 
+    /// trace: D87. Arguments in another order than declared are refused, with the call put in order as the fix when
+    /// it's on one line.
+    fn refuse_order(&mut self, name: &str, bound: &[Option<usize>], arguments: &[syntax::Entry], place: Place) {
+        let start = |entry: &syntax::Entry| entry.label.as_ref().map_or(entry.value.place, |label| label.place);
+        let mut message = crate::message::Message::refused(
+            place,
+            format!("this call writes `{name}`'s arguments in another order than it declares them"),
+        )
+        .with_why("a call writes its arguments in the order its procedure declares them, so every call to it reads alike; `labels.any_order` lets the labelled ones go in any order.");
+        let one_line =
+            arguments.iter().all(|entry| start(entry).line == place.line && entry.value.place.line == place.line);
+        if one_line && let (Some(first), Some(last)) = (arguments.first(), arguments.last()) {
+            let line: Vec<char> = self.source_line(place.line).chars().collect();
+            let text = |from: Place, to: Place| -> String {
+                let (from, to) =
+                    (from.column.saturating_sub(1) as usize, (to.column + to.width).saturating_sub(1) as usize);
+                line.get(from..to.min(line.len())).unwrap_or(&[]).iter().collect()
+            };
+            let ordered: Vec<String> = bound
+                .iter()
+                .filter_map(|argument| argument.and_then(|index| arguments.get(index)))
+                .map(|entry| text(start(entry), entry.value.place))
+                .collect();
+            let (from, to) = (start(first), last.value.place);
+            let before: String = line.get(..from.column.saturating_sub(1) as usize).unwrap_or(&[]).iter().collect();
+            let after: String = line
+                .get(((to.column + to.width).saturating_sub(1) as usize).min(line.len())..)
+                .unwrap_or(&[])
+                .iter()
+                .collect();
+            message = message.with_fix(format!("{before}{}{after}", ordered.join(", ")));
+        }
+        self.messages.push(message);
+    }
+
     fn procedure_call(&mut self, id: ProcedureId, name: &str, arguments: &[syntax::Entry], place: Place) -> Expression {
         self.ensure_checked(id);
         let Some(procedure) = self.program.procedure(id) else { return Self::error(place) };
         let labels = procedure.labels.clone();
+        let any_order = procedure.labels_any_order;
         let defaults = procedure.defaults.clone();
         let parameters = procedure.parameters.clone();
         let result = procedure.result;
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
-        let Some(bound) = self.bind_arguments(name, &labels, &has_default, arguments, place) else {
+        let Some(bound) = self.bind_arguments(name, (&labels, any_order), &has_default, arguments, place) else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -347,7 +388,7 @@ impl Checker<'_> {
             (parameters, result)
         };
         let has_default = vec![false; labels.len()];
-        let Some(bound) = self.bind_arguments(&name, &labels, &has_default, arguments, place) else {
+        let Some(bound) = self.bind_arguments(&name, (&labels, false), &has_default, arguments, place) else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -381,7 +422,7 @@ impl Checker<'_> {
         let narrowing: Vec<&str> = path.iter().skip(1).map(String::as_str).collect();
         let full = path.join(".");
         let rounding = match narrowing.as_slice() {
-            ["Text" | "Whole" | "Float"] => None,
+            ["Text" | "Whole" | "Float" | "Bool"] => None,
             ["Whole", "floor"] => Some(Rounding::Floor),
             ["Whole", "trunc"] => Some(Rounding::Trunc),
             ["Whole", "ceil"] => Some(Rounding::Ceil),
@@ -396,19 +437,28 @@ impl Checker<'_> {
                 );
                 return Self::error(place);
             }
+            [target, ..] if ["HugeWhole", "Decimal", "HugeDecimal"].contains(target) => {
+                self.not_built(place, format!("converting to `{target}` (D115, D116) isn't"));
+                return Self::error(place);
+            }
             [target, ..]
                 if target.starts_with(|first: char| first.is_ascii_uppercase())
-                    && !["Text", "Whole", "Float"].contains(target) =>
+                    && !["Text", "Whole", "Float", "Bool"].contains(target) =>
             {
-                self.not_designed(place, format!("converting to `{target}` with `be`"));
+                // trace: D101. Only the conversions decided are in Seal.
+                self.refuse_why(
+                    place,
+                    format!("there's no conversion to `{target}`"),
+                    "`be` converts to `Text`, `Whole`, `Float` and `Bool`; other values are built as they're written.",
+                );
                 return Self::error(place);
             }
             _ => {
                 self.refuse_why(
                     place,
                     format!("there's no `{full}`"),
-                    "`be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Whole.floor`, `be.Whole.trunc`, \
-                     `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.",
+                    "`be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.Whole.floor`, \
+                     `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.",
                 );
                 return Self::error(place);
             }
@@ -440,13 +490,35 @@ impl Checker<'_> {
                 );
                 (Conversion::ToText, TEXT)
             }
+            (Some("Bool"), _) => {
+                if found == BOOL {
+                    return same_type(self, "Bool");
+                }
+                if !self.program.types.is_open(found) && found != TEXT && found != ERROR {
+                    // trace: D101
+                    let written = self.describe(found);
+                    self.refuse_why(
+                        argument.place,
+                        format!("there's no conversion from {written} to a `Bool`"),
+                        "`be.Bool` reads `\"true\"` or `\"false\"` from text; a number is compared, as `n != 0`, for a `Bool`.",
+                    );
+                    return Self::error(place);
+                }
+                self.program.types.unify(value.type_id, TEXT);
+                (Conversion::TextToBool, BOOL)
+            }
             (Some("Float"), _) => {
                 if found == FLOAT {
                     return same_type(self, "Float");
                 }
                 if !self.program.types.is_open(found) && found != WHOLE && found != ERROR {
+                    // trace: D101
                     let written = self.describe(found);
-                    self.not_designed(argument.place, format!("converting {written} to a `Float`"));
+                    self.refuse_why(
+                        argument.place,
+                        format!("there's no conversion from {written} to a `Float`"),
+                        "`be.Float` turns a `Whole` into a `Float`.",
+                    );
                     return Self::error(place);
                 }
                 self.program.types.unify(value.type_id, WHOLE);
@@ -478,8 +550,13 @@ impl Checker<'_> {
                     return Self::error(place);
                 }
                 if found == BOOL || !(self.program.types.is_open(found) || found == TEXT || found == ERROR) {
+                    // trace: D101
                     let written = self.describe(found);
-                    self.not_designed(argument.place, format!("converting {written} to a `Whole`"));
+                    self.refuse_why(
+                        argument.place,
+                        format!("there's no conversion from {written} to a `Whole`"),
+                        "`be.Whole` reads a `Whole` from text, and turns a `Float` into one with `.floor`, `.trunc`, `.ceil`, `.nearest` or `.nearest.even`.",
+                    );
                     return Self::error(place);
                 }
                 self.program.types.unify(value.type_id, TEXT);
@@ -554,6 +631,25 @@ impl Checker<'_> {
             }
             let by = self.expression(&entry.value, Some(TEXT));
             self.expect(&by, TEXT, "the text to split at");
+            // trace: D89. An empty separator the checker can see is refused while loading.
+            let empty = match &by.kind {
+                ExpressionKind::Text(text) => text.is_empty(),
+                ExpressionKind::Variable(variable) => self.variable(*variable).is_some_and(|variable| {
+                    variable.top_level
+                        && self.plain_names.get(&variable.name).is_some_and(
+                            |value| matches!(&value.kind, syntax::ExpressionKind::Text(text) if text.is_empty()),
+                        )
+                }),
+                _ => false,
+            };
+            if empty {
+                self.refuse_why(
+                    entry.value.place,
+                    "this splits a text by an empty text",
+                    "an empty text is never found between two pieces; `for each` goes through a text's characters, as `for each letter in name`.",
+                );
+                return Self::error(place);
+            }
             let type_id = self.program.types.list(TEXT);
             return Expression {
                 kind: ExpressionKind::Split { text: Box::new(text), by: Box::new(by), keep_empty },

@@ -175,6 +175,8 @@ pub enum StatementKind {
         /// The item is marked `unused`: never read, on purpose (D61).
         item_unused: bool,
         position: Option<(PositionKind, Word)>,
+        /// The `at` name is marked `unused` (D86).
+        position_unused: bool,
         source: Expression,
         body: Block,
     },

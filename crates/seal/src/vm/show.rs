@@ -184,6 +184,8 @@ pub fn show(
 /// in order, `Dict`s by their keys, each with an equal value, whatever order they were added in, and `one_of`s by
 /// their case and its values. Two `Float`s are equal as numbers (Unio D184).
 ///
+/// Every pair of values compared counts one unit of `work`.
+///
 /// # Errors
 ///
 /// A broken handle, which is a bug in Seal.
@@ -195,9 +197,11 @@ pub fn equal(
     types: &TypeTable,
     heap: &Heap,
     layouts: &[Layout],
+    work: &mut u64,
 ) -> Result<bool, HeapError> {
     let mut pending = vec![(left, right, type_id)];
     while let Some((left, right, type_id)) = pending.pop() {
+        *work = work.saturating_add(1);
         let same = match types.get(type_id) {
             #[allow(clippy::float_cmp)] // `==` on floats is exact (Unio D184)
             Type::Float => f64::from_bits(left) == f64::from_bits(right),

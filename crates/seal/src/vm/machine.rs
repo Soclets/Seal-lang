@@ -6,7 +6,7 @@
 use super::crossing::{CrossingError, plain_slot, plain_value, to_slot, to_value};
 use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
-use super::show::show;
+use super::show::{equal, show};
 use crate::check::tree::Rounding;
 use crate::check::types::TypeId;
 use crate::compile::bytecode::{
@@ -305,6 +305,57 @@ fn join_pieces(
         }
     }
     Ok(())
+}
+
+/// A `range[…]` kept as a list (D99), checked as a `for each` checks one (Unio D172), with its memory counted before
+/// it's built, so a range of billions stops at the cap instead of being built. Kept out of [`run`]'s loop.
+#[inline(never)]
+fn make_range([from, end, step]: [i64; 3], inclusive: bool, heap: &mut Heap) -> Result<u64, Stop> {
+    let label = if inclusive { "to" } else { "before" };
+    let when = || Some(format!("`range[from: {from}, {label}: {end}, step_by: {step}]`"));
+    if step == 0 {
+        return Err(Stop::CheckFailed {
+            what: "this range's step is 0".to_owned(),
+            when: when(),
+            why: Some("a range with a step of 0 never reaches its end.".to_owned()),
+        });
+    }
+    if if step > 0 { from > end } else { from < end } {
+        return Err(Stop::CheckFailed {
+            what: "this range's step points away from its end".to_owned(),
+            when: when(),
+            why: Some("a range's step points towards its end; a negative `step_by:` counts down.".to_owned()),
+        });
+    }
+    let distance = (i128::from(end) - i128::from(from)).unsigned_abs();
+    let stride = i128::from(step).unsigned_abs();
+    let count = if inclusive { distance / stride + 1 } else { distance.div_ceil(stride) };
+    let needed = usize::try_from(count).ok().and_then(|count| count.checked_mul(SLOT_COST)).unwrap_or(usize::MAX);
+    if needed > heap.room_left() {
+        return Err(Stop::from(HeapError::OutOfMemory { needed, in_use: heap.in_use(), cap: heap.cap() }));
+    }
+    let count = usize::try_from(count).unwrap_or(0);
+    let mut items = Vec::with_capacity(count);
+    let mut value = i128::from(from);
+    for _ in 0..count {
+        items.push(i64::try_from(value).unwrap_or(0).cast_unsigned());
+        value += i128::from(step);
+    }
+    heap.work = heap.work.saturating_add(count as u64);
+    Ok(heap.allocate(Object::List { items, references: false }, needed)?)
+}
+
+/// Whether two bigger values hold the same contents (D95), with the work it took counted as steps (D14). Kept out of
+/// [`run`]'s loop, as joining is.
+#[inline(never)]
+fn equal_values(left: u64, right: u64, site: u16, heap: &mut Heap, compiled: &Compiled) -> Result<bool, Stop> {
+    let Some(&type_id) = compiled.compared_types.get(usize::from(site)) else {
+        return Err(Stop::Internal("a comparison that isn't there".to_owned()));
+    };
+    let mut work = 0;
+    let same = equal(left, right, TypeId(type_id), &compiled.types, heap, &compiled.layouts, &mut work)?;
+    heap.work = heap.work.saturating_add(work);
+    Ok(same)
 }
 
 /// Writes each piece of a join onto `built`. When joining onto a text in place, `onto` is that text's handle and how
@@ -1151,6 +1202,33 @@ pub fn run(
             }
             Instruction::ClearFailure => failure = 0,
             Instruction::Crash => return Err((Stop::Crashed { failure }, pc)),
+            Instruction::MakeRange { to, base, inclusive } => {
+                let numbers = [whole!(base), whole!(base + 1), whole!(base + 2)];
+                match make_range(numbers, inclusive, heap) {
+                    Ok(list) => set!(to, list),
+                    Err(stop) => return Err((stop, pc)),
+                }
+                count_work!();
+            }
+            Instruction::EqualValues { to, left, site } => {
+                let right = left.wrapping_add(1);
+                match equal_values(get!(left), get!(right), site, heap, compiled) {
+                    Ok(same) => set!(to, u64::from(same)),
+                    Err(stop) => return Err((stop, pc)),
+                }
+                count_work!();
+            }
+            Instruction::CrashIfNone { number } => {
+                if get!(number) == 0 {
+                    // trace: D79
+                    return Err(check_failed(
+                        "this `Maybe` is `none`",
+                        "it's followed by `?? crash`".to_owned(),
+                        "`?? crash` says the `Maybe` can't be `none` here, so the script stops when it is.",
+                        pc,
+                    ));
+                }
+            }
 
             Instruction::JoinPieces { to, site } | Instruction::AppendPieces { to, site } => {
                 let appending = matches!(instruction, Instruction::AppendPieces { .. });
@@ -1160,6 +1238,12 @@ pub fn run(
                 }
                 count_work!();
             }
+            // trace: D101. Exactly as a `Bool` shows, and nothing else.
+            Instruction::TextToBool { to, from, failure: not_a_bool } => match heap_try!(heap.text(get!(from))) {
+                "true" => set!(to, 1),
+                "false" => set!(to, 0),
+                _ => failure = u32::from(not_a_bool),
+            },
             Instruction::TextToWhole { to, from } => match text_to_whole(heap_try!(heap.text(get!(from)))) {
                 Some(value) => set!(to, value.cast_unsigned()),
                 None => failure = not_a_whole,
@@ -1500,7 +1584,13 @@ pub fn run(
                 let written = heap_try!(heap.text(get!(text)));
                 let by = heap_try!(heap.text(get!(by)));
                 if by.is_empty() {
-                    return Err((Stop::NotDesigned("splitting a text by an empty text".to_owned()), pc));
+                    // trace: D89. A separator that only turns out empty while running is a failed check.
+                    return Err(check_failed(
+                        "this splits a text by an empty text",
+                        "the text to split at is `\"\"`".to_owned(),
+                        "an empty text is never found between two pieces; `for each` goes through a text's characters.",
+                        pc,
+                    ));
                 }
                 let pieces: Vec<String> =
                     written.split(by).filter(|piece| keep_empty || !piece.is_empty()).map(str::to_owned).collect();

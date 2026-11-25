@@ -970,7 +970,11 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
         }
         // `div.floor` and its like are operators, with a space on each side like any other (Unio D70, D98).
         let after_operator = ends_with_rounding(tokens.get(..=index).unwrap_or(&[]));
-        let wanted = if after_operator { 1 } else { wanted_spaces(&before.kind, &after.kind) };
+        // trace: D87. `labels.any_order [ … ]` keeps the space `labels [ … ]` has.
+        let after_labels = index == 2
+            && after.kind == TokenKind::Symbol(Symbol::OpenSquare)
+            && tokens.first().map(|token| &token.kind) == Some(&TokenKind::Keyword(Keyword::Labels));
+        let wanted = if after_operator || after_labels { 1 } else { wanted_spaces(&before.kind, &after.kind) };
         if actual != wanted {
             mistakes.push(SpacingMistake {
                 line: before.place.line,
