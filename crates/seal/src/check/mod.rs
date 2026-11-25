@@ -1394,10 +1394,13 @@ impl<'a> Checker<'a> {
         }
         let taken_by = if BUILT_IN_WORDS.contains(&word) {
             "one of Seal's own words"
-        } else if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
-            "one of the host's doors"
         } else if self.words.contains(word) {
-            "a procedure"
+            // The words taken hold the doors' first words too; which it is only matters for the message.
+            if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
+                "one of the host's doors"
+            } else {
+                "a procedure"
+            }
         } else if self.handler_groups.contains_key(word) {
             "a handler group"
         } else {
