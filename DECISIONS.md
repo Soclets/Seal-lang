@@ -3801,3 +3801,36 @@ The wordings come with a later batch.
 **Tankun's words.** "Why is it `be.Decimal(speed)` bare?", "Have you made this mistake before, and is recorded?",
 then, asked "should `Float` into `Decimal` be written `be.Decimal.shown` or `be.Decimal.nearest`, with a bare
 `be.Decimal` on a `Float` refused, and the rest of the conversions as listed?", the owner chose: "yea"
+
+## D127. Which operations `HugeWhole`, `Decimal` and `HugeDecimal` take
+
+2026-11-25.
+
+**Chosen.**
+
+| | `HugeWhole` | `Decimal` | `HugeDecimal` |
+|---|---|---|---|
+| `+`, `-`, `*`, comparisons | yes | yes | yes, exact |
+| `/` | exact or stops, as on a `Whole` (Unio D70) | rounds to 34 digits (D116) | exact or stops (D116) |
+| `div.floor`, `div.trunc`, `rem` | as on a `Whole` | a whole-valued `Decimal` and what's left over | the same, exact |
+| `**` | whole powers, as on a `Whole` | whole powers, rounding past 34 digits | whole powers, exact |
+| `abs`, `min`, `max`, `clamp` | yes | yes | yes |
+| `sqrt` | no | correctly rounded | the exact root, or stops |
+| `lerp` | no | yes | no |
+| `sin` and the other angle built-ins | no | no | no |
+
+- **`div` and `rem` on decimals** split money exactly: 10.00 three ways is `3.33` each, with `0.01` left over.
+- **`sqrt` on a `HugeDecimal` gives the exact root or stops,** as `/` does: √2.25 is `1.5`, and √2 stops. Where Seal
+  sees it while loading, as `sqrt` of a written `2.0`, it's refused then. Converting to a `Decimal` first gives a
+  rounded root.
+- Angles stay on `Float`.
+
+**Weighed.**
+- No `sqrt` on a `HugeDecimal`, as the design session first proposed. `/` already answers the same problem with
+  exact-or-stop, which is Seal's usual way where no exact answer of the type exists (Unio D70, D185; D18).
+
+**Why this won.** Each type keeps its promise: a `Decimal` rounds at 34 digits, and a huge one is exact or stops.
+
+**Tankun's words.** "Why `.nearest` and `.shown`? First", "Why no squirting on Huge D", "Do we usually do that?",
+then, asked "Should the new number types take the operations in the table, with `sqrt` on a `HugeDecimal` exact or
+stopping?", the owner chose: "yea"

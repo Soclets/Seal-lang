@@ -302,6 +302,19 @@ show_msg("Speed: {speed, places: 2}")       // Speed: 0.30
 
 - **`be.Bool` reads `"true"` or `"false"`,** as a `Bool` shows, and fails with `not_a_bool` on any other text (D101).
 - **`be.Text` takes any value,** shown as it's written (D100).
+- **The new number types take these operations** (D127):
+
+  | | `HugeWhole` | `Decimal` | `HugeDecimal` |
+  |---|---|---|---|
+  | `+`, `-`, `*`, comparisons | yes | yes | yes, exact |
+  | `/` | exact or stops, as on a `Whole` | rounds to 34 digits | exact or stops |
+  | `div.floor`, `div.trunc`, `rem` | as on a `Whole` | a whole-valued `Decimal` and what's left | the same, exact |
+  | `**` | whole powers | whole powers, rounding past 34 digits | whole powers, exact |
+  | `abs`, `min`, `max`, `clamp` | yes | yes | yes |
+  | `sqrt` | no | correctly rounded | exact or stops |
+  | `lerp` | no | yes | no |
+  | the angle built-ins | no | no | no |
+
 - **Between the number types,** `be.` converts every way that isn't automatic (D126): into a `Whole` or `HugeWhole`
   from a decimal, saying how it rounds, as `be.Whole.floor(price)`, as from a `Float`, failing with `too_big` when it
   doesn't fit, as `be.Whole(huge)` does; into a `Decimal` from a `HugeDecimal`, rounding to 34 digits; into a `Float`
