@@ -72,11 +72,56 @@ fn multiply_digits(left: &[u32], right: &[u32]) -> Vec<u32> {
     let (long, short) = if left.len() >= right.len() { (left, right) } else { (right, left) };
     // A long side is taken a short side's length at a time, so each part is balanced.
     for (index, part) in long.chunks(short.len()).enumerate() {
-        let product = karatsuba(part, short);
+        let product =
+            if part.len().min(short.len()) >= TOOM_DIGITS { toom_three(part, short) } else { karatsuba(part, short) };
         add_into(&mut out, &product, index * short.len());
     }
     trim(&mut out);
     out
+}
+
+/// The fewest digits both sides have before Toom-Cook's three-way method beats Karatsuba's, measured on Tankun's Mac.
+const TOOM_DIGITS: usize = 256;
+
+/// Toom-Cook's three-way method: each side split in three, five products of a third the size instead of nine, so its
+/// time grows as the length to the power 1.46. The sides are evaluated at 0, 1, −1, −2 and infinity, and the
+/// products put back together with Bodrato's sequence, whose divisions by 2 and 3 are always exact.
+fn toom_three(left: &[u32], right: &[u32]) -> Vec<u32> {
+    let third = left.len().max(right.len()).div_ceil(3);
+    let part = |digits: &[u32], index: usize| {
+        let from = (index * third).min(digits.len());
+        let to = ((index + 1) * third).min(digits.len());
+        Big::from_parts(false, digits.get(from..to).unwrap_or(&[]).to_vec())
+    };
+    let evaluate = |digits: &[u32]| {
+        let (low, middle, high) = (part(digits, 0), part(digits, 1), part(digits, 2));
+        let outer = low.add(&high);
+        let at_one = outer.add(&middle);
+        let at_minus_one = outer.subtract(&middle);
+        let at_minus_two = at_minus_one.add(&high).shift_left(1).subtract(&low);
+        [low, at_one, at_minus_one, at_minus_two, high]
+    };
+    let ([l0, l1, lm1, lm2, linf], [r0, r1, rm1, rm2, rinf]) = (evaluate(left), evaluate(right));
+    let at_zero = l0.multiply(&r0);
+    let at_one = l1.multiply(&r1);
+    let at_minus_one = lm1.multiply(&rm1);
+    let at_minus_two = lm2.multiply(&rm2);
+    let at_infinity = linf.multiply(&rinf);
+    let exact = |value: Big, divisor: u64| value.divide_truncating(&Big::from_u64(divisor)).unwrap_or_default().0;
+    // Bodrato's interpolation, each line exact.
+    let mut third_term = exact(at_minus_two.subtract(&at_one), 3);
+    let first_half = exact(at_one.subtract(&at_minus_one), 2);
+    let mut second_term = at_minus_one.subtract(&at_zero);
+    third_term = exact(second_term.subtract(&third_term), 2).add(&at_infinity.shift_left(1));
+    second_term = second_term.add(&first_half).subtract(&at_infinity);
+    let first_term = first_half.subtract(&third_term);
+    let shift = 32 * third as u64;
+    let product = at_zero
+        .add(&first_term.shift_left(shift))
+        .add(&second_term.shift_left(2 * shift))
+        .add(&third_term.shift_left(3 * shift))
+        .add(&at_infinity.shift_left(4 * shift));
+    product.digits
 }
 
 /// Karatsuba's method: three half-size products instead of four, so its time grows as the length to the power 1.58
@@ -641,8 +686,18 @@ impl Big {
         if self.is_zero() {
             return Big::zero();
         }
-        // Newton's method from above: start at a power of two past the root.
-        let mut guess = Big::from_u64(1).shift_left(self.bits().div_ceil(2));
+        // Newton's method from above, from a power of two past the root for a short number. A long one starts from
+        // the root of its top half, which already has half the root's digits right, so a step or two at full length
+        // finish it rather than one for every doubling.
+        let bits = self.bits();
+        let mut guess = if bits <= 4 * 32 * KARATSUBA_DIGITS as u64 {
+            Big::from_u64(1).shift_left(bits.div_ceil(2))
+        } else {
+            let quarter = bits / 4;
+            // (top + 1)·2^quarter is past the root, since (top + 1)² is past self / 4^quarter.
+            let top = self.shift_right(2 * quarter).square_root_floor();
+            top.add(&Big::from_u64(1)).shift_left(quarter)
+        };
         loop {
             let Some((quotient, _)) = self.divide_truncating(&guess) else { return Big::zero() };
             let next = guess.add(&quotient).shift_right(1);
@@ -761,6 +816,15 @@ mod tests {
         assert_eq!(big("2").power(100).to_decimal(), "1267650600228229401496703205376");
         assert_eq!(big("1267650600228229401496703205376").square_root_floor().to_decimal(), "1125899906842624");
         assert_eq!(big("99").square_root_floor().to_decimal(), "9");
+        // A long number's root, started from its top half's, is still the exact floor.
+        let mut seed = 0x1357_9bdf_2468_ace0;
+        for count in [300, 1000, 2500] {
+            let root = Big::from_parts(false, random_digits(&mut seed, count));
+            let square = root.multiply(&root);
+            assert_eq!(square.square_root_floor(), root, "{count} digits");
+            assert_eq!(square.add(&root).add(&root).square_root_floor(), root, "{count} digits, just below the next");
+            assert_eq!(square.subtract(&Big::from_u64(1)).square_root_floor(), root.subtract(&Big::from_u64(1)));
+        }
     }
 
     /// Random digits from a fixed seed, so a failure can be run again.
@@ -784,7 +848,18 @@ mod tests {
     #[test]
     fn faster_multiplication_agrees_with_the_schoolbook() {
         let mut seed = 0x9e37_79b9_7f4a_7c15;
-        for (left, right) in [(32, 32), (33, 47), (64, 64), (100, 37), (257, 255), (300, 31), (513, 129), (700, 700)] {
+        for (left, right) in [
+            (32, 32),
+            (33, 47),
+            (64, 64),
+            (100, 37),
+            (257, 255),
+            (300, 31),
+            (513, 129),
+            (700, 700),
+            (769, 1000),
+            (2000, 2000),
+        ] {
             for _ in 0..4 {
                 let (a, b) = (random_digits(&mut seed, left), random_digits(&mut seed, right));
                 assert_eq!(multiply_digits(&a, &b), schoolbook_digits(&a, &b), "{left} × {right}");
