@@ -54,6 +54,25 @@ whole number written there and never changed, with no `mut`, as `max_items = 10`
 `bag: List<Text>[len.max: max_items] = []`. Any other name, a calculation or a call is refused, since its value isn't
 known while loading (D103).
 
+## Ranged numbers
+
+A `Whole` or a `Float` can be given a lowest and a highest value as type settings (D107):
+
+```
+mut gold: Whole[min: 0] = 0
+mut hp: Whole[min.clamp: 0, max.clamp: 100] = 100
+mut speed: Float[min: 0.0, max: 12.5] = 0.0
+```
+
+- **`min:` and `max:` are hard limits:** storing a value outside them stops the script with a failed check, and one
+  Seal can see while loading, as `gold: Whole[min: 0] = -5`, is refused (D18, D54, D107).
+- **`min.clamp:` and `max.clamp:` pull a value back to that edge** each time one is stored, so `hp = hp - 150` leaves
+  `hp` at 0. Each edge chooses for itself (D107).
+- **Either can be left off,** and both are type settings, so each is a number written there or a top-level name made
+  from one (D103).
+
+For edges only known while the script runs, `clamp` does the same to one value (chapter 8).
+
 A type with more than one blank to fill in labels each one, as `Dict<key: Text, value: Whole>`; one with a single
 blank, as `List<Text>`, doesn't (D31).
 

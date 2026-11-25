@@ -3152,3 +3152,42 @@ spawn_enemy(kind: "goblin", x: 10, y: 20,
 
 **Tankun's words.** Asked "Should a statement's later lines be indented one level deeper than its first?", the owner
 chose: "yea"
+
+## D107. Ranged numbers, and `abs`, `min`, `max` and `clamp`
+
+2026-11-25.
+
+**Chosen.**
+- **A `Whole` or a `Float` can carry `min:` and `max:` as type settings,** as `gold: Whole[min: 0]`. They're hard
+  limits: storing a value outside them stops the script with a failed check, and one Seal can see while loading is
+  refused.
+- **`min.clamp:` and `max.clamp:` pull a value back to the edge instead,** each time one is stored, as
+  `hp: Whole[min.clamp: 0, max.clamp: 100]`, after which `hp = hp - 150` leaves `hp` at 0. Each edge chooses for
+  itself, and either can be left off. Being type settings, they're numbers or top-level names made from one (D103).
+- **`clamp(x, low:, high:)`** does the same to one value, for edges only known while running, as
+  `hp = clamp(hp + heal, low: 0, high: max_hp)` when `max_hp` grows with level.
+- **`abs(x)`, `min(a, b)` and `max(a, b)`** work on two `Whole`s or two `Float`s, never mixed (Unio D162). `abs` of the
+  smallest `Whole` stops with the overflow check, as `-` does (Unio D142).
+
+The wordings come with a later batch.
+
+**Weighed.**
+- `clamp` alone, as the design session first proposed. A limit fixed in the script would be repeated at every change,
+  and nothing would catch a value going where it never should.
+- `clamp(x, min:, max:)`, matching the ranged types, as the design session next proposed. Tankun: `len.max` already
+  means going past is bad, and a clamp makes going past fine.
+- `clamp(x, from:, to:)`, `range`'s labels, as first proposed. They read as moving from one to the other.
+- `.loose` for a limit that pulls back, as Tankun first put it. It could read as not checked at all.
+- `hp.clamp(…)` as a method. It reads as changing `hp`, the way `bag.add(…)` changes `bag`, while clamping usually
+  happens to a value on its way somewhere.
+
+**Why this won.** A hard limit and a pulled-back one are different promises, so they're written differently, and a
+limit fixed in the script is written once, in the type.
+
+**Tankun's words.** "yea. Maybe more types too? Since, I swear, they have some big ass money. `InfWhole`, `Deci`, and
+stuff", "What's `clamp` for?", "What about `hp[min: 1, max: 100]`, not a realistic case, because these unlike clamps,
+overflow is bad", "I meant those aswell", "Idk about that, I mean `len.max` is also treated as bad", "Or just
+`max.loose`? Or something", "Why is it called `clamp`?", "Wait, why do we have `clamp()` still?", "Why not
+`hp.clamp`?", "Does `from` and `to` make sensE?", "Why, again", "Why low & high", then, asked "Should Seal have ranged
+types with `min:`/`max:` and `min.clamp:`/`max.clamp:`, `clamp(x, low:, high:)`, and `abs`, `min` and `max`?", the
+owner chose: "yea"
