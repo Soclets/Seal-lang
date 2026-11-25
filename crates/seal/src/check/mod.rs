@@ -97,6 +97,8 @@ struct DeferredArgument {
 struct Context {
     procedure: Option<ProcedureId>,
     scopes: Vec<HashMap<String, VariableId>>,
+    /// Emptied scope tables, for the next scope to use (D140).
+    spare_scopes: Vec<HashMap<String, VariableId>>,
     loop_depth: u32,
     /// The names being gone through by a `for each`, which can't change inside it (Unio D173).
     iterating: Vec<VariableId>,
@@ -104,6 +106,26 @@ struct Context {
     returned_value: Option<bool>,
     /// The type an `instead` must give, innermost `otherwise` last.
     instead_types: Vec<TypeId>,
+}
+
+impl Context {
+    /// An empty table for a new scope, one kept from an earlier scope when there is one.
+    fn spare_scope(&mut self) -> HashMap<String, VariableId> {
+        self.spare_scopes.pop().unwrap_or_default()
+    }
+
+    /// Opens a scope, with a table kept from an earlier one when there is one.
+    fn open_scope(&mut self) {
+        let scope = self.spare_scope();
+        self.scopes.push(scope);
+    }
+
+    /// A scope's table, emptied and kept for the next scope.
+    fn keep_scope(&mut self, scope: HashMap<String, VariableId>) {
+        if self.spare_scopes.len() < SPARE_LIMIT {
+            self.spare_scopes.push(keep(scope));
+        }
+    }
 }
 
 pub(crate) struct Checker<'a> {
@@ -173,6 +195,7 @@ pub fn check(
     host_types: &[HostType],
     host_units: &[HostUnitGroup],
 ) -> Result<Program, Vec<Message>> {
+    let mut spare = SPARE_TABLES.with(|spare| std::mem::take(&mut *spare.borrow_mut()));
     let mut checker = Checker {
         doors,
         host_types,
@@ -193,15 +216,15 @@ pub fn check(
         },
         procedure_syntax: Vec::new(),
         procedure_state: Vec::new(),
-        procedure_names: HashMap::new(),
-        words: HashSet::new(),
+        procedure_names: std::mem::take(&mut spare.procedure_names),
+        words: std::mem::take(&mut spare.words),
         record_names: HashMap::new(),
         one_of_names: HashMap::new(),
         // Room for Seal's own failures and a few of the script's, so they don't grow one at a time.
         failure_ids: HashMap::with_capacity(12),
-        globals: HashMap::new(),
-        made: HashSet::new(),
-        context: Context::default(),
+        globals: std::mem::take(&mut spare.globals),
+        made: std::mem::take(&mut spare.made),
+        context: Context { spare_scopes: std::mem::take(&mut spare.scopes), ..Context::default() },
         pending: Vec::new(),
         deferred: Vec::new(),
         demand_depth: 0,
@@ -215,6 +238,15 @@ pub fn check(
         judged_chains: HashSet::new(),
     };
     checker.run(script);
+    // The tables are emptied and kept for the next script this thread checks, when they're not too big to keep.
+    spare.procedure_names = keep(std::mem::take(&mut checker.procedure_names));
+    spare.words = keep_set(std::mem::take(&mut checker.words));
+    spare.globals = keep(std::mem::take(&mut checker.globals));
+    spare.made = keep_set(std::mem::take(&mut checker.made));
+    spare.scopes = std::mem::take(&mut checker.context.spare_scopes);
+    spare.scopes.extend(checker.context.scopes.drain(..).map(keep));
+    spare.scopes.truncate(SPARE_LIMIT);
+    SPARE_TABLES.with(|kept| *kept.borrow_mut() = spare);
     if checker.messages.is_empty() {
         Ok(checker.program)
     } else {
@@ -227,6 +259,41 @@ pub fn check(
 
 /// The failures Seal's own operations give (D32, D73, D101, D126, Unio D95).
 const BUILT_IN_FAILURES: [&str; 6] = ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"];
+
+/// The most entries a table may have room for and still be kept for the next script, and the most scope tables kept.
+const SPARE_LIMIT: usize = 64;
+
+/// The checker's tables, emptied and kept between scripts checked on one thread, so checking one doesn't make and
+/// free them all again (D140).
+#[derive(Default)]
+struct SpareTables {
+    procedure_names: HashMap<String, ProcedureId>,
+    words: HashSet<String>,
+    globals: HashMap<String, VariableId>,
+    made: HashSet<VariableId>,
+    scopes: Vec<HashMap<String, VariableId>>,
+}
+
+thread_local! {
+    static SPARE_TABLES: std::cell::RefCell<SpareTables> = std::cell::RefCell::default();
+}
+
+/// A table emptied for keeping, or a new one in its place when it grew too big to keep.
+fn keep<K, V>(mut table: HashMap<K, V>) -> HashMap<K, V> {
+    if table.capacity() > SPARE_LIMIT {
+        return HashMap::new();
+    }
+    table.clear();
+    table
+}
+
+fn keep_set<K>(mut set: HashSet<K>) -> HashSet<K> {
+    if set.capacity() > SPARE_LIMIT {
+        return HashSet::new();
+    }
+    set.clear();
+    set
+}
 
 /// A door's labels, its parameters' types and its result type, shared by every call to it.
 type DoorTypes = (std::rc::Rc<[Option<String>]>, std::rc::Rc<[TypeId]>, TypeId);
@@ -271,7 +338,7 @@ impl<'a> Checker<'a> {
         self.declare_types(script);
         self.declare_procedures(script);
         self.declare_handler_groups(script);
-        self.context.scopes.push(HashMap::new());
+        self.context.open_scope();
         let mut top_level = Vec::new();
         let mut left: Option<(Place, Leaving)> = None;
         for item in &script.items {
@@ -296,6 +363,7 @@ impl<'a> Checker<'a> {
         self.solve(true);
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
+        self.context.keep_scope(scope);
         self.program.top_level = top_level;
         if self.messages.is_empty() {
             self.finish();
@@ -1472,7 +1540,7 @@ impl<'a> Checker<'a> {
         }
         let saved = std::mem::replace(&mut self.context, Context { procedure: Some(id), ..Context::default() });
         self.demand_depth += 1;
-        let mut scope = HashMap::new();
+        let mut scope = self.context.spare_scope();
         let parameters = self.program.procedure(id).map(|procedure| procedure.parameters.clone()).unwrap_or_default();
         for &parameter in &parameters {
             // trace: D71. A parameter can't take a spelling that already means something.
@@ -1488,6 +1556,7 @@ impl<'a> Checker<'a> {
         let body = self.block(&procedure.body);
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
+        self.context.keep_scope(scope);
         let result = self.program.procedure(id).map_or(ERROR, |procedure| procedure.result);
         if self.context.returned_value == Some(true) {
             if !Self::block_leaves(&body) {
@@ -1532,7 +1601,7 @@ impl<'a> Checker<'a> {
     // ---- blocks and statements ----
 
     fn block(&mut self, statements: &[syntax::Statement<'a>]) -> Block {
-        self.context.scopes.push(HashMap::new());
+        self.context.open_scope();
         let mut block = Vec::new();
         // The line before, when it always leaves this block, or is an `if` or a `match` that can.
         let mut left: Option<(Place, Leaving)> = None;
@@ -1547,6 +1616,7 @@ impl<'a> Checker<'a> {
         }
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
+        self.context.keep_scope(scope);
         block
     }
 
@@ -2425,7 +2495,7 @@ impl<'a> Checker<'a> {
             && self.lookup("range", receiver.place).is_none()
         {
             let (from, end, inclusive, step) = self.range_parts(entries, source.place)?;
-            self.context.scopes.push(HashMap::new());
+            self.context.open_scope();
             let item_id = self.make_local(item, WHOLE, VariableKind::LoopItem);
             self.mark_unused(item_id, item_unused);
             let position_id = match position {
@@ -2445,6 +2515,7 @@ impl<'a> Checker<'a> {
             self.context.loop_depth -= 1;
             let scope = self.context.scopes.pop().unwrap_or_default();
             self.check_unused(&scope);
+            self.context.keep_scope(scope);
             return Some(StatementKind::ForRange {
                 item: item_id,
                 position: position_id,
@@ -2494,7 +2565,7 @@ impl<'a> Checker<'a> {
             ),
         }
         let root = Self::root_variable(&checked);
-        self.context.scopes.push(HashMap::new());
+        self.context.open_scope();
         let item_id = self.make_local(item, item_type, VariableKind::LoopItem);
         self.mark_unused(item_id, item_unused);
         let position_id = position.map(|(kind, word)| {
@@ -2513,6 +2584,7 @@ impl<'a> Checker<'a> {
         }
         let scope = self.context.scopes.pop().unwrap_or_default();
         self.check_unused(&scope);
+        self.context.keep_scope(scope);
         Some(StatementKind::ForEach { item: item_id, position: position_id, source: checked, body })
     }
 
@@ -2652,7 +2724,7 @@ impl<'a> Checker<'a> {
                     "a `match` has one `case` for each case.",
                 );
             }
-            self.context.scopes.push(HashMap::new());
+            self.context.open_scope();
             let mut values = Vec::new();
             let fields =
                 index.and_then(|index| case_types.get(index)).map(|case| case.fields.clone()).unwrap_or_default();
