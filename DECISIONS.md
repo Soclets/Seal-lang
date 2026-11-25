@@ -4282,3 +4282,35 @@ an edge every dynamic interpreter lacks.
 
 **Tankun's words.** "Is it faster than Luau? The LuaJ interp", then, asked "Should D57's goal 1 add LuaJIT's
 interpreter (`luajit -joff`) as a second bar, with Seal faster than both on every benchmark?", the owner chose: "yea"
+
+## D143. D68's rule stays off `otherwise` blocks: lines may follow one whose cases can leave
+
+2026-11-25.
+
+**Chosen.** When a case of an `otherwise` block leaves, by `return`, `break` or `fail`, lines may still follow the
+block's `end`, as they follow a call passed up with `?`:
+
+```
+level = load_level(name) otherwise
+    case not_found
+        return 1
+    case broken
+        instead 0
+end
+show_msg("level {level}")    // runs when loading worked, or after `broken`
+```
+
+D68's rule (Unio D9), that nothing follows a block one of whose ways leaves, keeps covering `if` and `match` (D86).
+
+**Weighed.**
+- Covering `otherwise` too, as `if` and `match` are covered. A line after the block would have nowhere else to go: an
+  `otherwise` block's cases only handle failures, and success carries on past its `end`, so any block with a leaving
+  case would become unusable.
+
+**Why this won.** `if` and `match` choose between ways, each written out in full; `otherwise` repairs a failed call so
+the line carries on, and a case that leaves is a visible exception to that, as `?` is.
+
+**Tankun's words.** *too long* (a message quoting the design session, with song lyrics the microphone picked up,
+then asking whether this is the same as `if`), "So, is it the same thing? And why the fuck is there a big blob on
+my last msg", "Why?", then, asked "Should D68's rule stay off `otherwise` blocks, so lines can follow one whose cases
+can leave, as they follow `?`?", the owner chose: "yea"

@@ -80,6 +80,8 @@ values (D2, D30).
   is refused (D68, Unio D57).
 - **When any way through an `if` or a `match` leaves, nothing may follow its `end`;** the rest goes in
   the ways that don't leave (D68, D86, Unio D9).
+- **An `otherwise` block is different:** lines may follow its `end` even when a case leaves, as they follow a call
+  passed up with `?`, since its cases only repair a failure and success carries on past it (D143).
 
 ## Calls
 

@@ -1,0 +1,25 @@
+proc load_level[name: Text] -> Whole ! [not_found, broken]
+    if name == "cave"
+        return 5
+    elif name == "ruin"
+        fail broken
+    else
+        fail not_found
+    end
+end
+
+proc pick[name: Text] -> Whole
+    level = load_level(name) otherwise
+        case not_found
+            return 1
+        case broken
+            instead 0
+    end
+    show_msg("loaded {name}")
+    return level + 10
+end
+
+a = pick("cave")
+b = pick("ruin")
+c = pick("swamp")
+show_msg("{a} {b} {c}")
