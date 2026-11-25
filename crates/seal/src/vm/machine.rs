@@ -791,6 +791,392 @@ impl Task {
     }
 }
 
+/// The instructions [`run`] hands over to work outside its loop to keep the loop small, so that the values it uses on
+/// every instruction stay in the processor's own registers: making and emptying dictionaries, pieces of text, and a
+/// list's length changing. Each changes its registers as the loop would, and gives the failure it ends with, when it
+/// has one.
+#[inline(never)]
+#[allow(clippy::too_many_lines)] // one case per instruction handed over
+fn outside_instruction(
+    instruction: Instruction,
+    registers: &mut [u64],
+    heap: &mut Heap,
+    layouts: &[Layout],
+    failures: [u32; 3],
+    pc: usize,
+    steps_left: &mut u64,
+) -> Result<Option<u32>, Stopped> {
+    let [missing, not_a_whole, full] = failures;
+    let mut failure: u32 = 0;
+    macro_rules! get {
+        ($register:expr) => {
+            match registers.get(usize::from($register)) {
+                Some(value) => *value,
+                None => return Err(broken("a register outside its frame", pc)),
+            }
+        };
+    }
+    macro_rules! set {
+        ($register:expr, $value:expr) => {{
+            let value = $value;
+            match registers.get_mut(usize::from($register)) {
+                Some(slot) => *slot = value,
+                None => return Err(broken("a register outside its frame", pc)),
+            }
+        }};
+    }
+    // Counts bulk work, such as items copied, as steps (D14).
+    macro_rules! count_work {
+        () => {
+            if heap.work >= BULK_UNIT {
+                let steps = heap.work / BULK_UNIT;
+                heap.work %= BULK_UNIT;
+                if *steps_left < steps {
+                    return Err((Stop::OutOfSteps, pc));
+                }
+                *steps_left -= steps;
+            }
+        };
+    }
+    macro_rules! heap_try {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Err((Stop::from(error), pc)),
+            }
+        };
+    }
+    macro_rules! whole {
+        ($register:expr) => {
+            get!($register).cast_signed()
+        };
+    }
+    // A list's items, read.
+    macro_rules! items {
+        ($handle:expr) => {
+            match heap.get($handle) {
+                Ok(Object::List { items, .. }) => items,
+                Ok(_) => return Err(broken("a handle that should lead to a list", pc)),
+                Err(error) => return Err((Stop::from(error), pc)),
+            }
+        };
+    }
+    // A list in a register, made this register's own so it can change (copy-on-write, D15).
+    macro_rules! own {
+        ($register:expr) => {{
+            let handle = get!($register);
+            // The usual case first: the register is the value's only holder.
+            if heap.has_one_holder(handle) {
+                handle
+            } else {
+                let own = heap_try!(heap.make_own(handle, layouts));
+                set!($register, own);
+                own
+            }
+        }};
+    }
+    // Looks a key up in a dictionary: how it was looked up, which pair it is when it's there, how many places were
+    // looked at, and its value.
+    macro_rules! lookup {
+        ($dict:expr, $key:expr) => {
+            match heap.get($dict) {
+                Ok(Object::Dict(dict)) => {
+                    let probe =
+                        if dict.text_keys { Probe::of_text(heap_try!(heap.text($key))) } else { Probe::of_bits($key) };
+                    let (found, looked) = dict.find(&probe, |stored| {
+                        heap.text(stored).is_ok_and(|stored| heap.text($key).is_ok_and(|wanted| stored == wanted))
+                    });
+                    (probe, found, looked, found.and_then(|number| dict.value_at(number)))
+                }
+                Ok(_) => return Err(broken("a handle that should lead to a dictionary", pc)),
+                Err(error) => return Err((Stop::from(error), pc)),
+            }
+        };
+    }
+    match instruction {
+        Instruction::EqualText { to, left, right } | Instruction::NotEqualText { to, left, right } => {
+            let first = heap_try!(heap.text(get!(left)));
+            let second = heap_try!(heap.text(get!(right)));
+            // Texts of different lengths differ at once; the same length is compared byte by byte, which is work.
+            let (same, work) = if first.len() == second.len() { (first == second, first.len()) } else { (false, 0) };
+            heap.work = heap.work.saturating_add(work as u64);
+            count_work!();
+            set!(to, u64::from(same == matches!(instruction, Instruction::EqualText { .. })));
+        }
+        Instruction::TextToWhole { to, from } => match text_to_whole(heap_try!(heap.text(get!(from)))) {
+            Some(value) => set!(to, value.cast_unsigned()),
+            None => failure = not_a_whole,
+        },
+        Instruction::RepeatList { to, value, count } | Instruction::RepeatReferenceList { to, value, count } => {
+            let references = matches!(instruction, Instruction::RepeatReferenceList { .. });
+            let value = get!(value);
+            let Ok(count) = usize::try_from(whole!(count)) else {
+                return Err(broken("an array with a length below zero", pc));
+            };
+            let size = count.saturating_mul(SLOT_COST);
+            heap_try!(heap.charge(size));
+            heap.refund(size);
+            heap.work = heap.work.saturating_add(count as u64);
+            count_work!();
+            let mut items = Vec::new();
+            items.reserve_exact(count);
+            items.resize(count, value);
+            if references {
+                for _ in 0..count {
+                    heap.retain(value);
+                }
+            }
+            set!(to, heap_try!(heap.allocate(Object::List { items, references }, size)));
+        }
+        Instruction::FitList { to, from, limit } => {
+            let handle = get!(from);
+            let length = items!(handle).len();
+            if i64::try_from(length).unwrap_or(i64::MAX) > whole!(limit) {
+                failure = full;
+            } else {
+                heap.retain(handle);
+                set!(to, handle);
+            }
+        }
+        Instruction::CheckRoom { list, limit } => {
+            let limit = whole!(limit);
+            let length = items!(get!(list)).len();
+            if i64::try_from(length).unwrap_or(i64::MAX) >= limit {
+                failure = full;
+            }
+        }
+        Instruction::RemoveItemAtPosition { list, index } | Instruction::RemoveItemAtOffset { list, index } => {
+            let zero_based = matches!(instruction, Instruction::RemoveItemAtOffset { .. });
+            let index = whole!(index);
+            let handle = own!(list);
+            let removed = match heap.get_mut(handle) {
+                Ok(Object::List { items, references }) => {
+                    let length = items.len();
+                    match item_place(index, zero_based, length) {
+                        Some(place) => {
+                            let removed = items.remove(place);
+                            (references.then_some(removed), length - place)
+                        }
+                        None => {
+                            return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+                        }
+                    }
+                }
+                Ok(_) => return Err(broken("a handle that should lead to a list", pc)),
+                Err(error) => return Err((Stop::from(error), pc)),
+            };
+            heap.work = heap.work.saturating_add(removed.1 as u64);
+            if let Some(old) = removed.0 {
+                heap.release(old, layouts);
+            }
+            count_work!();
+        }
+        Instruction::TextLength { to, from, unit } => {
+            let text = heap_try!(heap.text(get!(from)));
+            let (length, work) = match unit {
+                0 => (grapheme_count(text), text.len()),
+                1 => (text.chars().count(), text.len()),
+                _ => (text.len(), 0),
+            };
+            heap.work = heap.work.saturating_add(work as u64);
+            count_work!();
+            set!(to, length as u64);
+        }
+        Instruction::GraphemeAtPosition { to, text, index } | Instruction::GraphemeAtOffset { to, text, index } => {
+            let zero_based = matches!(instruction, Instruction::GraphemeAtOffset { .. });
+            let index = whole!(index);
+            let written = heap_try!(heap.text(get!(text)));
+            let offset = if zero_based { Some(index) } else { index.checked_sub(1) };
+            let found =
+                offset.and_then(|offset| usize::try_from(offset).ok()).and_then(|offset| grapheme_at(written, offset));
+            let Some(found) = found else {
+                let length = grapheme_count(written);
+                return Err(bad_text_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
+            };
+            let (grapheme, work) = (found.to_owned(), written.len());
+            heap.work = heap.work.saturating_add(work as u64);
+            count_work!();
+            let handle = heap_try!(heap.new_text(&grapheme, grapheme.len()));
+            set!(to, handle);
+        }
+        Instruction::Graphemes { to, from } => {
+            let written = heap_try!(heap.text(get!(from)));
+            let pieces: Vec<String> = graphemes(written).map(str::to_owned).collect();
+            let work = written.len();
+            let handle = heap_try!(text_list(heap, &pieces, work, layouts));
+            count_work!();
+            set!(to, handle);
+        }
+        Instruction::SplitText { to, text, by } | Instruction::SplitTextNoEmpty { to, text, by } => {
+            let keep_empty = matches!(instruction, Instruction::SplitText { .. });
+            let written = heap_try!(heap.text(get!(text)));
+            let by = heap_try!(heap.text(get!(by)));
+            if by.is_empty() {
+                // trace: D89. A separator that only turns out empty while running is a failed check.
+                return Err(check_failed(
+                    "this splits a text by an empty text",
+                    "the text to split at is `\"\"`".to_owned(),
+                    "an empty text is never found between two pieces; `for_each` goes through a text's characters.",
+                    pc,
+                ));
+            }
+            let pieces: Vec<String> =
+                written.split(by).filter(|piece| keep_empty || !piece.is_empty()).map(str::to_owned).collect();
+            let work = written.len();
+            let handle = heap_try!(text_list(heap, &pieces, work, layouts));
+            count_work!();
+            set!(to, handle);
+        }
+        Instruction::NewDict { to, shape } => {
+            let dict = Dict::new(shape & 1 != 0, shape & 2 != 0);
+            set!(to, heap_try!(heap.allocate(Object::Dict(Box::new(dict)), 0)));
+        }
+        Instruction::RemoveKey { dict, key } => {
+            let key = get!(key);
+            let handle = own!(dict);
+            let (_, found, looked, _) = lookup!(handle, key);
+            heap.work = heap.work.saturating_add(looked.saturating_sub(4));
+            match found {
+                None => failure = missing,
+                Some(number) => {
+                    let (removed, before, after, text_keys, reference_values) = match heap.get_mut(handle) {
+                        Ok(Object::Dict(dict)) => {
+                            let before = dict.size();
+                            let removed = dict.remove(number);
+                            (removed, before, dict.size(), dict.text_keys, dict.reference_values)
+                        }
+                        _ => (None, 0, 0, false, false),
+                    };
+                    heap.refund(before.saturating_sub(after));
+                    if let Some((old_key, old_value)) = removed {
+                        if text_keys {
+                            heap.release(old_key, layouts);
+                        }
+                        if reference_values {
+                            heap.release(old_value, layouts);
+                        }
+                    }
+                }
+            }
+            count_work!();
+        }
+        _ => return Err(broken("an instruction handed over that isn't one of these", pc)),
+    }
+    Ok((failure != 0).then_some(failure))
+}
+
+/// What a door's call leaves the run loop to do.
+enum DoorEnd {
+    Done,
+    Failed(u32),
+    Pause,
+}
+
+/// Calls a door from a script, outside the run loop, which keeps the loop small (D49, D51).
+#[inline(never)]
+#[allow(clippy::too_many_arguments)] // what a door's call reaches, each passed on its own
+fn call_door(
+    call_base: Register,
+    site: u32,
+    registers: &mut [u64],
+    heap: &mut Heap,
+    compiled: &Compiled,
+    doors: &dyn DoorCaller,
+    door_arguments: &mut Vec<Value>,
+    pc: usize,
+) -> Result<DoorEnd, Stopped> {
+    let layouts: &[Layout] = &compiled.layouts;
+    macro_rules! get {
+        ($register:expr) => {
+            match registers.get(usize::from($register)) {
+                Some(value) => *value,
+                None => return Err(broken("a register outside its frame", pc)),
+            }
+        };
+    }
+    macro_rules! set {
+        ($register:expr, $value:expr) => {{
+            let value = $value;
+            match registers.get_mut(usize::from($register)) {
+                Some(slot) => *slot = value,
+                None => return Err(broken("a register outside its frame", pc)),
+            }
+        }};
+    }
+    macro_rules! heap_try {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Err((Stop::from(error), pc)),
+            }
+        };
+    }
+    let Some(door_site) = compiled.door_sites.get(site as usize) else {
+        return Err(broken("a call to a door that isn't there", pc));
+    };
+    let first = usize::from(call_base) + 1;
+    let count = door_site.argument_count as usize;
+    if !door_site.plain {
+        // Only arguments that are more than their bits are copied out as values (D15).
+        door_arguments.clear();
+        let start = door_site.first_argument as usize;
+        let crossings = compiled.door_arguments.get(start..start + count).unwrap_or(&[]);
+        for (register, crossing) in (call_base + 1..).zip(crossings) {
+            let slot = get!(register);
+            door_arguments.push(match plain_value(slot, crossing) {
+                Some(_) => Value::Nothing,
+                None => heap_try!(to_value(slot, crossing, heap, layouts)),
+            });
+        }
+    }
+    let Some(bits) = registers.get(first..first + count) else {
+        return Err(broken("a door's arguments outside their frame", pc));
+    };
+    match doors.call_door(door_site.door, bits, door_arguments) {
+        DoorAnswer::Plain(bits) => {
+            let fits = match door_site.result {
+                Crossing::Nothing | Crossing::Whole | Crossing::Bool => true,
+                Crossing::Float => f64::from_bits(bits).is_finite(),
+                _ => false,
+            };
+            if !fits {
+                return Err((
+                    Stop::HostMistake("a door gave a value that isn't what it's declared to give".to_owned()),
+                    pc,
+                ));
+            }
+            set!(call_base, bits);
+        }
+        DoorAnswer::Value(value) => match plain_slot(&value, &door_site.result)
+            .map_or_else(|| to_slot(&value, &door_site.result, heap, layouts), Ok)
+        {
+            Ok(slot) => set!(call_base, slot),
+            Err(CrossingError::Heap(error)) => return Err((Stop::from(error), pc)),
+            Err(CrossingError::WrongType { wanted, found }) => {
+                return Err((
+                    Stop::HostMistake(format!("a door gave {found}, but it's declared to give {wanted}")),
+                    pc,
+                ));
+            }
+        },
+        DoorAnswer::Failure(name) => {
+            let found = (1u32..).zip(&compiled.failure_names).find(|(_, known)| **known == name);
+            match found {
+                Some((number, _)) => return Ok(DoorEnd::Failed(number)),
+                None => {
+                    return Err((
+                        Stop::HostMistake(format!("a door failed with `{name}`, which it doesn't declare")),
+                        pc,
+                    ));
+                }
+            }
+        }
+        DoorAnswer::Mistake(detail) => return Err((Stop::HostMistake(detail), pc)),
+        DoorAnswer::Pause => return Ok(DoorEnd::Pause),
+    }
+    Ok(DoorEnd::Done)
+}
+
 /// Runs a task until it finishes, pauses or stops.
 ///
 /// # Errors
@@ -811,7 +1197,7 @@ pub fn run(
     let layouts: &[Layout] = &compiled.layouts;
     let constants: &[u64] = &compiled.constants;
     let entries: &[ProcedureEntry] = &compiled.entries;
-    let [missing, not_a_whole, full] = failures;
+    let [missing, _, _] = failures;
     let mut pc = task.pc;
     let mut base = task.base;
     let mut steps_left = step_budget;
@@ -1291,16 +1677,6 @@ pub fn run(
             Instruction::NotEqualWhole { to, left, right } => set!(to, u64::from(get!(left) != get!(right))),
             Instruction::LessWhole { to, left, right } => set!(to, u64::from(whole!(left) < whole!(right))),
             Instruction::AtMostWhole { to, left, right } => set!(to, u64::from(whole!(left) <= whole!(right))),
-            Instruction::EqualText { to, left, right } | Instruction::NotEqualText { to, left, right } => {
-                let first = heap_try!(heap.text(get!(left)));
-                let second = heap_try!(heap.text(get!(right)));
-                // Texts of different lengths differ at once; the same length is compared byte by byte, which is work.
-                let (same, work) =
-                    if first.len() == second.len() { (first == second, first.len()) } else { (false, 0) };
-                heap.work = heap.work.saturating_add(work as u64);
-                count_work!();
-                set!(to, u64::from(same == matches!(instruction, Instruction::EqualText { .. })));
-            }
             Instruction::EqualFloat { to, left, right } => set!(to, u64::from(float!(left) == float!(right))),
             Instruction::NotEqualFloat { to, left, right } => set!(to, u64::from(float!(left) != float!(right))),
             Instruction::LessFloat { to, left, right } => set!(to, u64::from(float!(left) < float!(right))),
@@ -1445,70 +1821,10 @@ pub fn run(
             }
             Instruction::CallDoor { base: call_base, site } => {
                 step!();
-                let Some(door_site) = compiled.door_sites.get(site as usize) else {
-                    return Err(broken("a call to a door that isn't there", pc));
-                };
-                let first = usize::from(call_base) + 1;
-                let count = door_site.argument_count as usize;
-                if !door_site.plain {
-                    // Only arguments that are more than their bits are copied out as values (D15).
-                    door_arguments.clear();
-                    let start = door_site.first_argument as usize;
-                    let crossings = compiled.door_arguments.get(start..start + count).unwrap_or(&[]);
-                    for (register, crossing) in (call_base + 1..).zip(crossings) {
-                        let slot = get!(register);
-                        door_arguments.push(match plain_value(slot, crossing) {
-                            Some(_) => Value::Nothing,
-                            None => heap_try!(to_value(slot, crossing, heap, layouts)),
-                        });
-                    }
-                }
-                let Some(bits) = registers.get(first..first + count) else {
-                    return Err(broken("a door's arguments outside their frame", pc));
-                };
-                match doors.call_door(door_site.door, bits, door_arguments) {
-                    DoorAnswer::Plain(bits) => {
-                        let fits = match door_site.result {
-                            Crossing::Nothing | Crossing::Whole | Crossing::Bool => true,
-                            Crossing::Float => f64::from_bits(bits).is_finite(),
-                            _ => false,
-                        };
-                        if !fits {
-                            return Err((
-                                Stop::HostMistake(
-                                    "a door gave a value that isn't what it's declared to give".to_owned(),
-                                ),
-                                pc,
-                            ));
-                        }
-                        set!(call_base, bits);
-                    }
-                    DoorAnswer::Value(value) => match plain_slot(&value, &door_site.result)
-                        .map_or_else(|| to_slot(&value, &door_site.result, heap, layouts), Ok)
-                    {
-                        Ok(slot) => set!(call_base, slot),
-                        Err(CrossingError::Heap(error)) => return Err((Stop::from(error), pc)),
-                        Err(CrossingError::WrongType { wanted, found }) => {
-                            return Err((
-                                Stop::HostMistake(format!("a door gave {found}, but it's declared to give {wanted}")),
-                                pc,
-                            ));
-                        }
-                    },
-                    DoorAnswer::Failure(name) => {
-                        let found = (1u32..).zip(&compiled.failure_names).find(|(_, known)| **known == name);
-                        match found {
-                            Some((number, _)) => failure = number,
-                            None => {
-                                return Err((
-                                    Stop::HostMistake(format!("a door failed with `{name}`, which it doesn't declare")),
-                                    pc,
-                                ));
-                            }
-                        }
-                    }
-                    DoorAnswer::Mistake(detail) => return Err((Stop::HostMistake(detail), pc)),
-                    DoorAnswer::Pause => {
+                match call_door(call_base, site, registers, heap, compiled, doors, door_arguments, pc)? {
+                    DoorEnd::Done => {}
+                    DoorEnd::Failed(number) => failure = number,
+                    DoorEnd::Pause => {
                         task.pc = pc;
                         task.base = base;
                         task.waiting = Some(Waiting { slot: base + usize::from(call_base), site });
@@ -1572,10 +1888,6 @@ pub fn run(
                 }
                 count_work!();
             }
-            Instruction::TextToWhole { to, from } => match text_to_whole(heap_try!(heap.text(get!(from)))) {
-                Some(value) => set!(to, value.cast_unsigned()),
-                None => failure = not_a_whole,
-            },
             Instruction::WholeToFloat { to, from } => {
                 // A `Whole` too long for a `Float`'s digits goes to the nearest `Float`, as every float step does.
                 #[allow(clippy::cast_precision_loss)]
@@ -1621,27 +1933,6 @@ pub fn run(
                 heap.work = heap.work.saturating_add(u64::from(count));
                 set!(to, heap_try!(heap.allocate(Object::List { items, references }, size)));
                 count_work!();
-            }
-            Instruction::RepeatList { to, value, count } | Instruction::RepeatReferenceList { to, value, count } => {
-                let references = matches!(instruction, Instruction::RepeatReferenceList { .. });
-                let value = get!(value);
-                let Ok(count) = usize::try_from(whole!(count)) else {
-                    return Err(broken("an array with a length below zero", pc));
-                };
-                let size = count.saturating_mul(SLOT_COST);
-                heap_try!(heap.charge(size));
-                heap.refund(size);
-                heap.work = heap.work.saturating_add(count as u64);
-                count_work!();
-                let mut items = Vec::new();
-                items.reserve_exact(count);
-                items.resize(count, value);
-                if references {
-                    for _ in 0..count {
-                        heap.retain(value);
-                    }
-                }
-                set!(to, heap_try!(heap.allocate(Object::List { items, references }, size)));
             }
             Instruction::ItemAtPosition { to, list, index } | Instruction::ItemAtOffset { to, list, index } => {
                 let zero_based = matches!(instruction, Instruction::ItemAtOffset { .. });
@@ -1723,49 +2014,6 @@ pub fn run(
                 count_work!();
             }
             // trace: D73
-            Instruction::FitList { to, from, limit } => {
-                let handle = get!(from);
-                let length = items!(handle).len();
-                if i64::try_from(length).unwrap_or(i64::MAX) > whole!(limit) {
-                    failure = full;
-                } else {
-                    heap.retain(handle);
-                    set!(to, handle);
-                }
-            }
-            Instruction::CheckRoom { list, limit } => {
-                let limit = whole!(limit);
-                let length = items!(get!(list)).len();
-                if i64::try_from(length).unwrap_or(i64::MAX) >= limit {
-                    failure = full;
-                }
-            }
-            Instruction::RemoveItemAtPosition { list, index } | Instruction::RemoveItemAtOffset { list, index } => {
-                let zero_based = matches!(instruction, Instruction::RemoveItemAtOffset { .. });
-                let index = whole!(index);
-                let handle = own!(list);
-                let removed = match heap.get_mut(handle) {
-                    Ok(Object::List { items, references }) => {
-                        let length = items.len();
-                        match item_place(index, zero_based, length) {
-                            Some(place) => {
-                                let removed = items.remove(place);
-                                (references.then_some(removed), length - place)
-                            }
-                            None => {
-                                return Err(bad_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
-                            }
-                        }
-                    }
-                    Ok(_) => return Err(broken("a handle that should lead to a list", pc)),
-                    Err(error) => return Err((Stop::from(error), pc)),
-                };
-                heap.work = heap.work.saturating_add(removed.1 as u64);
-                if let Some(old) = removed.0 {
-                    heap.release(old, layouts);
-                }
-                count_work!();
-            }
             Instruction::ItemFieldAtPosition { to, list, index, field }
             | Instruction::ItemFieldAtOffset { to, list, index, field } => {
                 let zero_based = matches!(instruction, Instruction::ItemFieldAtOffset { .. });
@@ -1870,63 +2118,6 @@ pub fn run(
                 set!(to, own);
             }
             // trace: D65, D66
-            Instruction::TextLength { to, from, unit } => {
-                let text = heap_try!(heap.text(get!(from)));
-                let (length, work) = match unit {
-                    0 => (grapheme_count(text), text.len()),
-                    1 => (text.chars().count(), text.len()),
-                    _ => (text.len(), 0),
-                };
-                heap.work = heap.work.saturating_add(work as u64);
-                count_work!();
-                set!(to, length as u64);
-            }
-            Instruction::GraphemeAtPosition { to, text, index } | Instruction::GraphemeAtOffset { to, text, index } => {
-                let zero_based = matches!(instruction, Instruction::GraphemeAtOffset { .. });
-                let index = whole!(index);
-                let written = heap_try!(heap.text(get!(text)));
-                let offset = if zero_based { Some(index) } else { index.checked_sub(1) };
-                let found = offset
-                    .and_then(|offset| usize::try_from(offset).ok())
-                    .and_then(|offset| grapheme_at(written, offset));
-                let Some(found) = found else {
-                    let length = grapheme_count(written);
-                    return Err(bad_text_position(if zero_based { "offset" } else { "pos" }, index, length, pc));
-                };
-                let (grapheme, work) = (found.to_owned(), written.len());
-                heap.work = heap.work.saturating_add(work as u64);
-                count_work!();
-                let handle = heap_try!(heap.new_text(&grapheme, grapheme.len()));
-                set!(to, handle);
-            }
-            Instruction::Graphemes { to, from } => {
-                let written = heap_try!(heap.text(get!(from)));
-                let pieces: Vec<String> = graphemes(written).map(str::to_owned).collect();
-                let work = written.len();
-                let handle = heap_try!(text_list(heap, &pieces, work, layouts));
-                count_work!();
-                set!(to, handle);
-            }
-            Instruction::SplitText { to, text, by } | Instruction::SplitTextNoEmpty { to, text, by } => {
-                let keep_empty = matches!(instruction, Instruction::SplitText { .. });
-                let written = heap_try!(heap.text(get!(text)));
-                let by = heap_try!(heap.text(get!(by)));
-                if by.is_empty() {
-                    // trace: D89. A separator that only turns out empty while running is a failed check.
-                    return Err(check_failed(
-                        "this splits a text by an empty text",
-                        "the text to split at is `\"\"`".to_owned(),
-                        "an empty text is never found between two pieces; `for_each` goes through a text's characters.",
-                        pc,
-                    ));
-                }
-                let pieces: Vec<String> =
-                    written.split(by).filter(|piece| keep_empty || !piece.is_empty()).map(str::to_owned).collect();
-                let work = written.len();
-                let handle = heap_try!(text_list(heap, &pieces, work, layouts));
-                count_work!();
-                set!(to, handle);
-            }
             Instruction::Length { to, from } => {
                 let length = match heap.get(get!(from)) {
                     Ok(Object::List { items, .. }) => items.len(),
@@ -1989,10 +2180,6 @@ pub fn run(
                 }
             }
 
-            Instruction::NewDict { to, shape } => {
-                let dict = Dict::new(shape & 1 != 0, shape & 2 != 0);
-                set!(to, heap_try!(heap.allocate(Object::Dict(Box::new(dict)), 0)));
-            }
             Instruction::GetKey { to, dict, key } => {
                 let (dict, key) = (get!(dict), get!(key));
                 let (_, _, looked, value) = lookup!(dict, key);
@@ -2072,35 +2259,6 @@ pub fn run(
                     replace_value!(handle, number, value);
                 } else {
                     add_key!(handle, probe, key, value);
-                }
-                count_work!();
-            }
-            Instruction::RemoveKey { dict, key } => {
-                let key = get!(key);
-                let handle = own!(dict);
-                let (_, found, looked, _) = lookup!(handle, key);
-                heap.work = heap.work.saturating_add(looked.saturating_sub(4));
-                match found {
-                    None => failure = missing,
-                    Some(number) => {
-                        let (removed, before, after, text_keys, reference_values) = match heap.get_mut(handle) {
-                            Ok(Object::Dict(dict)) => {
-                                let before = dict.size();
-                                let removed = dict.remove(number);
-                                (removed, before, dict.size(), dict.text_keys, dict.reference_values)
-                            }
-                            _ => (None, 0, 0, false, false),
-                        };
-                        heap.refund(before.saturating_sub(after));
-                        if let Some((old_key, old_value)) = removed {
-                            if text_keys {
-                                heap.release(old_key, layouts);
-                            }
-                            if reference_values {
-                                heap.release(old_value, layouts);
-                            }
-                        }
-                    }
                 }
                 count_work!();
             }
@@ -2273,6 +2431,29 @@ pub fn run(
             }
 
             Instruction::PlaceOnly => return Err(broken("a place that's only kept for a message", pc)),
+            Instruction::CheckRoom { .. }
+            | Instruction::EqualText { .. }
+            | Instruction::FitList { .. }
+            | Instruction::GraphemeAtOffset { .. }
+            | Instruction::GraphemeAtPosition { .. }
+            | Instruction::Graphemes { .. }
+            | Instruction::NewDict { .. }
+            | Instruction::NotEqualText { .. }
+            | Instruction::RemoveItemAtOffset { .. }
+            | Instruction::RemoveItemAtPosition { .. }
+            | Instruction::RemoveKey { .. }
+            | Instruction::RepeatList { .. }
+            | Instruction::RepeatReferenceList { .. }
+            | Instruction::SplitText { .. }
+            | Instruction::SplitTextNoEmpty { .. }
+            | Instruction::TextLength { .. }
+            | Instruction::TextToWhole { .. } => {
+                match outside_instruction(instruction, registers, heap, layouts, failures, pc, &mut steps_left) {
+                    Ok(Some(failed)) => failure = failed,
+                    Ok(None) => {}
+                    Err(stopped) => return Err(stopped),
+                }
+            }
             Instruction::Unreachable => return Err(broken("a place the compiler took for unreachable", pc)),
         }
     }
