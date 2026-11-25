@@ -3488,3 +3488,43 @@ of number, only far larger.
 **Tankun's words.** "Though, Whole is already big", "That's long as fuck", "`HugeWhole`?", "Converting clicks?",
 "Doesn't Seal already auto convert for obv?", then, asked "Should Seal have `HugeWhole`, a whole number with no size
 limit, with a `Whole` turning into one by itself and the other way written out?", the owner chose: "yea"
+
+## D116. `Decimal`, as IEEE decimal128, and `HugeDecimal`, exact at any size
+
+2026-11-25.
+
+**Chosen.** Two decimal types, mirroring `Whole` and `HugeWhole`:
+
+| | Fixed size | No size limit |
+|---|---|---|
+| Whole numbers | `Whole` | `HugeWhole` (D115) |
+| Decimals | `Decimal` | `HugeDecimal` |
+
+- **`Decimal` is IEEE 754's decimal128:** it counts in tens, so `0.1` is exactly 0.1, and it holds 34 significant
+  digits. Past them it rounds, to the nearest with ties to even, and a rounded value shows `~`, as a `Float` does
+  (Unio D155); `/` rounds the same way, so `10.0 / 3` gives `~3.333…`. It's checked as a `Float` is (D18).
+- **`HugeDecimal` is exact at any size:** `+`, `-` and `*` never round, and `/` gives the exact answer or stops, as
+  `/` on a `Whole` does (Unio D70).
+- **Where it always fits, a number becomes the bigger type by itself:** a `Whole` into either, a `HugeWhole` into a
+  `HugeDecimal`, and a `Decimal` into a `HugeDecimal`, as D115 has it. Every other way is written with `be.` and can
+  fail. A `Float` mixes quietly with none of them.
+- **A number written with a point is a `Decimal` or `HugeDecimal` where one is wanted,** exactly as written.
+
+```
+mut gold: Decimal = 0.0
+price: Decimal = 4.99
+gold = gold + price * 3          // 14.97, exactly
+```
+
+**Weighed.**
+- One decimal type with no size limit, as the design session recommended. Exact always, but slower for the everyday
+  case, and IEEE's decimal128 is a standard.
+- `Deci` for the name, as Tankun first said. "Deci" is the metric prefix for a tenth, which would read oddly beside
+  units (D111).
+
+**Why this won.** Money and anything counted in tenths and hundredths is exact, with a fast standard type for the
+everyday and an unlimited one for idle games' huge sums, in the same pattern as whole numbers.
+
+**Tankun's words.** "What is it in IEEE?", "IEEE decimal128, and `HugeDecimal`?" (in answer to a single unlimited
+`Decimal`), then, asked "Should Seal have `Decimal` as IEEE decimal128 and `HugeDecimal` as an exact decimal of any
+size?", the owner chose: "yea, what about rational?"

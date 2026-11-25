@@ -7,6 +7,8 @@ examples in Seal's syntax (README).
 |---|---|---|
 | `Whole` | a 64-bit signed whole number, stopping with a failed check on overflow (Unio D15, D46) | `i64` |
 | `HugeWhole` | a whole number of any size, limited only by the script's memory cap (D14, D115) | a big integer, the building session's choice |
+| `Decimal` | an IEEE 754 decimal128 number: 34 decimal digits, exact for numbers written with that many, rounding past them (D116) | the building session's choice |
+| `HugeDecimal` | a decimal number of any size, exact (D116) | the building session's choice |
 | `Float` | an IEEE 754 binary64 number, with `~` on inexact literals and Unio's rules for showing, rounding and comparing (Unio D155, D157, D175 to D184) | `f64` |
 | `Bool` | `true` or `false` | `bool` |
 | `Text` | text | `String` |
@@ -21,6 +23,13 @@ examples in Seal's syntax (README).
   becomes a `Whole` only through `be.Whole`, failing with `too_big` when it doesn't fit, and a `HugeWhole` and a
   `Float` don't mix quietly (D115). A number written too big for a `Whole` is a `HugeWhole` where one is wanted, and
   refused elsewhere (D115).
+- **A `Decimal` counts in tens,** so `0.1` is exactly 0.1. It holds 34 digits; past them it rounds, nearest with ties
+  to even, and shows `~` as a `Float` does, and `/` rounds the same way. A `HugeDecimal` never rounds on `+`, `-` or
+  `*`, and its `/` gives the exact answer or stops, as `/` on a `Whole` does (D116, Unio D70, D155).
+- **Where it always fits, a number becomes the bigger type by itself:** a `Whole` into a `Decimal` or `HugeDecimal`,
+  a `HugeWhole` into a `HugeDecimal`, and a `Decimal` into a `HugeDecimal`. Every other way is written with `be.` and
+  can fail, and a `Float` mixes quietly with none of them (D116).
+- **A number written with a point is a `Decimal` or `HugeDecimal` where one is wanted,** exactly as written (D116).
 - **Text counts graphemes by default,** what a person sees as one character: `.len` counts them, and `[pos:]`,
   `[offset:]` and `for each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
   UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).
