@@ -1,0 +1,1 @@
+Measuring is written to, and in belongs to for_each alone. D148, D122, D146, D147.

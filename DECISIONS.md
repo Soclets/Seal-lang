@@ -3717,6 +3717,8 @@ says the unit, and also can become another unit.", "So, first of all, what shoul
 between conversion?", "yex" (to measuring), then, asked "should measuring be written `total in secs`, giving the plain
 number?", the owner chose: "yea"
 
+(Changed by D148: measuring is written `to`, as `total to secs`.)
+
 ## D123. A script declares its own units with `group.unit`
 
 2026-11-25.
@@ -4468,3 +4470,41 @@ takes no word from the language.
 **Tankun's words.** has code (asking what a loop changing `enemy.hp` does), has code (proposing
 `enemies[pos: i].hp = _ - 1`, `_` saying the left side shortly), "So, then `__`?", then, asked "Should Seal write `_` for the current value of what's being
 changed, as `hp = _ - 1`, in place of `+=`-style shorthands?", the owner chose: "yea"
+
+## D148. Measuring is written `to`, leaving `in` to `for_each`
+
+2026-11-25.
+
+**Chosen.** D122's measuring is written `to`, so `in` has one meaning, the loop's:
+
+```
+total = 2 secs + 500 ms
+show_msg("{total to secs} seconds")    // 2.5
+wait_ms = total to ms                  // 2500
+for_each enemy in enemies
+    …
+end
+```
+
+Everything else about measuring stays as D122 has it. `to` is the word school maths uses for it, as in "convert 5 km
+to metres". It stands bare between a value and a unit, where the `to:` label of `range` and `lerp` never stands, since
+a label has its colon inside brackets.
+
+**Weighed.**
+- `in` for both, as D122 left it, which the design session first recommended keeping. Tankun: it's one word for two
+  unrelated ideas, items inside a list and a unit to count in, which is what D71 exists to prevent.
+- `as`, as Tankun asked about. It already renames in `labels [amount as by]`, the same problem again.
+- `into`. It sounds like going into something.
+- Changing the loop to `of`, as JavaScript's `for … of`. Loops are everywhere, every language people come from writes
+  `in`, and "each enemy of the enemies" is weaker English than "each enemy in the enemies".
+
+**Why this won.** Each word has one job, the loop keeps the word everyone types, and measuring gets the word classrooms
+use for it. Where both meet, as `range[from: 1, to: total to secs]`, it reads oddly, but that's rare, and two lines
+fix it.
+
+**Tankun's words.** "Wait, `in` has two meanings?" (quoted in D146), "No, the in shit, shelrock", "But, it's really not
+the `!=` and `!` situation. This one is the same word, used for two things. One is measuring, and the other is items
+insdie", "Doesn't Rust use as for conversion?", "We're not borrowing Rust's, just to be clear here. We just found it
+plain. But kinda sounds like go into, though.", "What about `as`?", "Fuck, I forgot about that. What if we changed
+loop", "is `of` there accurate? In English", "Would it be vonfused with range to?", then, asked "Should measuring be
+written `to`, as `total to secs`, leaving `in` only for `for_each`?", the owner chose: "yea"
