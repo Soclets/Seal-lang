@@ -5,7 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D146, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
+- D130 to D147, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
@@ -17,6 +17,8 @@ message once the open questions are settled. Removed once sent.
   - D121's example was a slip, noted under it: `= 100.0 px.point`.
   - D131: two included handlers that both have a case for a failure the call can't give don't handle it twice, since
     neither case can run there.
+- Its D146 question: yes, a `for_each` block's note is `end \\ for_each`, naming the block by its opening keyword
+  (D102, D146).
 - Its refusal for D131's case says "this `otherwise`" even after `??`.
 - D135: check the benchmark programs in `bench/programs/` for `mut` names that are never changed.
 - An idea, its own call (D57): Unio's fib trick from `Beta++`, inlining a procedure with no side effects into itself
