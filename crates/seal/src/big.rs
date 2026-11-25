@@ -61,26 +61,92 @@ fn compare_digits(left: &[u32], right: &[u32]) -> Ordering {
     left.len().cmp(&right.len()).then_with(|| left.iter().rev().cmp(right.iter().rev()))
 }
 
+/// The fewest digits both sides have before Karatsuba's method beats the schoolbook one, measured on Tankun's Mac.
+const KARATSUBA_DIGITS: usize = 64;
+
 fn multiply_digits(left: &[u32], right: &[u32]) -> Vec<u32> {
+    if left.len().min(right.len()) < KARATSUBA_DIGITS {
+        return schoolbook_digits(left, right);
+    }
+    let mut out = vec![0u32; left.len() + right.len()];
+    let (long, short) = if left.len() >= right.len() { (left, right) } else { (right, left) };
+    // A long side is taken a short side's length at a time, so each part is balanced.
+    for (index, part) in long.chunks(short.len()).enumerate() {
+        let product = karatsuba(part, short);
+        add_into(&mut out, &product, index * short.len());
+    }
+    trim(&mut out);
+    out
+}
+
+/// Karatsuba's method: three half-size products instead of four, so its time grows as the length to the power 1.58
+/// rather than 2.
+fn karatsuba(left: &[u32], right: &[u32]) -> Vec<u32> {
+    if left.len().min(right.len()) < KARATSUBA_DIGITS {
+        return schoolbook_digits(left, right);
+    }
+    let half = left.len().max(right.len()) / 2;
+    let (left_low, left_high) = left.split_at(half.min(left.len()));
+    let (right_low, right_high) = right.split_at(half.min(right.len()));
+    let (mut left_low, mut right_low) = (left_low.to_vec(), right_low.to_vec());
+    trim(&mut left_low);
+    trim(&mut right_low);
+    let low = multiply_digits(&left_low, &right_low);
+    let high = multiply_digits(left_high, right_high);
+    let middle = multiply_digits(&add_digits(&left_low, left_high), &add_digits(&right_low, right_high));
+    // (low + high) is at most the middle product, so this takes nothing below zero.
+    let middle = subtract_digits(&subtract_digits(&middle, &low), &high);
+    let mut out = vec![0u32; left.len() + right.len() + 1];
+    add_into(&mut out, &low, 0);
+    add_into(&mut out, &middle, half);
+    add_into(&mut out, &high, 2 * half);
+    trim(&mut out);
+    out
+}
+
+/// Adds `digits` into `out` from the place `offset` on; `out` has room for the sum.
+fn add_into(out: &mut [u32], digits: &[u32], offset: usize) {
+    let mut carry = 0u64;
+    let mut index = offset;
+    for &digit in digits {
+        let Some(slot) = out.get_mut(index) else { return };
+        let sum = u64::from(*slot) + u64::from(digit) + carry;
+        *slot = sum as u32;
+        carry = sum >> 32;
+        index += 1;
+    }
+    while carry != 0 {
+        let Some(slot) = out.get_mut(index) else { return };
+        let sum = u64::from(*slot) + carry;
+        *slot = sum as u32;
+        carry = sum >> 32;
+        index += 1;
+    }
+}
+
+/// The schoolbook method, best for short numbers.
+fn schoolbook_digits(left: &[u32], right: &[u32]) -> Vec<u32> {
     if left.is_empty() || right.is_empty() {
         return Vec::new();
     }
     let mut out = vec![0u32; left.len() + right.len()];
     for (i, &a) in left.iter().enumerate() {
+        // Each row is added in from its own place, a pair of digits at a time with nothing to look up.
+        let Some(row) = out.get_mut(i..) else { continue };
+        let (row, rest) = row.split_at_mut(right.len().min(row.len()));
         let mut carry = 0u64;
-        for (j, &b) in right.iter().enumerate() {
-            let Some(slot) = out.get_mut(i + j) else { continue };
+        for (slot, &b) in row.iter_mut().zip(right) {
             let product = u64::from(a) * u64::from(b) + u64::from(*slot) + carry;
             *slot = product as u32;
             carry = product >> 32;
         }
-        let mut position = i + right.len();
-        while carry != 0 {
-            let Some(slot) = out.get_mut(position) else { break };
+        for slot in rest {
+            if carry == 0 {
+                break;
+            }
             let sum = u64::from(*slot) + carry;
             *slot = sum as u32;
             carry = sum >> 32;
-            position += 1;
         }
     }
     trim(&mut out);
@@ -102,7 +168,14 @@ fn divide_small(digits: &[u32], divisor: u32) -> (Vec<u32>, u32) {
     (out, remainder as u32)
 }
 
-/// Long division, Knuth's algorithm D: the quotient and remainder of two digit lists, the divisor not zero.
+/// The fewest digits both a divisor and a quotient have before dividing through the divisor's reciprocal, worked
+/// out with Newton's method, beats long division, measured on Tankun's Mac.
+const NEWTON_DIGITS: usize = 768;
+
+/// Extra bits the reciprocal is worked out to, past those the quotient needs, so it's off by a few at most.
+const GUARD_BITS: u64 = 64;
+
+/// The quotient and remainder of two digit lists, the divisor not zero.
 fn divide_digits(dividend: &[u32], divisor: &[u32]) -> (Vec<u32>, Vec<u32>) {
     if compare_digits(dividend, divisor) == Ordering::Less {
         return (Vec::new(), dividend.to_vec());
@@ -112,6 +185,53 @@ fn divide_digits(dividend: &[u32], divisor: &[u32]) -> (Vec<u32>, Vec<u32>) {
         let mut remainder = vec![remainder];
         trim(&mut remainder);
         return (quotient, remainder);
+    }
+    if divisor.len() >= NEWTON_DIGITS
+        && dividend.len() - divisor.len() >= NEWTON_DIGITS
+        && let Some(divided) = divide_by_reciprocal(dividend, divisor)
+    {
+        return divided;
+    }
+    long_division(dividend, divisor)
+}
+
+/// Divides through the divisor's reciprocal, so it takes about as long as a few multiplications: the quotient is
+/// worked out to within a few, then put right exactly against the remainder. Nothing, for long division to take
+/// over, if putting it right takes more than a few steps, which it never should.
+fn divide_by_reciprocal(dividend: &[u32], divisor: &[u32]) -> Option<(Vec<u32>, Vec<u32>)> {
+    let dividend = Big::from_parts(false, dividend.to_vec());
+    let divisor = Big::from_parts(false, divisor.to_vec());
+    let divisor_bits = divisor.bits();
+    // The quotient has at most this many bits.
+    let quotient_bits = dividend.bits().saturating_sub(divisor_bits) + 1;
+    let precision = quotient_bits + GUARD_BITS;
+    // About 2^(divisor_bits + precision) / divisor.
+    let reciprocal = Big::reciprocal(&divisor, precision);
+    // The dividend's lowest bits change the quotient by less than one, so only its top ones are multiplied.
+    let dropped = divisor_bits.saturating_sub(2 * GUARD_BITS);
+    let top = dividend.shift_right(dropped);
+    let mut quotient = top.multiply(&reciprocal).shift_right(divisor_bits + precision - dropped);
+    let mut remainder = dividend.subtract(&quotient.multiply(&divisor));
+    let one = Big::from_u64(1);
+    for _ in 0..8 {
+        if remainder.negative {
+            quotient = quotient.subtract(&one);
+            remainder = remainder.add(&divisor);
+        } else if compare_digits(&remainder.digits, &divisor.digits) != Ordering::Less {
+            quotient = quotient.add(&one);
+            remainder = remainder.subtract(&divisor);
+        } else {
+            return Some((quotient.digits, remainder.digits));
+        }
+    }
+    None
+}
+
+/// Long division, Knuth's algorithm D: the quotient and remainder of two digit lists, the divisor at least two
+/// digits long.
+fn long_division(dividend: &[u32], divisor: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    if compare_digits(dividend, divisor) == Ordering::Less {
+        return (Vec::new(), dividend.to_vec());
     }
     // Normalised so the divisor's top digit has its top bit set.
     let shift = divisor.last().map_or(0, |top| top.leading_zeros());
@@ -205,6 +325,75 @@ fn shift_right_digits(digits: &[u32], bits: u32) -> Vec<u32> {
     out
 }
 
+/// The most base 2^32 digits a number has and is still written or read nine decimal digits at a time; past it,
+/// halves are, split at a power of ten, so the time grows as a multiplication's does rather than with the square
+/// of the length. Measured on Tankun's Mac.
+const SHORT_TEXT_DIGITS: usize = 48;
+
+/// 10^(9·2^level), squared from the level below and kept for the next use in the same conversion.
+fn power_of_ten(level: usize, powers: &mut Vec<Big>) -> Big {
+    while powers.len() <= level {
+        let next = match powers.last() {
+            Some(below) => below.multiply(below),
+            None => Big::from_u64(1_000_000_000),
+        };
+        powers.push(next);
+    }
+    powers.get(level).cloned().unwrap_or_default()
+}
+
+/// How many decimal digits 10^(9·2^level) splits off.
+fn split_width(level: usize) -> usize {
+    9usize.checked_shl(level as u32).unwrap_or(usize::MAX)
+}
+
+/// Writes a magnitude's decimal digits, padded with zeros to `width` when one is given.
+fn write_decimal(digits: &[u32], width: Option<usize>, powers: &mut Vec<Big>, text: &mut String) {
+    if digits.len() <= SHORT_TEXT_DIGITS {
+        let short = Big { negative: false, digits: digits.to_vec() }.short_decimal();
+        let short = if width.is_some() && digits.is_empty() { String::new() } else { short };
+        for _ in short.len()..width.unwrap_or(0) {
+            text.push('0');
+        }
+        text.push_str(&short);
+        return;
+    }
+    // The split is at the largest power whose square isn't much past the number, so the halves are about even.
+    let bits = (digits.len() as u64) * 32;
+    let mut level = 0;
+    while 2 * ((split_width(level + 1) as u64) * 10 / 3) <= bits {
+        level += 1;
+    }
+    let power = power_of_ten(level, powers);
+    let (high, low) = divide_digits(digits, &power.digits);
+    let low_width = split_width(level);
+    // The split is below the number, so the high half is never zero when no width is asked for.
+    if !(high.is_empty() && width.is_none()) {
+        write_decimal(&high, width.map(|width| width.saturating_sub(low_width)), powers, text);
+    }
+    write_decimal(&low, Some(low_width), powers, text);
+}
+
+/// Reads decimal digits into a magnitude: a short run nine at a time, a long one as halves joined by a power of ten.
+fn read_decimal(digits: &[u8], powers: &mut Vec<Big>) -> Vec<u32> {
+    if digits.len() <= SHORT_TEXT_DIGITS * 9 {
+        return Big::read_short(digits);
+    }
+    let mut level = 0;
+    while split_width(level + 1) < digits.len() {
+        level += 1;
+    }
+    let (high, low) = digits.split_at(digits.len() - split_width(level));
+    let high = read_decimal(high, powers);
+    let low = read_decimal(low, powers);
+    let power = power_of_ten(level, powers);
+    let mut joined = multiply_digits(&high, &power.digits);
+    joined.resize(joined.len().max(low.len()) + 1, 0);
+    add_into(&mut joined, &low, 0);
+    trim(&mut joined);
+    joined
+}
+
 impl Big {
     #[must_use]
     pub fn zero() -> Big {
@@ -247,9 +436,14 @@ impl Big {
         if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
+        Some(Big::from_parts(negative, read_decimal(digits.as_bytes(), &mut Vec::new())))
+    }
+
+    /// The number of decimal digits short enough to read nine at a time; a longer number is read in halves.
+    fn read_short(digits: &[u8]) -> Vec<u32> {
         let mut value: Vec<u32> = Vec::new();
         // Nine decimal digits at a time fit in a base 2^32 digit.
-        for chunk in digits.as_bytes().chunks(9) {
+        for chunk in digits.chunks(9) {
             let mut piece = 0u64;
             let mut scale = 1u64;
             for &byte in chunk {
@@ -267,7 +461,7 @@ impl Big {
                 carry >>= 32;
             }
         }
-        Some(Big::from_parts(negative, value))
+        value
     }
 
     #[must_use]
@@ -403,6 +597,27 @@ impl Big {
             || (part > 0 && self.digits.get(whole).is_some_and(|&digit| digit & ((1u32 << part) - 1) != 0))
     }
 
+    /// About 2^(bits + precision) / self, for a positive number of `bits` bits, off by a few at most: worked out at
+    /// half the precision first, then doubled with one step of Newton's method, y + y·(1 − self·y), so it takes about
+    /// as long as a few multiplications at full precision.
+    fn reciprocal(&self, precision: u64) -> Big {
+        let bits = self.bits();
+        // Only the number's top bits matter at this precision; 2^(bits + p) / self is the same as for its top part.
+        let keep = precision + 2 * GUARD_BITS;
+        let top = if bits > keep { self.shift_right(bits - keep) } else { self.clone() };
+        let top_bits = top.bits();
+        if precision <= 32 * NEWTON_DIGITS as u64 {
+            let power = Big::from_u64(1).shift_left(top_bits + precision);
+            return Big::from_parts(false, long_division(&power.digits, &top.digits).0);
+        }
+        let half = precision / 2 + GUARD_BITS;
+        let rough = top.reciprocal(half);
+        // The error left by the rough reciprocal, at its own scale: 2^(top_bits + half) − top·rough.
+        let error = Big::from_u64(1).shift_left(top_bits + half).subtract(&top.multiply(&rough));
+        let correction = rough.multiply(&error).shift_right(top_bits + 2 * half - precision);
+        rough.shift_left(precision - half).add(&correction)
+    }
+
     /// Raised to a whole power.
     #[must_use]
     pub fn power(&self, mut exponent: u64) -> Big {
@@ -454,7 +669,19 @@ impl Big {
         if self.digits.is_empty() {
             return "0".to_owned();
         }
-        // Nine decimal digits at a time.
+        let mut text = String::with_capacity(self.digits.len() * 10 + 1);
+        if self.negative {
+            text.push('-');
+        }
+        write_decimal(&self.digits, None, &mut Vec::new(), &mut text);
+        text
+    }
+
+    /// A short number's decimal digits, nine at a time.
+    fn short_decimal(&self) -> String {
+        if self.digits.is_empty() {
+            return "0".to_owned();
+        }
         let mut pieces = Vec::new();
         let mut rest = self.digits.clone();
         while !rest.is_empty() {
@@ -534,6 +761,67 @@ mod tests {
         assert_eq!(big("2").power(100).to_decimal(), "1267650600228229401496703205376");
         assert_eq!(big("1267650600228229401496703205376").square_root_floor().to_decimal(), "1125899906842624");
         assert_eq!(big("99").square_root_floor().to_decimal(), "9");
+    }
+
+    /// Random digits from a fixed seed, so a failure can be run again.
+    fn random_digits(seed: &mut u64, count: usize) -> Vec<u32> {
+        let mut digits = Vec::with_capacity(count);
+        for _ in 0..count {
+            *seed ^= *seed << 13;
+            *seed ^= *seed >> 7;
+            *seed ^= *seed << 17;
+            // Now and then all ones or zeros, where carries and borrows run the furthest.
+            digits.push(match *seed % 8 {
+                0 => u32::MAX,
+                1 => 0,
+                _ => *seed as u32,
+            });
+        }
+        trim(&mut digits);
+        digits
+    }
+
+    #[test]
+    fn faster_multiplication_agrees_with_the_schoolbook() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15;
+        for (left, right) in [(32, 32), (33, 47), (64, 64), (100, 37), (257, 255), (300, 31), (513, 129), (700, 700)] {
+            for _ in 0..4 {
+                let (a, b) = (random_digits(&mut seed, left), random_digits(&mut seed, right));
+                assert_eq!(multiply_digits(&a, &b), schoolbook_digits(&a, &b), "{left} × {right}");
+            }
+        }
+    }
+
+    #[test]
+    fn dividing_through_the_reciprocal_agrees_with_long_division() {
+        let mut seed = 0x2545_f491_4f6c_dd1d;
+        for (dividend, divisor) in [(130, 64), (200, 65), (300, 100), (513, 256), (1000, 500), (1200, 70), (2100, 1000)]
+        {
+            for _ in 0..3 {
+                let (a, b) = (random_digits(&mut seed, dividend), random_digits(&mut seed, divisor));
+                let fast = divide_by_reciprocal(&a, &b);
+                assert!(fast.is_some(), "{dividend} / {divisor} fell back to long division");
+                assert_eq!(fast, Some(long_division(&a, &b)), "{dividend} / {divisor}");
+            }
+        }
+    }
+
+    #[test]
+    fn long_numbers_go_to_text_and_back() {
+        let mut seed = 0x5851_f42d_4c95_7f2d;
+        for count in [48, 49, 60, 100, 333, 1000, 2500] {
+            for _ in 0..3 {
+                let digits = random_digits(&mut seed, count);
+                let number = Big::from_parts(seed % 2 == 0, digits.clone());
+                let text = number.to_decimal();
+                assert_eq!(text, number.short_decimal(), "{count} digits");
+                assert_eq!(Big::parse(&text), Some(number), "{count} digits");
+            }
+        }
+        // Zeros where the halves meet are kept.
+        let round = Big::from_u64(10).power(2000).add(&Big::from_u64(7));
+        assert_eq!(round.to_decimal(), format!("1{}7", "0".repeat(1999)));
+        assert_eq!(Big::parse(&round.to_decimal()), Some(round));
     }
 
     #[test]
