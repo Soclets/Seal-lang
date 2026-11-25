@@ -4291,6 +4291,8 @@ an edge every dynamic interpreter lacks.
 **Tankun's words.** "Is it faster than Luau? The LuaJ interp", then, asked "Should D57's goal 1 add LuaJIT's
 interpreter (`luajit -joff`) as a second bar, with Seal faster than both on every benchmark?", the owner chose: "yea"
 
+(Changed by D150: loading each script from a text of its own is judged against Luau alone, with LuaJIT's shown for reference.)
+
 ## D143. D68's rule stays off `otherwise` blocks: lines may follow one whose cases can leave
 
 2026-11-25.
@@ -4536,3 +4538,31 @@ the SI style guides ask for `(12 + 3) m` rather than `12 + 3 m`.
 
 **Tankun's words.** "Does maths say?", then, asked "Should `to` after maths without brackets be refused, with the
 brackets as the fix?", the owner chose: "y"
+
+## D150. Fresh loading is judged against Luau; LuaJIT's is shown for reference
+
+2026-11-25.
+
+**Chosen.** D142's LuaJIT bar covers running code, and loading from the same text, but not loading each script from a
+text of its own: that row is judged against Luau's interpreter alone, which Seal beats, and LuaJIT's time is shown
+beside it for reference, as full V8's is (D57, goal 3). Every other row keeps both bars.
+
+The building session's last full run (2026-11-25, 17:06), Seal against `luajit -joff`, Normal against Normal: `fib`
+95%, n-body 91%, word count 85%, loading from the same text 82%, binary-trees 76%, resuming 74%, fannkuch 70%,
+spectral-norm 40%, text building 0.8%; loading from a text of its own 4.43 µs against 1.79 µs, and against Luau's
+4.88 µs.
+
+**Weighed.**
+- Keeping LuaJIT's bar on that row and rebuilding Seal's front end as one pass that checks while it compiles, days of
+  work by the building session's estimate. Seal's checks need whole procedures (failures, pauses, unused names and
+  unchanged `mut`s are worked out from whole bodies), so it couldn't truly be one pass, and the language server would
+  still need the tree, leaving two front ends to agree, which D47 rules out.
+- Keeping the bar and leaving the row unmet for later.
+
+**Why this won.** About 1.65 µs of Seal's 4.43 is checking, refusing bad scripts before they run, which LuaJIT never
+does and goal 7 never drops. Shipped games load from D141's verified bytecode files, which the building session
+expects at about 0.16 µs.
+
+**Tankun's words.** "Days of work?", "What about the bytecode comp thingy?", "How close are we to LuaJIT interp now?",
+then, asked "Should LuaJIT's interpreter be the bar for running code, with fresh loading judged against Luau and
+LuaJIT's shown for reference?", the owner chose: "yea"
