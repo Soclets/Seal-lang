@@ -3360,6 +3360,8 @@ Seal ever has a JIT or learning host. It would be NginJIT, NginLearn"
 
 (Changed by D112: a unit is written bare after its number, as `2 secs`.)
 
+(Changed by D120: units of one group convert by themselves when exact, and `per` writes a rate anywhere, where Cyborg does otherwise.)
+
 ## D112. A unit is written bare after its number; its group only settles a clash
 
 2026-11-25.
@@ -3593,3 +3595,36 @@ operator counts: in `gold + 0.5`, `price * 1.1` and `gold > 0.5`, with `gold` a 
 **Tankun's words.** Asked "Should a number written next to a `Decimal` or `HugeWhole` take that type from it?", Tankun
 answered: "Sherlock, what the fuck is it supposed to be?", then: "No, I fucking mean your fucking question", meaning
 the answer was plainly yes.
+
+## D120. Units convert by themselves when exact, and `per` writes a rate anywhere
+
+2026-11-25.
+
+**Chosen.** Where D111 said to follow Cyborg, Seal's own rules replace it on two points, after Cyborg's design session
+showed that Cyborg works otherwise:
+- **Units of one group combine and convert by themselves when the result is exact.** `2 secs + 500 ms` is `2500 ms`,
+  in the finer unit, so a `Whole` stays exact; a value goes where another unit of its group is wanted when it converts
+  exactly, as `2500 ms` where `secs` in a `Float` are wanted, giving `2.5`. A conversion that can't be exact is refused,
+  with the fix saying how to round. This is Seal's rule wherever nothing can be lost (D73, D115).
+- **`per` writes a rate right where it's used,** in a value or a type, as `120.0 px per secs` or `16 px per tiles`,
+  with nothing declared. Multiplying and dividing work the units out, so `speed * dt`, with `dt` in `secs`, gives
+  `px`, and a result is refused where its units don't fit.
+
+```
+wait(2 secs + 500 ms)        // waits 2.5 seconds
+speed = 120.0 px per secs
+x = x + speed * dt           // px
+```
+
+**Weighed.**
+- Cyborg's way: `2 seconds + 500 ms` refused until one is converted with `as` (Cyborg D100, D255), and every derived
+  unit declared with a name before use (Cyborg D242). The design session had described D111 to Tankun as converting
+  by itself, which was its own assumption, not Cyborg's rule.
+
+**Why this won.** For a script, writing the units as you think them, and letting Seal check and convert, is the point
+of having them.
+
+Whether Seal has Cyborg's points and spans is decided separately.
+
+**Tankun's words.** "What", then, shown the three rules again, as converting by itself, `per` anywhere, and no points
+and spans for now, and asked "Should Seal's units work this way?", the owner chose: "yes, but no to 3"

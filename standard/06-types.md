@@ -80,14 +80,19 @@ Units are optional: a `Whole` or a `Float` can carry one, as Cyborg's do, and no
 ```
 wait(2 secs)
 wait(500 ms)
-total = 2 secs + 500 ms                  // 2.5 secs
+total = 2 secs + 500 ms                  // 2500 ms
 ```
 
 - **A number takes its unit bare, right after it,** as `2 secs`. Units belong to groups, and the group is written,
   as `time::secs`, only to settle a clash between two groups with a unit of the same name. A unit only ever stands
   after a number or in a type, so it never takes a word away from names (D111, D112).
-- **Units that measure the same thing combine and convert by themselves;** ones that measure different things, as
-  seconds and pixels, are refused together (D111).
+- **Units of one group combine and convert by themselves when the result is exact:** `2 secs + 500 ms` is `2500 ms`,
+  in the finer unit, so a `Whole` stays exact, and a value goes where another unit of its group is wanted when it
+  converts exactly. A conversion that can't be exact is refused, with the fix saying how to round. Units of different
+  groups, as seconds and pixels, never combine by `+` or `-` (D120).
+- **`per` writes a rate right where it's used,** as `120.0 px per secs`, with no declaration: multiplying and dividing
+  work the units out, so `speed * dt` with `dt` in `secs` gives `px`, and a result is refused where its units don't
+  fit (D113, D120).
 - **Where a unit is expected, a plain number is refused,** with the unit added as the fix, so a door taking a time
   can't be given a bare `2` (D111).
 - **Units have short names,** as `secs` and `ms`, since their group says what they measure (D111).
