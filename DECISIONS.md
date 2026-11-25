@@ -3528,3 +3528,21 @@ everyday and an unlimited one for idle games' huge sums, in the same pattern as 
 **Tankun's words.** "What is it in IEEE?", "IEEE decimal128, and `HugeDecimal`?" (in answer to a single unlimited
 `Decimal`), then, asked "Should Seal have `Decimal` as IEEE decimal128 and `HugeDecimal` as an exact decimal of any
 size?", the owner chose: "yea, what about rational?"
+
+## D117. No rational type, for now
+
+2026-11-25.
+
+**Chosen.** Seal has no exact fraction type, as `1/3` kept as a top and a bottom number. It can come if a real game
+needs one.
+
+**Weighed.**
+- A rational type, as Lisp, Julia and Python's `Fraction` have. Thirds stay exact through any number of steps, which
+  rhythm games' triplets, exact odds and fair splits can use. But its numbers grow with every step of a long sum, so a
+  long-running game can slow down without anyone seeing why, and players are shown decimals anyway.
+
+**Why this won.** Whole numbers counted in small ticks, as 480 to a beat, and `Decimal` cover the cases games meet,
+with the four number types already decided (D115, D116).
+
+**Tankun's words.** "WHat would it be for?", then, asked "Should Seal leave out a rational type for now?", the owner
+chose: "yea"
