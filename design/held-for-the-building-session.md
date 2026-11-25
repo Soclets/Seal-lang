@@ -5,7 +5,8 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D152, in DECISIONS.md. D151 and D152 answer its C API proposal's two questions. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
+- D130 to D154, in DECISIONS.md. D151 and D152 answer its C API proposal's two questions, D153 its bytecode
+  proposal's two, and D154 adds a host-switched cache to D141. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
