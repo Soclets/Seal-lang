@@ -14,8 +14,8 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D134 are built, except the language server's parts and what's listed under "Not built
-   yet" below (units and limits on a `HugeWhole`). All 20 tests in `tests/` pass.
+2. **Decisions built.** D1 to D135 are built, except the language server's parts and what's listed under "Not built
+   yet" below (units and limits on a `HugeWhole`). All 21 tests in `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -193,6 +193,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D132** `**` chains from the right and comes before a negating `-`.
 - **D133** `atan2` of (0, 0) gives 0, and -0.0 counts as zero, where IEEE 754 gives ±π.
 - **D134** `asin` and `acos` give a plain `Float`; `atan2` gives `rads` only when given values with units.
+- **D135** A `mut` name that's never changed is refused, with the line without `mut` as the fix (a draft wording, as
+  D135 says its wording comes later): any change counts, `=`, a method, or deep inside. A name never read gets only
+  "never used".
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** `crates/seal/src/decimal.rs` holds
   decimal128, with IEEE 754's rounding (34 digits, to the nearest, a tie to even, exponents -6176 to 6111) and its
   preferred exponents, so places carry through (`1.50 + 1.50` is `3.00`), each operation worked out exactly on

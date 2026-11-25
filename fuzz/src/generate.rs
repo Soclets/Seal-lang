@@ -343,11 +343,11 @@ impl Generator {
                 // The maths built-ins and `**` on `Whole`s (D107, D108).
                 if self.seal() && self.random.chance(1, 8) {
                     let a = self.operand(Kind::Whole, level - 1);
-                    let b = self.operand(Kind::Whole, level - 1);
+                    // The second value is made only where it's written, so a name it reads is really read.
                     return match self.random.below(5) {
                         0 => format!("abs({a})"),
-                        1 => format!("min({a}, {b})"),
-                        2 => format!("max({a}, {b})"),
+                        1 => format!("min({a}, {})", self.operand(Kind::Whole, level - 1)),
+                        2 => format!("max({a}, {})", self.operand(Kind::Whole, level - 1)),
                         3 => format!("clamp({a}, low: {}, high: {})", self.random.below(5), 5 + self.random.below(20)),
                         _ => {
                             let base = if a.starts_with('-') { format!("({a})") } else { a };
@@ -453,9 +453,11 @@ impl Generator {
                     4 => format!("be.Float({})", self.argument(Kind::Whole, level)),
                     // The angle built-ins, `lerp`, `**` and `pi` on `Float`s (D108, D109, D114).
                     5 if self.seal() && self.random.chance(1, 2) => {
-                        let a = self.argument(Kind::Float, level);
-                        let b = self.argument(Kind::Float, level);
-                        match self.random.below(8) {
+                        // Each value is made only where it's written, so a name it reads is really read.
+                        let which = self.random.below(8);
+                        let a = if which < 6 { self.argument(Kind::Float, level) } else { String::new() };
+                        let b = if matches!(which, 4 | 5) { self.argument(Kind::Float, level) } else { String::new() };
+                        match which {
                             0 => format!("sin({a})"),
                             1 => format!("cos({a})"),
                             2 => format!("tan({a})"),
@@ -1036,6 +1038,10 @@ impl Generator {
     /// Ends a block: every name it made and never read is shown, so that none is refused as unused (D2).
     fn close_scope(&mut self) {
         let Some(scope) = self.scopes.pop() else { return };
+        // trace: D135. A `mut` name is changed somewhere; here, at the latest.
+        for name in scope.iter().filter(|name| name.mutable && !name.frozen) {
+            self.line(&format!("{0} = {0}", name.text));
+        }
         for name in scope.iter().filter(|name| !name.read) {
             match name.kind {
                 Kind::Event => self.match_event(&name.text, false),

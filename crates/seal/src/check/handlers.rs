@@ -328,6 +328,7 @@ impl<'a> Checker<'a> {
                     type_id: parameter_type,
                     kind: VariableKind::Named,
                     mutable: false,
+                    changed: false,
                     marked_unused: parameter.unused,
                     read: false,
                     top_level: false,

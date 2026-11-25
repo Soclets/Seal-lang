@@ -1021,6 +1021,7 @@ impl<'a> Checker<'a> {
                 type_id,
                 kind: VariableKind::Parameter,
                 mutable: false,
+                changed: false,
                 marked_unused: parameter.unused,
                 read: false,
                 top_level: false,
@@ -1197,6 +1198,7 @@ impl<'a> Checker<'a> {
                     type_id,
                     kind: VariableKind::Named,
                     mutable: *marker == syntax::Marker::Mut,
+                    changed: false,
                     marked_unused: *marker == syntax::Marker::Unused,
                     read: false,
                     top_level: true,
@@ -1351,6 +1353,7 @@ impl<'a> Checker<'a> {
             type_id,
             kind,
             mutable: false,
+            changed: false,
             marked_unused: false,
             read: false,
             top_level: false,
@@ -1372,8 +1375,29 @@ impl<'a> Checker<'a> {
         );
     }
 
-    /// trace: D2, D61
+    /// trace: D2, D61, D135
     fn check_unused(&mut self, scope: &HashMap<String, VariableId>) {
+        let mut unchanged: Vec<(Place, String)> = scope
+            .values()
+            .filter_map(|&id| self.variable(id))
+            .filter(|variable| {
+                variable.mutable && !variable.changed && variable.kind == VariableKind::Named && variable.read
+            })
+            .map(|variable| (variable.place, variable.name.clone()))
+            .collect();
+        unchanged.sort_by_key(|(place, _)| (place.line, place.column));
+        for (place, name) in unchanged {
+            // trace: D135. `mut` promises a change; the fix takes it away.
+            let line = self.source_line(place.line);
+            let before: String = line.chars().take(place.column.saturating_sub(1) as usize).collect();
+            let mut message = Message::refused(place, format!("`{name}` is never changed, so it isn't `mut`"))
+                .with_why("`mut` marks a name that changes; one that never does is made without it.");
+            if let Some(start) = before.rfind("mut ") {
+                let fixed = format!("{}{}", line.get(..start).unwrap_or(""), line.get(start + 4..).unwrap_or(""));
+                message = message.with_fix(fixed);
+            }
+            self.messages.push(message);
+        }
         let mut unused: Vec<(Place, String, VariableKind)> = scope
             .values()
             .filter_map(|&id| self.variable(id))
@@ -1876,6 +1900,7 @@ impl<'a> Checker<'a> {
                 type_id,
                 kind: VariableKind::Named,
                 mutable: marker == syntax::Marker::Mut,
+                changed: false,
                 marked_unused: marker == syntax::Marker::Unused,
                 read: false,
                 top_level: false,
@@ -1902,6 +1927,9 @@ impl<'a> Checker<'a> {
             return false;
         }
         if mutable {
+            if let Some(found) = self.program.variables.get_mut(variable.0 as usize) {
+                found.changed = true;
+            }
             return true;
         }
         let (because, why) = match kind {
@@ -2127,6 +2155,8 @@ impl<'a> Checker<'a> {
             type_id,
             kind: VariableKind::Named,
             mutable,
+            // A hidden name is Seal's own, never the script's to answer for.
+            changed: true,
             marked_unused: false,
             read: true,
             top_level: false,
@@ -2986,7 +3016,11 @@ pub(crate) mod tests {
     // trace: D2
     #[test]
     fn d02_an_unused_name_is_refused() {
-        assert_eq!(whats("mut tries = 0\ntires = tries + 1\n"), vec!["refused: `tires` is never used"]);
+        // trace: D135. The misspelt change leaves `tries` unchanged too.
+        assert_eq!(
+            whats("mut tries = 0\ntires = tries + 1\n"),
+            vec!["refused: `tries` is never changed, so it isn't `mut`", "refused: `tires` is never used"]
+        );
         assert_eq!(
             whats("lives = 3\nlives = 4\nshow_msg(\"{lives}\")\n"),
             vec!["refused: `lives` can't be given a new value"]

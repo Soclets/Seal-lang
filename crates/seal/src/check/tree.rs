@@ -39,6 +39,8 @@ pub struct Variable {
     pub kind: VariableKind,
     /// Made with `mut` (D2).
     pub mutable: bool,
+    /// Changed somewhere, which a name made with `mut` must be (D135).
+    pub changed: bool,
     /// Made with `unused` (D3).
     pub marked_unused: bool,
     pub read: bool,

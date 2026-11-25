@@ -180,7 +180,7 @@ fn d107_d128_ranged_numbers_are_checked_where_values_land() {
     assert!(refusal("gold: Whole[min: 0] = -5\nshow_msg(\"{gold}\")\n").contains("below its type's `min: 0`"));
     let argument = "proc volume[v: Whole[min: 0, max: 100]]\n    show_msg(\"{v}\")\nend\nvolume(150)\n";
     assert!(refusal(argument).contains("above its type's `max: 100`"), "{}", refusal(argument));
-    let floats = "mut speed: Float[min.clamp: 0.0, max.clamp: 12.5] = 20.0\nshow_msg(\"{speed}\")\n";
+    let floats = "speed: Float[min.clamp: 0.0, max.clamp: 12.5] = 20.0\nshow_msg(\"{speed}\")\n";
     assert_eq!(shows(floats), ["12.5"]);
 }
 
