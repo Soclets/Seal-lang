@@ -3762,3 +3762,42 @@ sum: `1.50 + 1.50` shows `3.00`, and `4.99 + 0.01` shows `5.00`. `==` and the ot
 
 **Tankun's words.** Asked "Should a `Decimal` keep its trailing zeros when shown, as IEEE decimal128 does?", the owner
 chose: "yea"
+
+## D126. Converting between the number types
+
+2026-11-25.
+
+**Chosen.** Every conversion that isn't automatic (D115, D116) is written with `be.`:
+
+```
+be.Whole(huge)               // HugeWhole → Whole: fails too_big
+be.Whole.floor(price)        // Decimal → Whole: says how to round
+be.Decimal(big_decimal)      // HugeDecimal → Decimal: 34 digits
+be.Float(price)              // a decimal → the nearest Float
+be.Decimal.shown(speed)      // Float → Decimal: 0.1
+be.Decimal.nearest(speed)    // Float → Decimal: 0.1000…0555…
+be.HugeWhole("1000000000000000000000")
+```
+
+- **Into a `Whole` or `HugeWhole` from a `Decimal` or `HugeDecimal`,** the rounding is said with `.floor`, `.trunc`,
+  `.ceil`, `.nearest` or `.nearest.even`, as from a `Float` (D178 through D22), and a result that doesn't fit fails
+  with `too_big`, as `be.Whole` on a `HugeWhole` does.
+- **Into a `Decimal` from a `HugeDecimal`,** to the nearest 34 digits, ties to even.
+- **Into a `Float` from a decimal,** to the nearest `Float`, shown with `~` when inexact (Unio D155).
+- **Into a `Decimal` from a `Float`, the program says which:** `be.Decimal.shown` takes the number the `Float` shows,
+  so `~0.1` gives exactly `0.1`; `be.Decimal.nearest` takes the nearest `Decimal` to the value the `Float` holds. A
+  bare `be.Decimal` on a `Float` is refused, as a bare `be.Whole` is (D178).
+- **From text,** `be.HugeWhole`, `be.Decimal` and `be.HugeDecimal` read a number as `be.Whole` does, failing with
+  `not_a_number`. D101's refusal of new conversions came before these types.
+
+The wordings come with a later batch.
+
+**Weighed.**
+- A bare `be.Decimal` on a `Float`, taking the number it shows, as the design session first wrote it. Tankun asked why
+  it was bare: there are two sensible answers, which is D178's reason for making the program say.
+
+**Why this won.** Each conversion either can't lose anything, or says how it rounds or fails.
+
+**Tankun's words.** "Why is it `be.Decimal(speed)` bare?", "Have you made this mistake before, and is recorded?",
+then, asked "should `Float` into `Decimal` be written `be.Decimal.shown` or `be.Decimal.nearest`, with a bare
+`be.Decimal` on a `Float` refused, and the rest of the conversions as listed?", the owner chose: "yea"
