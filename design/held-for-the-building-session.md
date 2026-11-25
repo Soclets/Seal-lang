@@ -5,7 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D154, in DECISIONS.md. D151 and D152 answer its C API proposal's two questions, D153 its bytecode
+- D130 to D155, in DECISIONS.md. D155 is for later. D151 and D152 answer its C API proposal's two questions, D153 its bytecode
   proposal's two, and D154 adds a host-switched cache to D141. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
@@ -30,6 +30,8 @@ message once the open questions are settled. Removed once sent.
   way to report a wrong kind; `seal_load_message()` keeps one shared last message, which breaks with scripts loading
   on several threads at once (D49). An idea, its call (D57 lets it add benchmarks): a door-call row through the C API
   against Luau's C API.
+- A timing it may want now, under rule 5: `f = _ * i` on a `HugeWhole` with a small `Whole`, 20,000 times, takes
+  about 175 ms against Python's 63 ms; Python multiplies by a small number in place, with a fast path.
 - Its refusal for D131's case says "this `otherwise`" even after `??`.
 - D135: check the benchmark programs in `bench/programs/` for `mut` names that are never changed.
 - An idea, its own call (D57): Unio's fib trick from `Beta++`, inlining a procedure with no side effects into itself
