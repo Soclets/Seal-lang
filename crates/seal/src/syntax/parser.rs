@@ -1245,7 +1245,7 @@ impl<'a> Parser<'a> {
 
     /// trace: D22, D33, Unio D171, D174
     fn for_each(&mut self) -> Result<Statement<'a>, Message> {
-        let opener = self.opener("for");
+        let opener = self.opener("for_each");
         self.expect_keyword(Keyword::ForEach)?;
         // trace: D61
         let item_unused = self.at_keyword(Keyword::Unused);
@@ -1404,13 +1404,7 @@ impl<'a> Parser<'a> {
             self.peek_kind(),
             Some(
                 TokenKind::Keyword(
-                    Keyword::Or
-                        | Keyword::And
-                        | Keyword::AtLeast
-                        | Keyword::AtMost
-                        | Keyword::In
-                        | Keyword::Div
-                        | Keyword::Rem
+                    Keyword::Or | Keyword::And | Keyword::AtLeast | Keyword::AtMost | Keyword::Div | Keyword::Rem
                 ) | TokenKind::Symbol(
                     Symbol::EqualEqual
                         | Symbol::NotEqual
@@ -1422,7 +1416,7 @@ impl<'a> Parser<'a> {
                         | Symbol::Star
                         | Symbol::Slash
                         | Symbol::Power
-                )
+                ) | TokenKind::Name("to")
             )
         )
     }
@@ -1494,14 +1488,14 @@ impl<'a> Parser<'a> {
     }
 
     fn comparison(&mut self) -> Result<Expression<'a>, Message> {
-        let left = self.measure_in()?;
+        let left = self.measure_to()?;
         let Some(operator) = self.comparison_operator() else {
             return Ok(left);
         };
         self.deeper()?;
         let at = self.here();
         self.advance();
-        let right = self.measure_in()?;
+        let right = self.measure_to()?;
         if self.comparison_operator().is_some() {
             // trace: Unio D81
             return Err(Message::refused(self.here(), "two comparisons in a row")
@@ -1510,25 +1504,40 @@ impl<'a> Parser<'a> {
         Ok(self.binary(operator, left, right, at))
     }
 
-    /// trace: D122. `value in unit` measures a value in a unit of its group. Next to maths written without brackets,
-    /// which part it measures isn't decided, so it stops.
-    fn measure_in(&mut self) -> Result<Expression<'a>, Message> {
+    /// trace: D122, D148. `value to unit` measures a value in a unit of its group: a bare `to` between a value and a
+    /// unit's name, where the label `to:` never stands. Next to maths written without brackets, which part it
+    /// measures isn't decided, so it stops.
+    fn measure_to(&mut self) -> Result<Expression<'a>, Message> {
         let value = self.join()?;
-        if !(self.at_keyword(Keyword::In)
+        if !(matches!(self.peek_kind(), Some(TokenKind::Name("to")))
             && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(_))))
         {
             return Ok(value);
         }
+        // trace: D149, Unio D72. `to` has no place in maths' order, so maths it measures is bracketed.
         if matches!(&value.kind, ExpressionKind::Binary { operator, .. } if operator.is_maths()) {
-            return Err(Message::not_designed_yet(
-                self.here(),
-                "`in` after maths written without brackets, which could measure either side,",
-            ));
+            let mut message = Message::refused(value.place, "this is maths measured with `to`, without brackets")
+                .with_why(
+                    "`to` has no place in maths' order, so the maths it measures is in brackets, as `(a + b) to ms`.",
+                );
+            // The fix brackets the maths, when it's all on one line.
+            let line: Vec<char> = self.physical_line(value.place.line).chars().collect();
+            let from = value.place.column.saturating_sub(1) as usize;
+            let to = (value.place.column + value.place.width).saturating_sub(1) as usize;
+            if from < to && to <= line.len() {
+                let fixed: String = line.get(..from).unwrap_or(&[]).iter().collect::<String>()
+                    + "("
+                    + &line.get(from..to).unwrap_or(&[]).iter().collect::<String>()
+                    + ")"
+                    + &line.get(to..).unwrap_or(&[]).iter().collect::<String>();
+                message = message.with_fix(fixed);
+            }
+            return Err(message);
         }
         self.advance();
         let unit = self.unit_written()?;
         let place = value.place.to(unit.place);
-        Ok(self.expression(ExpressionKind::MeasureIn { value: Box::new(value), unit: Box::new(unit) }, place))
+        Ok(self.expression(ExpressionKind::MeasureTo { value: Box::new(value), unit: Box::new(unit) }, place))
     }
 
     /// trace: D77. Text is joined only by filling it in with braces, so `&` is refused, with the braces form as the
@@ -1819,6 +1828,7 @@ impl<'a> Parser<'a> {
             TokenKind::Keyword(Keyword::False) => ExpressionKind::Bool(false),
             TokenKind::Keyword(Keyword::Be) => ExpressionKind::Name("be"),
             TokenKind::Name(name) => ExpressionKind::Name(name),
+            TokenKind::Underscore => ExpressionKind::Current,
             TokenKind::TypeName(text) => ExpressionKind::TypeName(Word { text, place }),
             TokenKind::Symbol(Symbol::OpenRound) => {
                 let inner = self.full_expression()?;

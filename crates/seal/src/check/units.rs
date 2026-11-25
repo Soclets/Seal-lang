@@ -411,7 +411,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         value.place,
                         format!("this has a unit, `{unit_text}`, where a plain number goes"),
-                        &format!("a value with a unit gives its plain number when it's measured in one, as `value in {unit_text}`."),
+                        &format!("a value with a unit gives its plain number when it's measured in one, as `value to {unit_text}`."),
                     );
                     return Self::error(value.place);
                 }
@@ -440,7 +440,7 @@ impl<'a> Checker<'a> {
 
     /// trace: D122. `value in unit`: the plain number a value is, measured in a unit of its own group. It's a
     /// `Whole` when the count is always whole, and a `Float` otherwise.
-    pub(super) fn measure_in(
+    pub(super) fn measure_to(
         &mut self,
         value: &syntax::Expression<'a>,
         unit: &syntax::UnitWritten<'a>,
@@ -453,8 +453,8 @@ impl<'a> Checker<'a> {
                 let found = self.describe(checked.type_id);
                 self.refuse_why(
                     checked.place,
-                    format!("`in` measures a value with a unit, but this is {found}"),
-                    "`value in unit` gives the plain number a value with a unit is, as `total in secs`.",
+                    format!("`to` measures a value with a unit, but this is {found}"),
+                    "`value to unit` gives the plain number a value with a unit is, as `total to secs`.",
                 );
             }
             return Self::error(place);

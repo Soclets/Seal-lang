@@ -181,6 +181,9 @@ pub(crate) struct Checker<'a> {
     batch: Vec<ProcedureId>,
     /// Procedures' contexts, emptied, for the next procedure checked to reuse (D140).
     spare_contexts: Vec<Context<'a>>,
+    /// What `_` reads while the value of an `=` that changes something is checked: the changed name, or its part
+    /// read through what the change has already worked out (D147). Nothing while no change is being checked.
+    current: Option<Expression>,
     top_level_position: usize,
     /// Each procedure's written failures, to compare with what its body does (D44).
     written_failures: Vec<Option<Vec<syntax::Word<'a>>>>,
@@ -241,6 +244,7 @@ pub fn check(
         demand_depth: 0,
         batch: Vec::new(),
         spare_contexts: Vec::new(),
+        current: None,
         top_level_position: 0,
         written_failures: Vec::new(),
         reported_early_use: HashSet::new(),
@@ -1955,7 +1959,10 @@ impl<'a> Checker<'a> {
         self.partial_types = true;
         let wanted = written_type.map(|written| self.written_type(written));
         self.partial_types = false;
+        // trace: D147. An `=` that makes a name changes nothing, so `_` means nothing in its value.
+        let outer = self.current.take();
         let checked = self.expression(value, wanted);
+        self.current = outer;
         let checked = match wanted {
             Some(wanted) => self.land(checked, wanted),
             None => checked,
@@ -2097,7 +2104,9 @@ impl<'a> Checker<'a> {
     ) -> Option<StatementKind> {
         let changeable = self.check_changeable(variable, name.text, name.place);
         let wanted = self.variable_type(variable);
-        let checked = self.expression(value, Some(wanted));
+        // trace: D147. `_` is the name's value.
+        let current = Expression { kind: ExpressionKind::Variable(variable), type_id: wanted, place: name.place };
+        let checked = self.with_current(current, |checker| checker.expression(value, Some(wanted)));
         self.expect(&checked, wanted, &format!("`{}`", name.text));
         let checked = self.land(checked, wanted);
         changeable.then_some(StatementKind::Set { variable, value: checked })
@@ -2121,6 +2130,24 @@ impl<'a> Checker<'a> {
         } else {
             let (way, described, changeable) = self.way_in(receiver)?;
             (way.part, described, changeable, Some(way))
+        };
+        let mut way = way;
+        let mut variable = variable;
+        // trace: D147. A position or key `_` reads through is worked out once, under a hidden name, so a change to a
+        // name's own item uses a way in with no steps, which works out what it needs before it's taken (D62).
+        if way.is_none() && matches!(step, Step::Reach(_)) && uses_current(value) {
+            let part = self.hidden(self.variable_type(variable), receiver.place, true);
+            way = Some(Inside { lets: Vec::new(), root: variable, steps: Vec::new(), types: Vec::new(), part });
+            variable = part;
+        }
+        // trace: D147. What `_` reads starts from the name, or from the part reached the way the change reaches it.
+        let base = match &way {
+            Some(way) => self.way_read(way, target.place),
+            None => Expression {
+                kind: ExpressionKind::Variable(variable),
+                type_id: self.variable_type(variable),
+                place: target.place,
+            },
         };
         let name = described.as_str();
         let open = self.variable_type(variable);
@@ -2148,7 +2175,12 @@ impl<'a> Checker<'a> {
                     self.refuse(field.place, format!("{found} has no field `{}`", field.text));
                     return None;
                 };
-                let checked = self.expression(value, Some(field_type));
+                let current = Expression {
+                    kind: ExpressionKind::Member { receiver: Box::new(base), name: field.text.to_owned() },
+                    type_id: field_type,
+                    place: target.place,
+                };
+                let checked = self.with_current(current, |checker| checker.expression(value, Some(field_type)));
                 self.expect(&checked, field_type, &format!("the field `{}`", field.text));
                 let checked = self.land(checked, field_type);
                 StatementKind::SetField { variable, field: field.text.to_owned(), value: checked }
@@ -2163,7 +2195,17 @@ impl<'a> Checker<'a> {
                     (Type::List { item, .. } | Type::Array { item, .. }, Some(label @ ("pos" | "offset"))) => {
                         let index = self.expression(&entry.value, Some(WHOLE));
                         self.expect(&index, WHOLE, &format!("`{label}:`"));
-                        let checked = self.expression(value, Some(item));
+                        let index = self.worked_out_once(index, way.as_mut(), value);
+                        let current = Expression {
+                            kind: ExpressionKind::Item {
+                                receiver: Box::new(base),
+                                index: Box::new(index.clone()),
+                                zero_based: label == "offset",
+                            },
+                            type_id: item,
+                            place: target.place,
+                        };
+                        let checked = self.with_current(current, |checker| checker.expression(value, Some(item)));
                         self.expect(&checked, item, "an item of the list");
                         let checked = self.land(checked, item);
                         StatementKind::SetItem { variable, index, zero_based: label == "offset", value: checked }
@@ -2171,7 +2213,14 @@ impl<'a> Checker<'a> {
                     (Type::Dict { key, value: value_type }, Some("key")) => {
                         let checked_key = self.expression(&entry.value, Some(key));
                         self.expect(&checked_key, key, "the dictionary's key");
-                        let checked = self.expression(value, Some(value_type));
+                        let checked_key = self.worked_out_once(checked_key, way.as_mut(), value);
+                        // A key may be missing, so `_` here fails with `missing` as the lookup does (D32).
+                        let current = Expression {
+                            kind: ExpressionKind::Lookup { dict: Box::new(base), key: Box::new(checked_key.clone()) },
+                            type_id: value_type,
+                            place: target.place,
+                        };
+                        let checked = self.with_current(current, |checker| checker.expression(value, Some(value_type)));
                         self.expect(&checked, value_type, "the dictionary's value");
                         let checked = self.land(checked, value_type);
                         StatementKind::SetKey { variable, key: checked_key, value: checked }
@@ -2210,6 +2259,48 @@ impl<'a> Checker<'a> {
         }
         let Some(way) = way else { return Some(statement) };
         Some(self.change_inside(way, statement, target.place))
+    }
+
+    /// Checks with `_` reading `current`, as it does in the value of an `=` that changes something (D147).
+    fn with_current<T>(&mut self, current: Expression, check: impl FnOnce(&mut Self) -> T) -> T {
+        let outer = self.current.replace(current);
+        let checked = check(self);
+        self.current = outer;
+        checked
+    }
+
+    /// The part a way reaches, read through the way's steps, whose places are already worked out under hidden
+    /// names, so reading it runs nothing more (D62, D147).
+    fn way_read(&self, way: &Inside, place: Place) -> Expression {
+        let mut read =
+            Expression { kind: ExpressionKind::Variable(way.root), type_id: self.variable_type(way.root), place };
+        for (position, step) in way.steps.iter().enumerate() {
+            let type_id = way.types.get(position + 1).copied().unwrap_or_else(|| self.variable_type(way.part));
+            let kind = match step {
+                PathStep::Field(name) => ExpressionKind::Member { receiver: Box::new(read), name: name.clone() },
+                PathStep::Item { index, zero_based } => ExpressionKind::Item {
+                    receiver: Box::new(read),
+                    index: Box::new(index.clone()),
+                    zero_based: *zero_based,
+                },
+            };
+            read = Expression { kind, type_id, place };
+        }
+        read
+    }
+
+    /// A change's own position or key, when `_` reads through it, worked out once under a hidden name on the way in
+    /// (D147). A change whose value uses `_` always has a way in here.
+    fn worked_out_once(
+        &mut self,
+        reach: Expression,
+        way: Option<&mut Inside>,
+        value: &syntax::Expression<'a>,
+    ) -> Expression {
+        match way {
+            Some(way) if uses_current(value) => self.hoist(reach, &mut way.lets),
+            _ => reach,
+        }
     }
 
     /// Wraps a change in the way to the part it's made in, with what it needs worked out before the way in is
@@ -2928,12 +3019,38 @@ fn statement_can_fail(statement: &syntax::Statement) -> bool {
     }
 }
 
+/// Whether a value uses `_` anywhere in it (D147).
+fn uses_current(expression: &syntax::Expression) -> bool {
+    use syntax::ExpressionKind as Kind;
+    let entries = |entries: &[syntax::Entry]| entries.iter().any(|entry| uses_current(&entry.value));
+    match &expression.kind {
+        Kind::Call { parts } => entries(parts),
+        Kind::Bracketed { receiver, entries: inside } => uses_current(receiver) || entries(inside),
+        Kind::Member { receiver: inner, .. }
+        | Kind::Group(inner)
+        | Kind::Try(inner)
+        | Kind::Unary { operand: inner, .. }
+        | Kind::MeasureTo { value: inner, .. }
+        | Kind::Measured { number: inner, .. } => uses_current(inner),
+        Kind::Binary { left, right, .. } => uses_current(left) || uses_current(right),
+        Kind::List(items) => items.iter().any(uses_current),
+        Kind::Pairs(pairs) => pairs.iter().any(|(key, value)| uses_current(key) || uses_current(value)),
+        // A fallback or a case may hold `_` too, in a statement as well as a value; these count as using it.
+        Kind::Current | Kind::Handled { .. } | Kind::Otherwise { .. } => true,
+        Kind::Slide { start, steps } => {
+            uses_current(start)
+                || steps.iter().any(|step| uses_current(&step.target) || step.arguments.as_deref().is_some_and(entries))
+        }
+        _ => false,
+    }
+}
+
 fn expression_can_fail(expression: &syntax::Expression) -> bool {
     use syntax::ExpressionKind as Kind;
     let entries_can_fail = |entries: &[syntax::Entry]| entries.iter().any(|entry| expression_can_fail(&entry.value));
     match &expression.kind {
         Kind::Try(_) => true,
-        Kind::MeasureIn { value, .. } => expression_can_fail(value),
+        Kind::MeasureTo { value, .. } => expression_can_fail(value),
         Kind::Measured { .. }
         | Kind::Unit(_)
         | Kind::Whole(_)
@@ -2941,6 +3058,7 @@ fn expression_can_fail(expression: &syntax::Expression) -> bool {
         | Kind::Bool(_)
         | Kind::Text(_)
         | Kind::Name(_)
+        | Kind::Current
         | Kind::TypeName(_)
         | Kind::EmptyDict => false,
         Kind::Member { receiver, .. } => expression_can_fail(receiver),

@@ -231,6 +231,8 @@ pub enum TokenKind<'a> {
     /// Text in double quotes, without the quotes, as written (D16, Unio D21).
     Text(&'a str),
     Symbol(Symbol),
+    /// `_`: the current value of what an `=` changes (D147). It reads as a value, and is never a name.
+    Underscore,
     /// The note after `end \\`, naming the block the `end` closes, with single spaces between its words (D102).
     Note(String),
 }
@@ -252,6 +254,7 @@ impl TokenKind<'_> {
             }
             TokenKind::Text(_) => "text".to_owned(),
             TokenKind::Symbol(symbol) => format!("`{}`", symbol.text()),
+            TokenKind::Underscore => "`_`".to_owned(),
             TokenKind::Note(note) => format!("`\\\\ {note}`"),
         }
     }
@@ -677,6 +680,7 @@ impl<'a> Lexer<'a> {
             self.current().last().map(|token| &token.kind),
             Some(
                 TokenKind::Name(_)
+                    | TokenKind::Underscore
                     | TokenKind::TypeName(_)
                     | TokenKind::Whole(_)
                     | TokenKind::Float { .. }
@@ -951,6 +955,10 @@ impl<'a> Lexer<'a> {
 
 /// A word: a keyword, a name, or a type's name (D7, D24).
 fn word_token(word: &str, place: Place) -> Result<TokenKind<'_>, Message> {
+    // trace: D147
+    if word == "_" {
+        return Ok(TokenKind::Underscore);
+    }
     let first = word.chars().next().unwrap_or('_');
     if first.is_ascii_uppercase() {
         if word.contains('_') {
@@ -1219,7 +1227,10 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     }
     let touches_brackets = matches!(
         before,
-        TokenKind::Name(_) | TokenKind::TypeName(_) | TokenKind::Symbol(TypeClose | CloseSquare | CloseRound)
+        TokenKind::Name(_)
+            | TokenKind::Underscore
+            | TokenKind::TypeName(_)
+            | TokenKind::Symbol(TypeClose | CloseSquare | CloseRound)
     );
     match after {
         // A call's `(` touches the procedure's name; a grouping `(` stands apart.

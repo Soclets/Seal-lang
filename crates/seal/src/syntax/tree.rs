@@ -429,6 +429,8 @@ pub enum ExpressionKind<'a> {
     Bool(bool),
     Text(&'a str),
     Name(&'a str),
+    /// `_`, the current value of what an `=` changes (D147).
+    Current,
     /// A capitalised word standing as a value's start, as `Event` in `Event.idle`.
     TypeName(Word<'a>),
     /// `receiver.name`: a field, a fact, a narrowing or a case, sorted out by checking.
@@ -454,7 +456,7 @@ pub enum ExpressionKind<'a> {
     /// A unit standing alone, as a type's `unit:` setting (D112).
     Unit(Box<UnitWritten<'a>>),
     /// `value in unit`: the plain number a value is when measured in a unit of its group (D122).
-    MeasureIn {
+    MeasureTo {
         value: Box<Expression<'a>>,
         unit: Box<UnitWritten<'a>>,
     },

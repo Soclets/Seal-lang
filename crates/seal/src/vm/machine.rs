@@ -1377,6 +1377,48 @@ pub fn run(
                 pc = callee.entry as usize;
                 reframe!();
             }
+            Instruction::CallAdding { base: call_base, procedure, from, add } => {
+                // The argument's maths first, as when it was an instruction of its own.
+                let left = whole!(from);
+                let argument = match left.checked_add(i64::from(add)) {
+                    Some(argument) => argument,
+                    None if add < 0 => return Err(overflow(left, "-", -i64::from(add), pc)),
+                    None => return Err(overflow(left, "+", i64::from(add), pc)),
+                };
+                set!(usize::from(call_base) + 1, argument.cast_unsigned());
+                step!();
+                let Some(callee) = entries.get(usize::from(procedure)) else {
+                    return Err(broken("a call to a procedure that isn't there", pc));
+                };
+                let new_base = base + usize::from(call_base);
+                let needed = new_base + callee.frame_size as usize;
+                if needed > stack.len() {
+                    heap_try!(grow_stack(stack, heap, needed));
+                }
+                let (Ok(return_pc), Ok(old_base)) = (u32::try_from(pc), u32::try_from(base)) else {
+                    return Err(broken("a script too big to call into", pc));
+                };
+                frames.push(Frame { return_pc, base: old_base });
+                base = new_base;
+                pc = callee.entry as usize;
+                reframe!();
+            }
+            Instruction::ReturnAddWhole { left, right } => {
+                let (left, right) = (whole!(left), whole!(right));
+                match left.checked_add(right) {
+                    Some(sum) => set!(0u16, sum.cast_unsigned()),
+                    None => return Err(overflow(left, "+", right, pc)),
+                }
+                if let Some(frame) = frames.pop() {
+                    pc = frame.return_pc as usize;
+                    base = frame.base as usize;
+                    reframe!();
+                } else {
+                    task.pc = pc;
+                    task.base = base;
+                    return Ok(Outcome::Finished);
+                }
+            }
             Instruction::Return { from } => {
                 let value = get!(from);
                 set!(0u16, value);

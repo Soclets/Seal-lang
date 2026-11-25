@@ -687,25 +687,25 @@ impl Generator {
         let (a, b) = (self.random.below(1000), self.random.below(1000));
         if kind == Kind::Whole {
             return match self.random.below(6) {
-                0 => format!("({a} secs + {b} ms) in ms"),
-                1 => format!("(-{a} mins + {b} secs) in secs"),
-                2 => format!("({a} turns) in degs"),
-                3 if self.coins => format!("({a} stacks - {b} bits) in bits"),
-                4 => format!("({a} px * {}) in px", self.random.below(9)),
-                _ => format!("({a} secs) in secs"),
+                0 => format!("({a} secs + {b} ms) to ms"),
+                1 => format!("(-{a} mins + {b} secs) to secs"),
+                2 => format!("({a} turns) to degs"),
+                3 if self.coins => format!("({a} stacks - {b} bits) to bits"),
+                4 => format!("({a} px * {}) to px", self.random.below(9)),
+                _ => format!("({a} secs) to secs"),
             };
         }
         let (x, y) = (self.float_literal(), self.float_literal());
         match self.random.below(9) {
-            0 => format!("({x} secs - {y} ms) in secs"),
-            1 => format!("({x} px per secs * {y} secs) in px"),
-            2 => format!("atan2(y: {x} px, x: {y} px) in degs"),
-            3 => format!("({x} px.point - {y} px.point) in px"),
+            0 => format!("({x} secs - {y} ms) to secs"),
+            1 => format!("({x} px per secs * {y} secs) to px"),
+            2 => format!("atan2(y: {x} px, x: {y} px) to degs"),
+            3 => format!("({x} px.point - {y} px.point) to px"),
             4 => format!("sin({a} degs) + cos({x} turns)"),
             5 => format!("tan({x} rads)"),
-            6 => format!("({a} degs * {b}) in turns"),
+            6 => format!("({a} degs * {b}) to turns"),
             7 => format!("({x} secs / {y} secs)"),
-            _ => format!("({x} rads) in degs"),
+            _ => format!("({x} rads) to degs"),
         }
     }
 
@@ -749,7 +749,7 @@ impl Generator {
                 2 => format!("(be.Whole.floor({d1} * {d2}) ?? 0)"),
                 3 => format!("(be.Whole.nearest(sqrt({e1} * {e1})) ?? 0)"),
                 4 => format!("(be.Whole.trunc({e1} rem.trunc {e2}) ?? 0)"),
-                5 => format!("(be.Whole(({h1} * 1 secs + 500 ms) in ms) ?? 0)"),
+                5 => format!("(be.Whole(({h1} * 1 secs + 500 ms) to ms) ?? 0)"),
                 _ => format!("(be.Whole({h1} ** {power} rem.floor 1000) ?? 0)"),
             };
         }
@@ -781,7 +781,7 @@ impl Generator {
     /// A value as one side of maths or a comparison: anything looser is put in brackets.
     fn operand(&mut self, kind: Kind, level: usize) -> String {
         let value = self.value(kind, level);
-        let measured = value.contains(" in ");
+        let measured = value.contains(" to ");
         if value.contains(' ') && (measured || (!value.starts_with('(') && !value.ends_with(')'))) {
             format!("({value})")
         } else {
@@ -967,15 +967,15 @@ impl Generator {
             self.line(&format!("show_msg(\"kept {{{name}}}\")"));
         }
         self.depth -= 1;
-        self.end("for");
+        self.end("for_each");
         self.depth -= 1;
-        self.end("for");
+        self.end("for_each");
         let spot = self.fresh();
         self.line(&format!("for_each {spot} in {spots}"));
         self.depth += 1;
         self.line(&format!("show_msg(\"{{{spot}.x}} {{{spot}.y}}\")"));
         self.depth -= 1;
-        self.end("for");
+        self.end("for_each");
     }
 
     /// A change that reaches through fields and places of a `mut` name, or a method at the end of such a way (D62).
@@ -992,8 +992,15 @@ impl Generator {
             && let Some(held) = self.changeable_name(Kind::Crate)
         {
             let line = match self.random.below(5) {
+                // trace: D147. `_` is the part's own value, read through the way the change takes.
+                0 if self.random.chance(1, 2) => format!("{held}.spot.x = _ + ({})", self.value(Kind::Whole, 1)),
                 0 => format!("{held}.spot.x = {}", self.value(Kind::Whole, 1)),
                 1 => format!("{held}.pack.items.add({})", self.value(Kind::Whole, 1)),
+                2 if self.random.chance(1, 2) => format!(
+                    "{held}.pack.stock[key: {}] = (_ ?? 0) - ({})",
+                    self.value(Kind::Text, 0),
+                    self.value(Kind::Whole, 1)
+                ),
                 2 => format!("{held}.pack.stock[key: {}] = {}", self.value(Kind::Text, 0), self.value(Kind::Whole, 1)),
                 3 => format!("{held}.pack.tags[{}] = {}", place(self), self.value(Kind::Text, 1)),
                 _ => format!("{held}.pack = {}", self.value(Kind::Pack, 1)),
@@ -1188,7 +1195,12 @@ impl Generator {
                 self.block(2);
                 self.in_loop = was_in_loop;
                 self.depth += 1;
-                self.line(&format!("{counter} = {counter} + 1"));
+                if self.random.chance(1, 2) {
+                    self.line(&format!("{counter} = {counter} + 1"));
+                } else {
+                    // trace: D147
+                    self.line(&format!("{counter} = _ + 1"));
+                }
                 self.depth -= 1;
                 self.freeze(&counter, false);
                 self.end("while");
@@ -1302,7 +1314,12 @@ impl Generator {
             17 if self.seal() => {
                 if let Some(record) = self.changeable_name(Kind::Record) {
                     let value = self.value(Kind::Whole, 1);
-                    self.line(&format!("{record}.hp = {value}"));
+                    if self.random.chance(1, 3) {
+                        // trace: D147
+                        self.line(&format!("{record}.hp = _ * 2 - ({value})"));
+                    } else {
+                        self.line(&format!("{record}.hp = {value}"));
+                    }
                 } else if let Some(spot) = self.changeable_name(Kind::Spot) {
                     if self.random.chance(1, 2) {
                         let value = self.value(Kind::Whole, 2);
@@ -1369,7 +1386,9 @@ impl Generator {
                 if let Some(name) = self.changeable_name(kind) {
                     let value = self.operand(kind, 1);
                     let operator = *self.random.pick(&["+", "-", "*"]).unwrap_or(&"+");
-                    self.line(&format!("{name} = {name} {operator} {value}"));
+                    // trace: D147. The name itself, or `_` standing for it.
+                    let current = if self.random.chance(1, 2) { "_".to_owned() } else { name.clone() };
+                    self.line(&format!("{name} = {current} {operator} {value}"));
                 }
             }
         }
@@ -1406,7 +1425,7 @@ impl Generator {
             self.end("if");
         }
         self.depth -= 1;
-        self.end("for");
+        self.end("for_each");
     }
 
     #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `ret`, written in order

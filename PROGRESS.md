@@ -14,8 +14,8 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D146 are built, except the language server's parts, D136's C API and D141's bytecode
-   files, which both come after the current work, and what's listed under "Not built yet" below. All 22 tests in
+2. **Decisions built.** D1 to D149 are built, except the language server's parts, D136's C API and D141's bytecode
+   files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
@@ -204,7 +204,15 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D143** Already built so: the new test passed as it came.
 - **D144, D145, D146** `instead` is written `use`, `return` `ret`, `include` `incl`, and `for each` `for_each`, one
   keyword; `for` and `each` alone aren't keywords any more. The Unio translator writes Unio's words. A `for_each`
-  block's `end` note stays `\\ for`, as D102 has it (a question for the design session).
+  block's `end` note is `\\ for_each`, as the design session answered.
+- **D147** `_` on the right of an `=` that changes something is its current value. A name's `_` reads the name; a
+  part's reads the part through the same way in, with every position and key worked out once under a hidden name
+  first (a change to a name's own item then goes through a way in with no steps). On a `Dict`'s key, `_` is a lookup,
+  so it fails with `missing` like one, and is written `(_ ?? 0) + 1`. Anywhere else, `_` is refused (draft wording).
+  The fuzzer writes `_` in changes to names, counters, fields and parts of parts.
+- **D148** Measuring is written `to`, as `total to secs`, in braces too; `to` isn't a keyword, since `to:` is also
+  `range`'s label.
+- **D149** Maths measured with `to` without brackets is refused, with the bracketed line as the fix (draft wording).
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
   entry itself, in two 64-bit halves, so working with one allocates nothing beyond the entry; the money benchmark
   went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/seal/src/decimal.rs` holds

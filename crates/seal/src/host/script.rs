@@ -345,7 +345,16 @@ impl Script {
 
     /// Stops the whole script: every task is over, its memory is freed, and the host is told why (D14, D54).
     fn stop(&mut self, stop: Stop, pc: usize) -> Error {
-        let place = self.compiled.places.get(pc.saturating_sub(1)).copied().unwrap_or_default();
+        let index = pc.saturating_sub(1);
+        let mut place = self.compiled.places.get(index).copied().unwrap_or_default();
+        // A check that fails in an instruction made of two fails in its first part, the maths, whose place is kept
+        // apart from the instruction's own.
+        if matches!(stop, Stop::CheckFailed { .. })
+            && let Ok(found) = self.compiled.fused_places.binary_search_by_key(&index, |&(at, _)| at as usize)
+            && let Some(&(_, maths)) = self.compiled.fused_places.get(found)
+        {
+            place = maths;
+        }
         let mut message = match stop {
             Stop::CheckFailed { what, when, why } => {
                 let mut message = Message::new(MessageKind::CheckFailed, place, what);

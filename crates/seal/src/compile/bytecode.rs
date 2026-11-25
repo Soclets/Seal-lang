@@ -457,8 +457,21 @@ pub enum Instruction {
         base: Register,
         procedure: u32,
     },
+    /// A call with one argument worked out as a `Whole` plus a small number, as `fib(n - 1)`: the argument goes in
+    /// `base + 1`, then the call is made as [`Instruction::Call`] makes it. One instruction where there were two.
+    CallAdding {
+        base: Register,
+        procedure: u16,
+        from: Register,
+        add: i8,
+    },
     Return {
         from: Register,
+    },
+    /// `ret left + right` with two `Whole`s: the sum goes in the first register, then the procedure returns.
+    ReturnAddWhole {
+        left: Register,
+        right: Register,
     },
     ReturnNothing,
     /// Calls a door, with the same layout as [`Instruction::Call`]; `site` says which door and how values cross.
@@ -1017,6 +1030,9 @@ pub struct Compiled {
     pub number_conversions: Vec<(crate::check::tree::NumberConversion, u16)>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
+    /// For each instruction made of two, by its place in `code`, in order: the place of its first part, the maths,
+    /// which a failed check there points at. `places` has its second part's, the call's or the `ret`'s.
+    pub fused_places: Vec<(u32, Place)>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
     /// owns there, to be freed if the task is cancelled (D54).
     pub pause_maps: HashMap<u32, Vec<Register>>,

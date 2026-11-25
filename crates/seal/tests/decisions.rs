@@ -201,17 +201,17 @@ fn d108_d109_d114_maths() {
 
 #[test]
 fn d112_d120_d122_units_convert_where_exact_and_measure_with_in() {
-    let script = "total = 2 secs + 500 ms\nseconds = total in secs\nwait_for: Float[unit: secs] = total\nspeed = 120.0 px per secs\nstep = speed * 0.5 secs\nshow_msg(\"{total} {seconds} {total in ms} {wait_for} {step}\")\n";
+    let script = "total = 2 secs + 500 ms\nseconds = total to secs\nwait_for: Float[unit: secs] = total\nspeed = 120.0 px per secs\nstep = speed * 0.5 secs\nshow_msg(\"{total} {seconds} {total to ms} {wait_for} {step}\")\n";
     assert_eq!(shows(script), ["2500 ms 2.5 2500 2.5 secs 60.0 px"]);
     assert!(refusal("x = 2 secs + 3 px\nshow_msg(\"{x}\")\n").contains("units of different groups"));
-    assert!(refusal("x = 2 secs\ny = x in px\nshow_msg(\"{y}\")\n").contains("isn't measured in `px`"));
+    assert!(refusal("x = 2 secs\ny = x to px\nshow_msg(\"{y}\")\n").contains("isn't measured in `px`"));
     assert!(refusal("x: Whole[unit: secs] = 1500 ms\nshow_msg(\"{x}\")\n").contains("isn't always a whole number"));
     assert!(refusal("x: Float[unit: secs] = 2.0\nshow_msg(\"{x}\")\n").contains("2.0 secs"));
 }
 
 #[test]
 fn d113_angles_take_units_and_a_radian_is_180_over_pi_degrees() {
-    let script = "up = sin(90 degs)\nside = cos(0.5 turns)\naim = atan2(y: 3.0 px, x: 3.0 px)\nhalf = 0.5 turns\nshow_msg(\"{up} {side} {aim} {aim in degs} {half in rads}\")\n";
+    let script = "up = sin(90 degs)\nside = cos(0.5 turns)\naim = atan2(y: 3.0 px, x: 3.0 px)\nhalf = 0.5 turns\nshow_msg(\"{up} {side} {aim} {aim to degs} {half to rads}\")\n";
     assert_eq!(shows(script), ["1.0 -1.0 ~0.7853981633974483 rads 45.0 ~3.141592653589793"]);
     assert!(refusal("x = 2 degs + 1 rads\nshow_msg(\"{x}\")\n").contains("isn't always a whole number"));
     assert!(refusal("x = sin(2 secs)\nshow_msg(\"{x}\")\n").contains("angle"));
@@ -226,7 +226,7 @@ fn d121_points_and_spans() {
 
 #[test]
 fn d123_a_script_declares_its_own_units() {
-    let script = "group.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\nprice = 3 dollars + 50 cents\nshow_msg(\"{price} {price in dollars}\")\n";
+    let script = "group.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\nprice = 3 dollars + 50 cents\nshow_msg(\"{price} {price to dollars}\")\n";
     assert_eq!(shows(script), ["350 cents 3.5"]);
     let inexact = "group.unit length\n    ::m base\n    ::ft = ~0.3048 m\nend\nlong: Whole[unit: m] = 10 ft\nshow_msg(\"{long}\")\n";
     assert!(refusal(inexact).contains("isn't always a whole number"));
@@ -332,7 +332,7 @@ fn d127_operations_on_the_new_number_types() {
 // trace: D107, D115, D120
 #[test]
 fn d115_a_huge_whole_takes_units_and_limits() {
-    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    ret v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold in cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
+    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    ret v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold to cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
     assert_eq!(shows(script), ["1000 7 10 450 cents 450 true"]);
     assert!(refusal("h: HugeWhole[min: 0] = -5\nshow_msg(\"{h}\")\n").contains("below its type's `min: 0`"));
     assert!(refusal("d: Decimal[min: 0] = 5\nshow_msg(\"{d}\")\n").contains("isn't decided yet"));

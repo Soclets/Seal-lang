@@ -1719,6 +1719,24 @@ impl<'p> Compiler<'p> {
                 // value a procedure gives back goes, so it returns with nothing copied: `ReturnNothing` leaves that
                 // register as it is.
                 if !reference && !matches!(value.kind, ExpressionKind::Variable(_)) {
+                    // `ret a + b` with two `Whole`s, neither written as a number, adds and returns in one
+                    // instruction.
+                    if let ExpressionKind::Binary { operator: BinaryOperator::Add, left, right, .. } = &value.kind
+                        && matches!(self.kind(left.type_id), Type::Whole)
+                        && self.number_kind(left.type_id).is_none()
+                        && !matches!(left.kind, ExpressionKind::Whole(_))
+                        && !matches!(right.kind, ExpressionKind::Whole(_))
+                        && fold(value).is_none()
+                    {
+                        let (left, right) = (self.value(left), self.value(right));
+                        self.release_on_exit(0, None);
+                        self.place = statement.place;
+                        let index = u32::try_from(self.here()).unwrap_or(u32::MAX);
+                        self.out.fused_places.push((index, value.place));
+                        self.emit(Instruction::ReturnAddWhole { left, right });
+                        self.function.held.truncate(held_mark);
+                        return;
+                    }
                     self.value_into(value, 0);
                     self.release_on_exit(0, None);
                     self.place = statement.place;
@@ -2320,6 +2338,26 @@ impl<'p> Compiler<'p> {
                         && to != 0
                         && u32::from(to) + 1 == self.function.next
                         && !self.function.held.contains(&to);
+                if let Some((number, from, add, maths)) = self.call_adding(*procedure, arguments) {
+                    // The argument's maths and the call, as one instruction (see `call_adding`).
+                    let base = if in_place {
+                        self.allocate_many(1);
+                        to
+                    } else {
+                        self.allocate_many(2)
+                    };
+                    self.place = expression.place;
+                    let index = u32::try_from(self.here()).unwrap_or(u32::MAX);
+                    self.out.fused_places.push((index, maths));
+                    self.emit(Instruction::CallAdding { base, procedure: number, from, add });
+                    if can_pause {
+                        self.pause_map();
+                    }
+                    if !matches!(self.kind(expression.type_id), Type::Nothing) && base != to {
+                        self.emit(Instruction::Move { to, from: base });
+                    }
+                    return reference;
+                }
                 let base = if in_place {
                     self.arguments_from(Some(to), arguments, false, self.function.moved_name)
                 } else {
@@ -2948,6 +2986,31 @@ impl<'p> Compiler<'p> {
     /// A procedure takes its arguments over: each heap value it's given has a holder's count of its own, which the
     /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
     /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
+    /// A call's one argument written as a `Whole` plus or minus a small number, as `fib(n - 1)`: the procedure's
+    /// number, the register the `Whole` is in, worked out here, the small number, and the maths' place. Nothing
+    /// when the call isn't of that shape, so it's made as usual.
+    fn call_adding(
+        &mut self,
+        procedure: crate::check::tree::ProcedureId,
+        arguments: &[Expression],
+    ) -> Option<(u16, Register, i8, Place)> {
+        let [argument] = arguments else { return None };
+        let number = u16::try_from(procedure.0).ok()?;
+        let ExpressionKind::Binary { operator, left, right, .. } = &argument.kind else { return None };
+        let plain_whole = matches!(self.kind(left.type_id), Type::Whole) && self.number_kind(left.type_id).is_none();
+        if !plain_whole || fold(argument).is_some() {
+            return None;
+        }
+        let small = small_whole(right)?;
+        let add = match operator {
+            BinaryOperator::Add => i8::try_from(small).ok()?,
+            BinaryOperator::Subtract => i8::try_from(small.checked_neg()?).ok()?,
+            _ => return None,
+        };
+        let from = self.value(left);
+        Some((number, from, add, argument.place))
+    }
+
     fn arguments(&mut self, arguments: &[Expression], to_door: bool, moved: Option<VariableId>) -> Register {
         self.arguments_from(None, arguments, to_door, moved)
     }

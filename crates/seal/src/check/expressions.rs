@@ -79,6 +79,29 @@ impl<'a> Checker<'a> {
             // text fills in its braces (D75).
             Kind::Text(text) => self.text_literal(text, place),
             Kind::Name(name) => self.name(name, place),
+            // trace: D147
+            Kind::Current => {
+                let Some(current) = self.current.clone() else {
+                    self.refuse_why(
+                        place,
+                        "`_` is the value of what an `=` changes, and nothing is changed here",
+                        "on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.",
+                    );
+                    return Self::error(place);
+                };
+                // Reading `_` reads the changed name.
+                let mut root = &current;
+                while let ExpressionKind::Member { receiver: inner, .. }
+                | ExpressionKind::Item { receiver: inner, .. }
+                | ExpressionKind::Lookup { dict: inner, .. } = &root.kind
+                {
+                    root = inner;
+                }
+                if let ExpressionKind::Variable(variable) = root.kind {
+                    self.mark_read(variable);
+                }
+                Expression { place, ..current }
+            }
             Kind::TypeName(word) => {
                 let name = &word.text;
                 if self.record_names.contains_key(*name) {
@@ -244,7 +267,7 @@ impl<'a> Checker<'a> {
             Kind::Handled { call, fallback } => self.handled(call, fallback, wanted, place),
             Kind::Otherwise { call, cases, includes } => self.otherwise(call, cases, includes, wanted, place),
             Kind::Measured { number, unit } => self.measured_literal(number, unit, place),
-            Kind::MeasureIn { value, unit } => self.measure_in(value, unit, place),
+            Kind::MeasureTo { value, unit } => self.measure_to(value, unit, place),
             Kind::Unit(unit) => {
                 self.refuse_why(
                     unit.place,
@@ -377,8 +400,8 @@ impl<'a> Checker<'a> {
             }
             None => (inside, None),
         };
-        // trace: D122. `{total in secs}` measures the name in a unit, as D122's own example writes it.
-        let (path, measured) = match path.split_once(" in ") {
+        // trace: D122, D148. `{total to secs}` measures the name in a unit.
+        let (path, measured) = match path.split_once(" to ") {
             Some((path, unit)) => (path, Some(unit)),
             None => (path, None),
         };
@@ -390,7 +413,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         place,
                         format!("`{{{inside}}}` measures in `{unit}`, which isn't a unit's name"),
-                        "`in` in braces measures a name in one of its group's units, as `{total in secs}`.",
+                        "`to` in braces measures a name in one of its group's units, as `{total to secs}`.",
                     );
                     return None;
                 };
@@ -422,7 +445,7 @@ impl<'a> Checker<'a> {
                 let whole = built.place.to(unit.place);
                 syntax::Expression {
                     id: u32::MAX,
-                    kind: syntax::ExpressionKind::MeasureIn { value: Box::new(built), unit: Box::new(unit) },
+                    kind: syntax::ExpressionKind::MeasureTo { value: Box::new(built), unit: Box::new(unit) },
                     place: whole,
                 }
             }

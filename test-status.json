@@ -1,5 +1,5 @@
 {
-  "passed": 22,
+  "passed": 25,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -23,6 +23,9 @@
     "d133_atan2_no_direction": { "status": "pass" },
     "d134_angle_units_in_out": { "status": "pass" },
     "d135_mut_is_changed": { "status": "pass" },
-    "d143_otherwise_case_leaves": { "status": "pass" }
+    "d143_otherwise_case_leaves": { "status": "pass" },
+    "d147_underscore_is_the_left": { "status": "pass" },
+    "d148_measuring_to": { "status": "pass" },
+    "d149_brackets_before_to": { "status": "pass" }
   }
 }
