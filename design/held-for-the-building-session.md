@@ -5,7 +5,8 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D142, in DECISIONS.md. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
+- D130 to D145, in DECISIONS.md. D144 (`use`) and D145 (`ret`, `incl`) change five tests, which fail until built;
+  the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
 - Batch 1's "still open" 13, 14, 17 and 21 are already answered: D126, D127, D128 and D129. 16 is its own call.
