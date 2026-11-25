@@ -1192,10 +1192,10 @@ pub fn run(
     step_budget: u64,
     failures: [u32; 3],
 ) -> Result<Outcome, Stopped> {
-    let Machine { heap, globals, texts, door_arguments } = machine;
+    // Only what nearly every instruction uses is kept as a name of its own; the rest is reached through `machine` and
+    // `compiled` where it's used, so the loop's own values stay in the processor's registers.
+    let heap = &mut machine.heap;
     let code: &[Instruction] = &compiled.code;
-    let layouts: &[Layout] = &compiled.layouts;
-    let constants: &[u64] = &compiled.constants;
     let entries: &[ProcedureEntry] = &compiled.entries;
     let [missing, _, _] = failures;
     let mut pc = task.pc;
@@ -1341,7 +1341,7 @@ pub fn run(
             if heap.has_one_holder(handle) {
                 handle
             } else {
-                let own = heap_try!(heap.make_own(handle, layouts));
+                let own = heap_try!(heap.make_own(handle, compiled.layouts.as_slice()));
                 set!($register, own);
                 own
             }
@@ -1391,7 +1391,7 @@ pub fn run(
                 _ => None,
             };
             if let Some(old) = old {
-                heap.release(old, layouts);
+                heap.release(old, compiled.layouts.as_slice());
             }
         }};
     }
@@ -1404,22 +1404,22 @@ pub fn run(
         match instruction {
             Instruction::Move { to, from } => set!(to, get!(from)),
             Instruction::LoadSmall { to, value } => set!(to, i64::from(value).cast_unsigned()),
-            Instruction::LoadConstant { to, constant } => match constants.get(constant as usize) {
+            Instruction::LoadConstant { to, constant } => match compiled.constants.get(constant as usize) {
                 Some(value) => set!(to, *value),
                 None => return Err(broken("a constant that isn't there", pc)),
             },
-            Instruction::LoadText { to, text } => match texts.get(text as usize) {
+            Instruction::LoadText { to, text } => match machine.texts.get(text as usize) {
                 Some(handle) => set!(to, *handle),
                 None => return Err(broken("a text that isn't there", pc)),
             },
             Instruction::LoadPlainCase { to, case } => set!(to, PLAIN_CASE | u64::from(case)),
-            Instruction::GetGlobal { to, global } => match globals.get(usize::from(global)) {
+            Instruction::GetGlobal { to, global } => match machine.globals.get(usize::from(global)) {
                 Some(value) => set!(to, *value),
                 None => return Err(broken("a top-level name that isn't there", pc)),
             },
             Instruction::SetGlobal { global, from } => {
                 let value = get!(from);
-                match globals.get_mut(usize::from(global)) {
+                match machine.globals.get_mut(usize::from(global)) {
                     Some(slot) => *slot = value,
                     None => return Err(broken("a top-level name that isn't there", pc)),
                 }
@@ -1427,7 +1427,7 @@ pub fn run(
             Instruction::Retain { register } => heap.retain(get!(register)),
             Instruction::ReleaseText { register } => heap.release_text(get!(register)),
             Instruction::Release { register } => {
-                heap.release(get!(register), layouts);
+                heap.release(get!(register), compiled.layouts.as_slice());
                 count_work!();
             }
 
@@ -1444,7 +1444,7 @@ pub fn run(
             }
             Instruction::AddWholeConstant { to, left, constant }
             | Instruction::MultiplyWholeConstant { to, left, constant } => {
-                let Some(right) = constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
+                let Some(right) = compiled.constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
                     return Err(broken("a constant that isn't there", pc));
                 };
                 let left = whole!(left);
@@ -1456,7 +1456,7 @@ pub fn run(
             }
             Instruction::DivideFloorConstant { to, left, constant }
             | Instruction::RemainderFloorConstant { to, left, constant } => {
-                let Some(right) = constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
+                let Some(right) = compiled.constants.get(usize::from(constant)).map(|bits| bits.cast_signed()) else {
                     return Err(broken("a constant that isn't there", pc));
                 };
                 let left = whole!(left);
@@ -1629,7 +1629,8 @@ pub fn run(
             Instruction::AddFloatConstant { to, left, constant }
             | Instruction::MultiplyFloatConstant { to, left, constant }
             | Instruction::DivideFloatConstant { to, left, constant } => {
-                let Some(right) = constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits)) else {
+                let Some(right) = compiled.constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits))
+                else {
                     return Err(broken("a constant that isn't there", pc));
                 };
                 let left = float!(left);
@@ -1645,7 +1646,7 @@ pub fn run(
                 set!(to, result.to_bits());
             }
             Instruction::DivideConstantByFloat { to, constant, right } => {
-                let Some(left) = constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits)) else {
+                let Some(left) = compiled.constants.get(usize::from(constant)).map(|bits| f64::from_bits(*bits)) else {
                     return Err(broken("a constant that isn't there", pc));
                 };
                 let right = float!(right);
@@ -1821,7 +1822,7 @@ pub fn run(
             }
             Instruction::CallDoor { base: call_base, site } => {
                 step!();
-                match call_door(call_base, site, registers, heap, compiled, doors, door_arguments, pc)? {
+                match call_door(call_base, site, registers, heap, compiled, doors, &mut machine.door_arguments, pc)? {
                     DoorEnd::Done => {}
                     DoorEnd::Failed(number) => failure = number,
                     DoorEnd::Pause => {
@@ -1969,7 +1970,7 @@ pub fn run(
                     Err(error) => return Err((Stop::from(error), pc)),
                 };
                 if let Some(old) = old {
-                    heap.release(old, layouts);
+                    heap.release(old, compiled.layouts.as_slice());
                 }
             }
             Instruction::AddItem { list, value }
@@ -2047,7 +2048,7 @@ pub fn run(
                 let own = if heap.has_one_holder(child) {
                     child
                 } else {
-                    let own = heap_try!(heap.make_own(child, layouts));
+                    let own = heap_try!(heap.make_own(child, compiled.layouts.as_slice()));
                     if let Ok(Object::List { items, .. }) = heap.get_mut(parent)
                         && let Some(slot) = items.get_mut(place)
                     {
@@ -2082,7 +2083,7 @@ pub fn run(
                 let own = if heap.has_one_holder(child) {
                     child
                 } else {
-                    let own = heap_try!(heap.make_own(child, layouts));
+                    let own = heap_try!(heap.make_own(child, compiled.layouts.as_slice()));
                     if let Ok(Object::Record { fields, .. }) = heap.get_mut(parent)
                         && let Some(slot) = fields.get_mut(usize::from(field))
                     {
@@ -2106,7 +2107,7 @@ pub fn run(
                 let own = if heap.has_one_holder(child) {
                     child
                 } else {
-                    let own = heap_try!(heap.make_own(child, layouts));
+                    let own = heap_try!(heap.make_own(child, compiled.layouts.as_slice()));
                     if let Ok(Object::List { items, .. }) = heap.get_mut(parent)
                         && let Some(slot) = items.get_mut(place)
                     {
@@ -2278,7 +2279,9 @@ pub fn run(
             }
 
             Instruction::NewRecord { to, base: first, layout } | Instruction::NewCase { to, base: first, layout } => {
-                let Some(count) = layouts.get(usize::from(layout)).map(|layout| layout.references.len()) else {
+                let Some(count) =
+                    compiled.layouts.as_slice().get(usize::from(layout)).map(|layout| layout.references.len())
+                else {
                     return Err(broken("a layout that isn't there", pc));
                 };
                 let start = usize::from(first);
@@ -2319,7 +2322,7 @@ pub fn run(
                     _ => None,
                 };
                 match old {
-                    Some(old) if references => heap.release(old, layouts),
+                    Some(old) if references => heap.release(old, compiled.layouts.as_slice()),
                     Some(_) => {}
                     None => return Err(broken("a field that isn't there", pc)),
                 }
@@ -2411,7 +2414,7 @@ pub fn run(
                     {
                         *slot = new;
                     }
-                    heap.release(item, layouts);
+                    heap.release(item, compiled.layouts.as_slice());
                 }
             }
             Instruction::CaseNumber { to, from } => {
@@ -2420,9 +2423,9 @@ pub fn run(
                     slot & !PLAIN_CASE
                 } else {
                     match heap.get(slot) {
-                        Ok(Object::Case { layout, .. }) => {
-                            u64::from(layouts.get(usize::from(*layout)).map_or(0, |layout| layout.case))
-                        }
+                        Ok(Object::Case { layout, .. }) => u64::from(
+                            compiled.layouts.as_slice().get(usize::from(*layout)).map_or(0, |layout| layout.case),
+                        ),
                         Ok(_) => return Err(broken("a handle that should lead to a case", pc)),
                         Err(error) => return Err((Stop::from(error), pc)),
                     }
@@ -2448,7 +2451,15 @@ pub fn run(
             | Instruction::SplitTextNoEmpty { .. }
             | Instruction::TextLength { .. }
             | Instruction::TextToWhole { .. } => {
-                match outside_instruction(instruction, registers, heap, layouts, failures, pc, &mut steps_left) {
+                match outside_instruction(
+                    instruction,
+                    registers,
+                    heap,
+                    compiled.layouts.as_slice(),
+                    failures,
+                    pc,
+                    &mut steps_left,
+                ) {
                     Ok(Some(failed)) => failure = failed,
                     Ok(None) => {}
                     Err(stopped) => return Err(stopped),
