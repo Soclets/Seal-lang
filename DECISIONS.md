@@ -3115,3 +3115,18 @@ A calculation or a call, as `defaults [loot: make_loot()]`, is refused, with its
 
 **Tankun's words.** Asked "Should a default be any value written out plainly, but never a calculation or a call?",
 the owner chose: "yea"
+
+## D105. `at pos` and `at offset` are refused when going through a `Dict`
+
+2026-11-25.
+
+**Chosen.** Going through a `Dict`, `at key` gives each key (D33), and `at pos` and `at offset` are refused, with `at
+key` as the fix. A count for showing is kept with a `mut` name.
+
+**Weighed.**
+- Allowing them, since a `Dict` keeps the order its keys were added in (D32). A `Dict` is never reached by position,
+  as `stock[pos: 2]`, so a position from the loop could be used for nothing.
+
+**Why this won.** How something is gone through matches how it's reached.
+
+**Tankun's words.** Asked "Should `at pos` and `at offset` be refused on a `Dict`?", the owner chose: "yea"
