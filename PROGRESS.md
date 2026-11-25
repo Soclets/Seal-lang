@@ -213,6 +213,13 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D148** Measuring is written `to`, as `total to secs`, in braces too; `to` isn't a keyword, since `to:` is also
   `range`'s label.
 - **D149** Maths measured with `to` without brackets is refused, with the bracketed line as the fix (draft wording).
+- **D115's speed and outside checks** (asked for by the design session with Tankun's OK): Karatsuba multiplication
+  from 64 base-2^32 digits, division through a Newton reciprocal from 768 (put right exactly, falling back to long
+  division if that ever takes more than a few steps), and text both ways in halves past 48, each switch-over
+  measured. `tests/reference.rs` checks whole numbers, `Decimal` (as decimal128) and `HugeDecimal` against Python;
+  `tests/gmp.rs` checks whole numbers from 60 to 12,000 digits against GMP 6.3, through a small C program built at
+  test time, so no binding and no `unsafe` reaches Seal. Each says so and compares nothing where Python, a C compiler
+  or GMP isn't installed.
 - **D150** Loading a script from a text of its own is judged against Luau alone; `bench/RESULTS.md` shows LuaJIT's
   time beside it for reference.
 - **D151** The C API gives every message whole and in parts; `crates/seal-c/PROPOSAL.md` names the functions.
