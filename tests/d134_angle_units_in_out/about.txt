@@ -1,0 +1,1 @@
+atan2 gives rads only when given values with units, and asin and acos give a plain Float. D134, D113, D120, D111.

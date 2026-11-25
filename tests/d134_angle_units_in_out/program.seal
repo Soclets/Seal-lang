@@ -1,0 +1,5 @@
+a = atan2(y: 0.0, x: 1.0)
+b = a - 0.5
+c = atan2(y: 0.0 px, x: 2.0 px)
+d = acos(1.0) + 0.25
+show_msg("{b} {c} {d}")

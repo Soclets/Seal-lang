@@ -3430,6 +3430,8 @@ to settle a clash?", the owner chose: "yea"
 start with `time`, `angle` and `distance` as its built-in unit groups, with `frames` and `tiles` converting only
 through rates, and the angle built-ins taking angle units in place of `.degrees`?", the owner chose: "yea"
 
+(Changed by D134: `asin`, `acos` and `atan2` give `rads` only when given values with units.)
+
 ## D114. `lerp(a, to: b, by: t)`
 
 2026-11-25.
@@ -4018,3 +4020,37 @@ from Python, Lua, JavaScript, Unity or Godot behaves the same in Seal.
 
 **Tankun's words.** "why", then, asked "Should `atan2` give 0 rads when both arguments are zero, as IEEE 754 and every
 engine do?", the owner chose: "yea"
+
+(With D134, plain arguments give a plain `0.0`, and arguments with units give `0 rads`.)
+
+## D134. `asin`, `acos` and `atan2` give `rads` only when given values with units
+
+2026-11-25.
+
+**Chosen.** The angle built-ins follow Seal's maths, where units come out of what went in (D120): a script that never
+writes a unit never gets one.
+
+```
+a = atan2(y: 3.0, x: 1.0)          // a plain Float, in radians
+b = a - 0.5                        // allowed
+c = atan2(y: 3.0 px, x: 1.0 px)    // rads
+d = asin(0.5)                      // a plain Float, in radians
+```
+
+- **`atan2` given two values with units gives `rads`,** and given two plain numbers gives a plain `Float`, which means
+  radians (D113).
+- **`asin` and `acos` always give a plain `Float`,** since they take a plain ratio, never a unit. A script using units
+  that wants their answer as an angle multiplies it in, as `asin(x) * 1.0 rads`.
+- This replaces D113's "`asin`, `acos` and `atan2` give `rads`".
+
+**Weighed.**
+- Always `rads`, as D113 says and the building session built. `asin(x) - 0.7` would be refused in a script that never
+  wrote a unit, breaking D111's promise that a script that never uses units pays nothing for them.
+- What other units libraries do, which the design session checked from memory: Python's Pint and C++'s Boost.Units
+  give an angle from `atan2` of two lengths and stay plain on plain numbers.
+
+**Why this won.** Units come out of what went in, everywhere in Seal, so they stay optional.
+
+**Tankun's words.** "Do we usually do that?", then, asked "Should `asin`, `acos` and `atan2` give `rads` only when
+given values with units, and a plain `Float` otherwise?", the owner chose: "Yea"
+
