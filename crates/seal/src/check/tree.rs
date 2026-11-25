@@ -200,10 +200,10 @@ pub enum StatementKind {
     ForRange {
         item: VariableId,
         position: Option<(VariableId, bool)>,
-        from: Expression,
-        end: Expression,
+        from: Box<Expression>,
+        end: Box<Expression>,
         inclusive: bool,
-        step: Option<Expression>,
+        step: Option<Box<Expression>>,
         body: Block,
     },
     /// `for each` over a list, an array or a dictionary; which one is the source's type (D33, Unio D171).

@@ -1568,7 +1568,7 @@ impl<'p> Compiler<'p> {
                 }
                 self.function.loops.push(Loop { held_mark: self.function.held.len(), breaks: Vec::new() });
                 // A range counting up from past a name that can't change never reaches that name's number.
-                let apart = self.counts_up_from_past(from, step.as_ref());
+                let apart = self.counts_up_from_past(from, step.as_deref());
                 if let Some(below) = apart {
                     self.function.distinct.push((below, *item));
                 }
@@ -3218,7 +3218,7 @@ fn block_uses(block: &[Statement], variable: VariableId) -> bool {
         }
         StatementKind::While { condition, body } => uses(condition) || block_uses(body, variable),
         StatementKind::ForRange { from, end, step, body, .. } => {
-            uses(from) || uses(end) || step.as_ref().is_some_and(uses) || block_uses(body, variable)
+            uses(from) || uses(end) || step.as_deref().is_some_and(uses) || block_uses(body, variable)
         }
         StatementKind::ForEach { source, body, .. } => uses(source) || block_uses(body, variable),
         StatementKind::Match { subject, arms } => {

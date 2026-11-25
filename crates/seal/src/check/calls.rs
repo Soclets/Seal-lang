@@ -577,24 +577,26 @@ impl Checker<'_> {
         place: Place,
     ) -> Expression {
         let _ = wanted;
-        let Some(signature) = self.doors.get(door as usize) else { return Self::error(place) };
-        let name = signature.name.clone();
-        let labels: Vec<Option<String>> =
-            signature.parameters.iter().map(|parameter| parameter.label.clone()).collect();
-        let (parameter_types, result) = if let Some(types) = self.door_types.get(&door) {
+        // The door's own description lives as long as the checking, so nothing of it is copied here.
+        let doors = self.doors;
+        let Some(signature) = doors.get(door as usize) else { return Self::error(place) };
+        let name = signature.name.as_str();
+        let (labels, parameter_types, result) = if let Some(types) = self.door_types.get(&door) {
             types.clone()
         } else {
             let before = self.messages.len();
-            let parameters: Vec<TypeId> =
+            let labels: std::rc::Rc<[Option<String>]> =
+                signature.parameters.iter().map(|parameter| parameter.label.clone()).collect();
+            let parameters: std::rc::Rc<[TypeId]> =
                 signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type)).collect();
             let result = self.host_type(&signature.result);
             if self.messages.len() == before {
-                self.door_types.insert(door, (parameters.clone(), result));
+                self.door_types.insert(door, (labels.clone(), parameters.clone(), result));
             }
-            (parameters, result)
+            (labels, parameters, result)
         };
-        let has_default = vec![false; labels.len()];
-        let Some(bound) = self.bind_arguments(&name, (&labels, false), &has_default, arguments, place) else {
+        // A door's values have no defaults (D51).
+        let Some(bound) = self.bind_arguments(name, (&labels, false), &[], arguments, place) else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -614,7 +616,7 @@ impl Checker<'_> {
                     ) => self.program.types.unify(item, wanted_item),
                     _ => false,
                 };
-            if !crossing {
+            if !crossing && !self.program.types.unify(value.type_id, parameter_type) {
                 self.expect(&value, parameter_type, &format!("`{name}`'s argument"));
             }
             checked.push(value);

@@ -339,7 +339,7 @@ Ralph has no `Float`, lists, `for each`, `.len`, dividing or the biggest `Whole`
 dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused` parameters (D61), deeper changes
 (D62), and everything with records, `one_of`, `Dict` and failures.
 
-New from C13, not sent yet:
+Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - How a whole-valued `Decimal` shows: built as D125 reads, with the places it keeps, so `d: Decimal = 3` shows `3`
   and `3.0` shows `3.0`, unlike a `Float`'s `3.0`.
 - Converting a `Float` to a `HugeWhole` or `HugeDecimal`: D126 lists neither (stops as not designed).

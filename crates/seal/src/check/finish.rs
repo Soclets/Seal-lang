@@ -824,13 +824,16 @@ impl Checker<'_> {
 
         // trace: D84. A procedure that can fail writes `! [ … ]` in its header, matching what the body does exactly.
         for (procedure, written) in self.program.procedures.iter().zip(&self.written_failures) {
-            let list = procedure
-                .failures
-                .iter()
-                .map(|&failure| facts.program.failure_name(failure).to_owned())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let header = super::header_with(&self.source_line(procedure.place.line), "", Some(&format!(" ! [{list}]")));
+            // The header put right, only worked out when it's shown.
+            let header = || {
+                let list = procedure
+                    .failures
+                    .iter()
+                    .map(|&failure| facts.program.failure_name(failure).to_owned())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                super::header_with(&self.source_line(procedure.place.line), "", Some(&format!(" ! [{list}]")))
+            };
             let Some(written) = written else {
                 if !procedure.failures.is_empty() {
                     messages.push(
@@ -838,7 +841,7 @@ impl Checker<'_> {
                             procedure.place,
                             format!("`{}` can fail with {}, but its header doesn't say so", procedure.name, facts.names(&procedure.failures)),
                         )
-                        .with_fix(header)
+                        .with_fix(header())
                         .with_why("a procedure that can fail lists its failures in its header, after `!`, so every caller knows what can come back."),
                     );
                 }
@@ -858,7 +861,7 @@ impl Checker<'_> {
                 let fix = if procedure.failures.is_empty() {
                     super::header_with(&self.source_line(procedure.place.line), "", Some(""))
                 } else {
-                    header
+                    header()
                 };
                 messages.push(
                     Message::refused(place, format!("`{}`'s written failures don't match: {body}", procedure.name))

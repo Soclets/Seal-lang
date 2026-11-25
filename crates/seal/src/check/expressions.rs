@@ -413,7 +413,7 @@ impl Checker<'_> {
                 let whole = built.place.to(unit.place);
                 syntax::Expression {
                     id: u32::MAX,
-                    kind: syntax::ExpressionKind::MeasureIn { value: Box::new(built), unit },
+                    kind: syntax::ExpressionKind::MeasureIn { value: Box::new(built), unit: Box::new(unit) },
                     place: whole,
                 }
             }

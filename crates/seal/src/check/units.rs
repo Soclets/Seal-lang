@@ -51,7 +51,7 @@ impl<'a> Checker<'a> {
                 };
                 members.push(UnitMemberType { name: name.clone(), size });
             }
-            self.program.types.unit_groups.push(UnitGroupType { name: group.name.clone(), members });
+            self.program.types.unit_groups_mut().push(UnitGroupType { name: group.name.clone(), members });
         }
         for item in &script.items {
             let syntax::Item::UnitGroup(group) = item else { continue };
@@ -98,7 +98,7 @@ impl<'a> Checker<'a> {
                 };
                 members.push(UnitMemberType { name: member.name.text.clone(), size });
             }
-            self.program.types.unit_groups.push(UnitGroupType { name: group.name.text.clone(), members });
+            self.program.types.unit_groups_mut().push(UnitGroupType { name: group.name.text.clone(), members });
         }
     }
 

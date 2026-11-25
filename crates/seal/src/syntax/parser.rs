@@ -116,12 +116,43 @@ impl Parser<'_> {
         }
     }
 
-    fn advance(&mut self) -> Option<Token> {
-        let token = self.peek().cloned();
-        if token.is_some() {
+    fn advance(&mut self) {
+        if self.peek().is_some() {
             self.position += 1;
         }
-        token
+    }
+
+    /// Steps past the next token, giving its place.
+    fn advance_place(&mut self) -> Place {
+        let place = self.peek().map_or(Place::default(), |token| token.place);
+        self.advance();
+        place
+    }
+
+    /// Steps past the next token, taking what it holds instead of copying it: a name's or a value's text is read
+    /// once. The token keeps its place, which is all that's looked back at.
+    fn take(&mut self) -> Option<Token> {
+        let token = self.lines.get_mut(self.line_index)?.tokens.get_mut(self.position)?;
+        let kind = std::mem::replace(&mut token.kind, TokenKind::Symbol(Symbol::Comma));
+        let whole = Token { kind, place: token.place, gap: token.gap };
+        self.position += 1;
+        Some(whole)
+    }
+
+    /// Puts a token just taken back, for reading it another way.
+    fn put_back(&mut self, token: Token) {
+        self.position = self.position.saturating_sub(1);
+        if let Some(slot) = self.lines.get_mut(self.line_index).and_then(|line| line.tokens.get_mut(self.position)) {
+            *slot = token;
+        }
+    }
+
+    /// The text of a name or type name about to be read, taken out of its token.
+    fn take_text(&mut self) -> String {
+        match self.take().map(|token| token.kind) {
+            Some(TokenKind::Name(text) | TokenKind::TypeName(text)) => text,
+            _ => String::new(),
+        }
     }
 
     /// The place right after the line's last token, for "something is missing here".
@@ -146,7 +177,7 @@ impl Parser<'_> {
 
     fn expect_symbol(&mut self, symbol: Symbol) -> Result<Place, Message> {
         if self.at_symbol(symbol) {
-            Ok(self.advance().map_or(Place::default(), |token| token.place))
+            Ok(self.advance_place())
         } else {
             Err(self.unexpected(&format!("`{}`", symbol.text())))
         }
@@ -154,7 +185,7 @@ impl Parser<'_> {
 
     fn expect_keyword(&mut self, keyword: Keyword) -> Result<Place, Message> {
         if self.at_keyword(keyword) {
-            Ok(self.advance().map_or(Place::default(), |token| token.place))
+            Ok(self.advance_place())
         } else {
             Err(self.unexpected(&format!("`{}`", keyword.word())))
         }
@@ -162,10 +193,9 @@ impl Parser<'_> {
 
     fn expect_name(&mut self, what: &str) -> Result<Word, Message> {
         match self.peek() {
-            Some(Token { kind: TokenKind::Name(name), place, .. }) => {
-                let word = Word { text: name.clone(), place: *place };
-                self.position += 1;
-                Ok(word)
+            Some(Token { kind: TokenKind::Name(_), place, .. }) => {
+                let place = *place;
+                Ok(Word { text: self.take_text(), place })
             }
             Some(Token { kind: TokenKind::Keyword(keyword), place, .. }) => {
                 // trace: D7
@@ -178,10 +208,9 @@ impl Parser<'_> {
 
     fn expect_type_name(&mut self) -> Result<Word, Message> {
         match self.peek() {
-            Some(Token { kind: TokenKind::TypeName(name), place, .. }) => {
-                let word = Word { text: name.clone(), place: *place };
-                self.position += 1;
-                Ok(word)
+            Some(Token { kind: TokenKind::TypeName(_), place, .. }) => {
+                let place = *place;
+                Ok(Word { text: self.take_text(), place })
             }
             Some(Token { kind: TokenKind::Name(name), place, .. }) => {
                 // trace: D24
@@ -577,7 +606,7 @@ impl Parser<'_> {
             loop {
                 // trace: D129. A built-in, as `be.Whole`, can be named too.
                 if self.at_keyword(Keyword::Be) {
-                    let be = self.advance().map_or(Place::default(), |token| token.place);
+                    let be = self.advance_place();
                     let mut path = vec![Word { text: "be".to_owned(), place: be }];
                     while self.at_symbol(Symbol::Dot) {
                         self.advance();
@@ -885,7 +914,7 @@ impl Parser<'_> {
                     // trace: D112. A number's unit, as `Float[unit: px per secs]`.
                     let unit = self.unit_written()?;
                     let place = unit.place;
-                    let value = self.expression(ExpressionKind::Unit(unit), place);
+                    let value = self.expression(ExpressionKind::Unit(Box::new(unit)), place);
                     settings.push((path, value));
                 } else {
                     // A ranged number's edge can be below zero (D107).
@@ -930,7 +959,7 @@ impl Parser<'_> {
                 let name = self.expect_name("a name")?;
                 let written_type = if self.at_symbol(Symbol::Colon) {
                     self.advance();
-                    Some(self.type_expression()?)
+                    Some(Box::new(self.type_expression()?))
                 } else {
                     None
                 };
@@ -1000,7 +1029,7 @@ impl Parser<'_> {
                 if self.at_symbol(Symbol::Colon) || self.at_symbol(Symbol::Equals) {
                     let written_type = if self.at_symbol(Symbol::Colon) {
                         self.advance();
-                        Some(self.type_expression()?)
+                        Some(Box::new(self.type_expression()?))
                     } else {
                         None
                     };
@@ -1388,7 +1417,7 @@ impl Parser<'_> {
         self.advance();
         let unit = self.unit_written()?;
         let place = value.place.to(unit.place);
-        Ok(self.expression(ExpressionKind::MeasureIn { value: Box::new(value), unit }, place))
+        Ok(self.expression(ExpressionKind::MeasureIn { value: Box::new(value), unit: Box::new(unit) }, place))
     }
 
     /// trace: D77. Text is joined only by filling it in with braces, so `&` is refused, with the braces form as the
@@ -1543,10 +1572,9 @@ impl Parser<'_> {
 
     fn member_name(&mut self) -> Result<Word, Message> {
         match self.peek() {
-            Some(Token { kind: TokenKind::Name(name) | TokenKind::TypeName(name), place, .. }) => {
-                let word = Word { text: name.clone(), place: *place };
-                self.position += 1;
-                Ok(word)
+            Some(Token { kind: TokenKind::Name(_) | TokenKind::TypeName(_), place, .. }) => {
+                let place = *place;
+                Ok(Word { text: self.take_text(), place })
             }
             _ => Err(self.unexpected("a name")),
         }
@@ -1592,7 +1620,7 @@ impl Parser<'_> {
                         Fallback::Crash
                     } else if self.at_handler() {
                         // trace: D98. On one line, a handler follows `??`.
-                        Fallback::Handler(self.handler_use()?)
+                        Fallback::Handler(Box::new(self.handler_use()?))
                     } else {
                         Fallback::Value(Box::new(self.unary()?))
                     };
@@ -1640,7 +1668,7 @@ impl Parser<'_> {
     }
 
     fn primary(&mut self) -> Result<Expression, Message> {
-        let Some(token) = self.advance() else {
+        let Some(token) = self.take() else {
             // trace: D8
             return Err(Message::refused(self.end_place(), "this line ends where a value is still wanted")
                 .with_why("a line carries on only inside an open `(` or `[`, so wrap the value in `( )`."));
@@ -1659,7 +1687,9 @@ impl Parser<'_> {
                 let number = self.expression(number, place);
                 let unit = self.unit_written()?;
                 let whole = place.to(unit.place);
-                return Ok(self.expression(ExpressionKind::Measured { number: Box::new(number), unit }, whole));
+                return Ok(
+                    self.expression(ExpressionKind::Measured { number: Box::new(number), unit: Box::new(unit) }, whole)
+                );
             }
             TokenKind::Whole(digits) => ExpressionKind::Whole(digits),
             TokenKind::Float { text, approximate } => ExpressionKind::Float { text, approximate },
@@ -1676,8 +1706,7 @@ impl Parser<'_> {
             }
             TokenKind::Symbol(Symbol::OpenSquare) => return self.square_literal(place),
             other => {
-                self.position -= 1;
-                let _ = other;
+                self.put_back(Token { kind: other, place, gap: token.gap });
                 return Err(self.unexpected("a value"));
             }
         };

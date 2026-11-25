@@ -267,13 +267,19 @@ pub struct TypeTable {
     bindings: Vec<Option<TypeId>>,
     pub records: Vec<RecordType>,
     pub one_ofs: Vec<OneOfType>,
-    /// Seal's unit groups, then the script's own (D113, D123).
-    pub unit_groups: Vec<UnitGroupType>,
+    /// Seal's unit groups, then the host's and the script's own (D113, D123), shared until one is added.
+    pub unit_groups: std::sync::Arc<Vec<UnitGroupType>>,
 }
 
 impl TypeTable {
     #[must_use]
     pub fn new() -> Self {
+        // Built once, then copied for each script: Seal's own types and unit groups are the same every time.
+        static BASE: std::sync::OnceLock<TypeTable> = std::sync::OnceLock::new();
+        BASE.get_or_init(TypeTable::base).clone()
+    }
+
+    fn base() -> Self {
         let mut table = TypeTable::default();
         for basic in [
             Type::Error,
@@ -288,8 +294,13 @@ impl TypeTable {
         ] {
             table.intern(basic);
         }
-        table.unit_groups = seal_unit_groups();
+        table.unit_groups = std::sync::Arc::new(seal_unit_groups());
         table
+    }
+
+    /// The unit groups, to add one to.
+    pub fn unit_groups_mut(&mut self) -> &mut Vec<UnitGroupType> {
+        std::sync::Arc::make_mut(&mut self.unit_groups)
     }
 
     pub fn intern(&mut self, kind: Type) -> TypeId {

@@ -220,7 +220,7 @@ pub enum StatementKind {
     Name {
         marker: Marker,
         name: Word,
-        written_type: Option<TypeExpression>,
+        written_type: Option<Box<TypeExpression>>,
         value: Expression,
     },
     /// `goblin.hp = value` or `bag[pos: 1] = value`: changing part of a name's value (D27, D32, Unio D80).
@@ -389,7 +389,7 @@ pub enum Fallback {
     Ignore,
     Crash,
     /// A handler, on one line (D98).
-    Handler(HandlerUse),
+    Handler(Box<HandlerUse>),
 }
 
 /// One step of a slide: a procedure, with any arguments beyond the value slid in (Unio D5).
@@ -432,14 +432,14 @@ pub enum ExpressionKind {
     /// A number written with its unit, as `2 secs` (D112).
     Measured {
         number: Box<Expression>,
-        unit: UnitWritten,
+        unit: Box<UnitWritten>,
     },
     /// A unit standing alone, as a type's `unit:` setting (D112).
-    Unit(UnitWritten),
+    Unit(Box<UnitWritten>),
     /// `value in unit`: the plain number a value is when measured in a unit of its group (D122).
     MeasureIn {
         value: Box<Expression>,
-        unit: UnitWritten,
+        unit: Box<UnitWritten>,
     },
     /// `[a, b, c]` (Unio D75); empty for `[]`.
     List(Vec<Expression>),

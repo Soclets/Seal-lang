@@ -301,6 +301,8 @@ struct Lexer {
     mistakes: Vec<SpacingMistake>,
     /// The `///` comment waiting for the line it describes.
     documented: Option<Place>,
+    /// The word being read, in room every word reuses.
+    word: String,
 }
 
 /// Splits a script's text into logical lines of tokens.
@@ -319,8 +321,10 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         type_depth: 0,
         mistakes: Vec::new(),
         documented: None,
+        word: String::with_capacity(32),
     };
     let mut physical: Vec<&str> = source.split('\n').collect();
+    lexer.lines.reserve(physical.len());
     // A file's last line break ends its last line; it doesn't start an empty one.
     if physical.last() == Some(&"") {
         physical.pop();
@@ -654,9 +658,11 @@ impl Lexer {
                     while characters.get(end).is_some_and(|&next| next.is_ascii_alphanumeric() || next == '_') {
                         end += 1;
                     }
-                    let word: String = characters.get(index..end).unwrap_or(&[]).iter().collect();
+                    // One room for every word, copied out only for a name, at its exact length.
+                    self.word.clear();
+                    self.word.extend(characters.get(index..end).unwrap_or(&[]));
                     let place = place_of(end - index);
-                    let kind = word_token(&word, place)?;
+                    let kind = word_token(&self.word, place)?;
                     self.push(kind, place, gap);
                     index = end;
                 }

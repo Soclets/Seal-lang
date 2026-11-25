@@ -127,7 +127,8 @@ pub(crate) struct Checker<'a> {
     /// The script as it's written, for fixes that show a whole line put right.
     script: &'a syntax::Script,
     /// Each door's types in the script's terms, worked out the first time the door is used.
-    door_types: HashMap<u32, (Vec<TypeId>, TypeId)>,
+    /// Each door's labels, parameters' types and result type, worked out the first time it's called (D48).
+    door_types: HashMap<u32, DoorTypes>,
     messages: Vec<Message>,
     program: Program,
     procedure_syntax: Vec<&'a syntax::Procedure>,
@@ -218,6 +219,9 @@ pub fn check(
         Err(checker.messages)
     }
 }
+
+/// A door's labels, its parameters' types and its result type, shared by every call to it.
+type DoorTypes = (std::rc::Rc<[Option<String>]>, std::rc::Rc<[TypeId]>, TypeId);
 
 impl<'a> Checker<'a> {
     // ---- messages ----
@@ -1626,7 +1630,7 @@ impl<'a> Checker<'a> {
         let place = statement.place;
         let kind = match &statement.kind {
             syntax::StatementKind::Name { marker, name, written_type, value } => {
-                self.name_statement(*marker, name, written_type.as_ref(), value)?
+                self.name_statement(*marker, name, written_type.as_deref(), value)?
             }
             syntax::StatementKind::Change { place: target, value } => self.change(target, value)?,
             syntax::StatementKind::Expression(expression) => {
@@ -2424,10 +2428,10 @@ impl<'a> Checker<'a> {
             return Some(StatementKind::ForRange {
                 item: item_id,
                 position: position_id,
-                from,
-                end,
+                from: Box::new(from),
+                end: Box::new(end),
                 inclusive,
-                step,
+                step: step.map(Box::new),
                 body,
             });
         }
