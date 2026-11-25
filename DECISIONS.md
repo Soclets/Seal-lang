@@ -3531,6 +3531,8 @@ everyday and an unlimited one for idle games' huge sums, in the same pattern as 
 `Decimal`), then, asked "Should Seal have `Decimal` as IEEE decimal128 and `HugeDecimal` as an exact decimal of any
 size?", the owner chose: "yea, what about rational?"
 
+(Changed by D124: a `Decimal` never shows `~`.)
+
 ## D117. No rational type, for now
 
 2026-11-25.
@@ -3725,3 +3727,22 @@ show_msg("{price in dollars}")    // 3.5
 
 **Tankun's words.** "You saw Cyborg's already, right?", then, asked "Should a script declare its own units with
 `group.unit`, members as `::name`, the base marked `base`, and the others defined from it?", the owner chose: "yea"
+
+## D124. A `Decimal` never shows `~`
+
+2026-11-25.
+
+**Chosen.** A `Decimal` shows exactly the digits it holds, with no `~`, replacing D116's `~` on a rounded `Decimal`.
+`~` keeps its one meaning (Unio D155): what's shown isn't exactly what's stored, which a `Float` can be and a
+`Decimal`, counting in tens, never is. A `Decimal` still rounds past 34 digits and on `/`, as D116 says; the result is
+exactly what it shows, as `7 div.floor 2` is exactly `3`.
+
+**Weighed.**
+- A `~` on any `Decimal` that came from a rounded calculation, as D116 had it. The value would carry a hidden mark
+  through every later sum, raising whether `~3.33… * 0` shows `~0` and whether the mark counts in `==`, as the
+  building session asked.
+
+**Why this won.** A `~` there would warn about a difference that isn't there.
+
+**Tankun's words.** "Why?", then, asked "Should a `Decimal` never show `~`, since it always shows exactly what it
+holds?", the owner chose: "yea"
