@@ -1016,7 +1016,7 @@ pub struct Compiled {
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
     /// owns there, to be freed if the task is cancelled (D54).
     pub pause_maps: HashMap<u32, Vec<Register>>,
-    pub failure_names: Vec<String>,
+    pub failure_names: Vec<std::borrow::Cow<'static, str>>,
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`, 0 for one the script never meets.
     pub built_in_failures: [u32; 3],
     /// Each procedure's name, by the place its instructions start, for messages.
@@ -1026,7 +1026,7 @@ pub struct Compiled {
 impl Compiled {
     #[must_use]
     pub fn failure_name(&self, failure: u32) -> &str {
-        self.failure_names.get((failure as usize).wrapping_sub(1)).map_or("?", String::as_str)
+        self.failure_names.get((failure as usize).wrapping_sub(1)).map_or("?", AsRef::as_ref)
     }
 
     /// The procedure whose instructions hold `pc`, when there is one.

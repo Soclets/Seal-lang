@@ -273,16 +273,22 @@ In short, judged Normal against Normal (D58):
 - **Faster than Luau's interpreter:** met on all eight as the benchmarks are defined: `fib`, n-body, spectral-norm,
   fannkuch, word count, text building, binary-trees, and the patrolling scripts as a whole run (1,000 scripts loaded
   from one text, each resumed 100 times), with resuming and footprint each better than Luau's.
-- **Where Seal is behind Luau: loading a script.** Timed apart from the rest of the patrol run, loading is slower in
-  Seal. From the same text, where Seal reuses what it compiled and Luau compiles once and makes each script from
-  that, a script takes Seal about 225 ns and Luau about 195 ns. From a text of its own, with nothing reused, a
-  12-line script takes Seal about 10 µs and Luau about 5 µs (Node about 1.2 µs, which puts most of its compiling off
-  until a function first runs). Seal reads, type-checks and compiles the whole script before it runs any of it, and
-  the time goes on many small allocations spread across the reader, the checker and the compiler; no one place
-  dominates. Tried: the reader now reuses one buffer for every line and gives each line's tokens their room at once
-  (14 µs to 10 µs). Closing the rest needs the reader and checker to stop allocating for each word and each node,
-  which is a rework, not a fix. A 10,000-line script still loads in 8 ms, far inside goal 4, so this only shows on
-  very small scripts loaded in great numbers from different texts.
+- **Where Seal is behind Luau: loading a script from a text of its own.** On 2026-11-25 (after C13), timed apart from
+  the rest of the patrol run: from the same text, where Seal reuses what it compiled and Luau compiles once, a script
+  loads and runs to its first pause in about 190 ns against Luau's 200 ns (met, from 230 ns: the top level's task
+  becomes the first call's, a new stack comes zeroed from the system, and the kept scripts are searched newest
+  first). From a text of its own, with nothing reused, a 12-line script takes Seal about 8.6 µs and Luau about 5.1 µs
+  (not met; it was 12.3 µs after C12, and about 10 µs before). Split up: reading about 3.3 µs, checking about 3.1 µs,
+  compiling about 1.0 µs, and setting the script up about 0.9 µs. Done: a syntax expression is 72 bytes instead of 208
+  (C12's units and handlers had grown it), the reader moves names out of tokens instead of copying them and compares
+  tokens in place, Seal's own types and unit groups and the doors' description are worked out once and shared, door
+  calls borrow instead of copying, built-in failure names aren't copied, and the D84 fix is written only when shown.
+  What's left is spread thin across many small allocations: every name is its own string from the reader to the
+  checked tree, and every node, scope and table its own allocation, with no single place over a few percent. Luau
+  also does no type checking, which is a third of Seal's time. Closing the rest needs names interned as numbers and
+  the trees built in one block, a rework of the reader, checker and compiler together, not a fix. A 10,000-line script
+  loads in about 9 ms, far inside goal 4, so this only shows on very small scripts loaded in great numbers from
+  different texts.
 - **n-body, and what D62 changed.** Until D62, a body's fields could only be changed by copying the body out, changing
   it and putting it back. With D62 the plain way is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the
   Normal program, and the copy-out one is kept as `nbody.ceil.seal`, the Ceil.source program. Written the plain way it

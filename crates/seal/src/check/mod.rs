@@ -138,7 +138,7 @@ pub(crate) struct Checker<'a> {
     words: HashSet<String>,
     record_names: HashMap<String, u32>,
     one_of_names: HashMap<String, u32>,
-    failure_ids: HashMap<String, FailureId>,
+    failure_ids: HashMap<std::borrow::Cow<'static, str>, FailureId>,
     /// The top level's own names, known before they're made so that procedures can use them (D4).
     globals: HashMap<String, VariableId>,
     made: HashSet<VariableId>,
@@ -186,14 +186,19 @@ pub fn check(
         script,
         door_types: HashMap::new(),
         messages: Vec::new(),
-        program: Program { types: types::TypeTable::new(), ..Program::default() },
+        program: Program {
+            types: types::TypeTable::new(),
+            failure_names: Vec::with_capacity(12),
+            ..Program::default()
+        },
         procedure_syntax: Vec::new(),
         procedure_state: Vec::new(),
         procedure_names: HashMap::new(),
         words: HashSet::new(),
         record_names: HashMap::new(),
         one_of_names: HashMap::new(),
-        failure_ids: HashMap::new(),
+        // Room for Seal's own failures and a few of the script's, so they don't grow one at a time.
+        failure_ids: HashMap::with_capacity(12),
         globals: HashMap::new(),
         made: HashSet::new(),
         context: Context::default(),
@@ -219,6 +224,9 @@ pub fn check(
         Err(checker.messages)
     }
 }
+
+/// The failures Seal's own operations give (D32, D73, D101, D126, Unio D95).
+const BUILT_IN_FAILURES: [&str; 6] = ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"];
 
 /// A door's labels, its parameters' types and its result type, shared by every call to it.
 type DoorTypes = (std::rc::Rc<[Option<String>]>, std::rc::Rc<[TypeId]>, TypeId);
@@ -917,9 +925,14 @@ impl<'a> Checker<'a> {
         if let Some(&id) = self.failure_ids.get(name) {
             return id;
         }
-        self.program.failure_names.push(name.to_owned());
+        // Seal's own failures' names are kept without copying them; a script's own are copied once.
+        let kept: std::borrow::Cow<'static, str> = match BUILT_IN_FAILURES.iter().find(|known| **known == name) {
+            Some(known) => std::borrow::Cow::Borrowed(known),
+            None => std::borrow::Cow::Owned(name.to_owned()),
+        };
+        self.program.failure_names.push(kept.clone());
         let id = FailureId(u16::try_from(self.program.failure_names.len()).unwrap_or(u16::MAX));
-        self.failure_ids.insert(name.to_owned(), id);
+        self.failure_ids.insert(kept, id);
         id
     }
 

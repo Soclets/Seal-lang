@@ -85,13 +85,13 @@ pub struct Program {
     /// Whether the top level can pause (D52).
     pub top_level_can_pause: bool,
     /// Every failure's name; a [`FailureId`] is a place in this list, counting from 1.
-    pub failure_names: Vec<String>,
+    pub failure_names: Vec<std::borrow::Cow<'static, str>>,
 }
 
 impl Program {
     #[must_use]
     pub fn failure_name(&self, failure: FailureId) -> &str {
-        self.failure_names.get(usize::from(failure.0).wrapping_sub(1)).map_or("?", String::as_str)
+        self.failure_names.get(usize::from(failure.0).wrapping_sub(1)).map_or("?", AsRef::as_ref)
     }
 
     #[must_use]

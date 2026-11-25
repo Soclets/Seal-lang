@@ -877,6 +877,15 @@ fn word_token(word: &str, place: Place) -> Result<TokenKind, Message> {
 /// Returns a refusal saying which part of the spelling is wrong.
 pub fn check_name_spelling(word: &str, place: Place) -> Result<(), Message> {
     // trace: D24
+    // The usual name passes in one look at each letter; only a wrong one is looked at again, to say what's wrong.
+    let bytes = word.as_bytes();
+    if bytes.first().is_some_and(u8::is_ascii_lowercase)
+        && bytes.last() != Some(&b'_')
+        && bytes.iter().all(|&byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        && !bytes.windows(2).any(|pair| pair == b"__")
+    {
+        return Ok(());
+    }
     let why = "a name is lowercase letters, digits, and `_` between words, starting with a letter.";
     let problem = if word.is_empty() {
         Some("is empty")
@@ -967,7 +976,7 @@ pub fn cook_text(written: &str) -> String {
 /// Spacing is fixed, as Unio's table has it (D63, Unio D98). Every mistake on a line makes one message, with a `^`
 /// under each gap and the whole corrected line as the fix (Unio D100).
 fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) -> Result<(), Message> {
-    let mut mistakes = found.to_vec();
+    let mut mistakes = if found.is_empty() { Vec::new() } else { found.to_vec() };
     let header = header_brackets(tokens);
     for (index, pair) in tokens.windows(2).enumerate() {
         let [before, after] = pair else { continue };
@@ -976,7 +985,7 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
         };
         // trace: D88. A parameter group's `:` has a space on each side; the parser tells a group's `:` from a single
         // name's, so here either spacing passes.
-        if after.kind == TokenKind::Symbol(Symbol::Colon)
+        if matches!(after.kind, TokenKind::Symbol(Symbol::Colon))
             && header.is_some_and(|(open, close)| open < index + 1 && index + 1 < close)
             && actual == 1
         {
@@ -986,16 +995,16 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
         let after_operator = ends_with_rounding(tokens.get(..=index).unwrap_or(&[]));
         // trace: D87. `labels.any_order [ … ]` keeps the space `labels [ … ]` has.
         let after_labels = index == 2
-            && after.kind == TokenKind::Symbol(Symbol::OpenSquare)
-            && tokens.first().map(|token| &token.kind) == Some(&TokenKind::Keyword(Keyword::Labels));
+            && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
+            && matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::Labels)));
         // trace: D110. `handles [ … ]`, a handler group's first line, is spaced as `labels [ … ]` is.
         let after_handles = index == 0
-            && after.kind == TokenKind::Symbol(Symbol::OpenSquare)
+            && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
             && matches!(&before.kind, TokenKind::Name(word) if word == "handles");
         // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
         let jump_mark = index >= 1
-            && before.kind == TokenKind::Symbol(Symbol::Star)
-            && tokens.get(index - 1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Path));
+            && matches!(before.kind, TokenKind::Symbol(Symbol::Star))
+            && matches!(tokens.get(index - 1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path)));
         let wanted = if jump_mark {
             0
         } else if after_operator || after_labels || after_handles {

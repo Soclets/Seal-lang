@@ -102,11 +102,11 @@ impl Parser<'_> {
     }
 
     fn at_symbol(&self, symbol: Symbol) -> bool {
-        self.peek_kind() == Some(&TokenKind::Symbol(symbol))
+        matches!(self.peek_kind(), Some(TokenKind::Symbol(found)) if *found == symbol)
     }
 
     fn at_keyword(&self, keyword: Keyword) -> bool {
-        self.peek_kind() == Some(&TokenKind::Keyword(keyword))
+        matches!(self.peek_kind(), Some(TokenKind::Keyword(found)) if *found == keyword)
     }
 
     fn first_keyword(&self) -> Option<Keyword> {

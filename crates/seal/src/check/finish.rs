@@ -175,7 +175,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
 struct Facts<'p> {
     program: &'p Program,
     doors: &'p [DoorSignature],
-    failure_ids: &'p HashMap<String, FailureId>,
+    failure_ids: &'p HashMap<std::borrow::Cow<'static, str>, FailureId>,
 }
 
 impl Facts<'_> {
@@ -746,7 +746,7 @@ impl Checker<'_> {
     /// pauses (D52), and what isn't decided about loops over shared names.
     #[allow(clippy::too_many_lines)] // the whole-script passes, run one after another over the same facts
     pub(super) fn finish(&mut self) {
-        for name in ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"] {
+        for name in super::BUILT_IN_FAILURES {
             self.failure(name);
         }
         let door_failures: Vec<String> = self.doors.iter().flat_map(|door| door.failures.clone()).collect();

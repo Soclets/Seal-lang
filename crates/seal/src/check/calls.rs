@@ -602,7 +602,7 @@ impl Checker<'_> {
             }
             return Expression { kind: ExpressionKind::Error, type_id: result, place };
         };
-        let mut checked = Vec::new();
+        let mut checked = Vec::with_capacity(bound.len());
         for (position, argument) in bound.iter().enumerate() {
             let parameter_type = parameter_types.get(position).copied().unwrap_or(ERROR);
             let Some(entry) = argument.and_then(|index| arguments.get(index)) else { continue };

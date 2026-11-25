@@ -12,7 +12,7 @@
 //! ```
 
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use super::convert::{Failures, FromSeal, IntoSeal, SealType};
 use super::value::Value;
@@ -217,6 +217,9 @@ struct Inner {
     unit_groups: Vec<HostUnitGroup>,
     /// The scripts compiled against these doors, most recently used last.
     kept: Mutex<Vec<Loaded>>,
+    /// What every load reads of the doors, worked out once until they change.
+    signatures: OnceLock<Arc<[DoorSignature]>>,
+    all_types: OnceLock<Arc<[HostType]>>,
 }
 
 /// The doors a host opens for a script (D11). A host chooses each script's doors when it loads it (D48).
@@ -319,21 +322,7 @@ impl Doors {
             ));
         }
         // Doors shared with loaded scripts are left as they are; this set gets a list of its own to add to.
-        if Arc::get_mut(&mut self.inner).is_none() {
-            self.inner = Arc::new(Inner {
-                doors: self.inner.doors.clone(),
-                types: self.inner.types.clone(),
-                unit_groups: self.inner.unit_groups.clone(),
-                kept: Mutex::default(),
-            });
-        }
-        let Some(inner) = Arc::get_mut(&mut self.inner) else {
-            return Err(Message::internal("a set of doors couldn't be changed"));
-        };
-        // What was compiled against the doors as they were may not fit them any more.
-        if let Ok(kept) = inner.kept.get_mut() {
-            kept.clear();
-        }
+        let inner = self.inner_mut()?;
         if inner.doors.iter().any(|door| door.signature.name == name) {
             return Err(door_refusal(name, format!("the door `{name}` is opened twice"), "each door is opened once."));
         }
@@ -361,6 +350,16 @@ impl Doors {
         self.inner.doors.iter().map(|door| door.signature.clone()).collect()
     }
 
+    /// What a script sees of each door, shared, worked out once until the doors change.
+    pub(crate) fn shared_signatures(&self) -> Arc<[DoorSignature]> {
+        Arc::clone(self.inner.signatures.get_or_init(|| self.signatures().into()))
+    }
+
+    /// The records and `one_of`s the host opens, shared, worked out once until the doors change.
+    pub(crate) fn shared_types(&self) -> Arc<[HostType]> {
+        Arc::clone(self.inner.all_types.get_or_init(|| self.types().into()))
+    }
+
     /// Opens one of the host's records or `one_of`s for its scripts, made with `#[derive(Seal)]` (D48). A script
     /// uses it by name with nothing declared, as it uses a door (D85). A type a door takes or gives is opened with
     /// the door, so this is for the ones only the host's calls into the script use.
@@ -381,20 +380,7 @@ impl Doors {
             }
         };
         check_type_spelling(&host_type)?;
-        if Arc::get_mut(&mut self.inner).is_none() {
-            self.inner = Arc::new(Inner {
-                doors: self.inner.doors.clone(),
-                types: self.inner.types.clone(),
-                unit_groups: self.inner.unit_groups.clone(),
-                kept: Mutex::default(),
-            });
-        }
-        let Some(inner) = Arc::get_mut(&mut self.inner) else {
-            return Err(Message::internal("a set of doors couldn't be changed"));
-        };
-        if let Ok(kept) = inner.kept.get_mut() {
-            kept.clear();
-        }
+        let inner = self.inner_mut()?;
         if !inner.types.iter().any(|known| matches!(known, HostType::Record { name: known, .. } | HostType::OneOf { name: known, .. } if *known == name)) {
             inner.types.push(host_type);
         }
@@ -470,14 +456,20 @@ impl Doors {
                 types: self.inner.types.clone(),
                 unit_groups: self.inner.unit_groups.clone(),
                 kept: Mutex::default(),
+                signatures: OnceLock::new(),
+                all_types: OnceLock::new(),
             });
         }
         let Some(inner) = Arc::get_mut(&mut self.inner) else {
             return Err(Message::internal("a set of doors couldn't be changed"));
         };
+        // What was compiled against the doors as they were may not fit them any more, and what was worked out
+        // from them is worked out again.
         if let Ok(kept) = inner.kept.get_mut() {
             kept.clear();
         }
+        inner.signatures = OnceLock::new();
+        inner.all_types = OnceLock::new();
         Ok(inner)
     }
 
