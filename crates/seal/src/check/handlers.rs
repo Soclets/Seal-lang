@@ -95,7 +95,7 @@ impl<'a> Checker<'a> {
                 let full = path.iter().map(|word| word.text).collect::<Vec<_>>().join(".");
                 let place = path.first().map_or(group.place, |word| word.place);
                 // trace: D129. `handles` names any procedure that can fail: the script's, a door, or a built-in.
-                let can_fail = match self.procedure_names.get(&full) {
+                let can_fail = match self.procedure_names.get(full.as_str()) {
                     Some(&procedure) => self.program.procedure(procedure).is_some_and(|procedure| procedure.can_fail),
                     None => match self.doors.iter().find(|door| door.name == full) {
                         Some(door) => !door.failures.is_empty(),
@@ -117,7 +117,7 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
-            self.handler_groups.insert(name.text.to_owned(), group);
+            self.handler_groups.insert(name.text, group);
         }
     }
 
@@ -277,7 +277,7 @@ impl<'a> Checker<'a> {
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
         let bound = self.bind_arguments(
             &format!("::{member}"),
-            (&labels, handler.labels_any_order),
+            (labels.as_slice(), handler.labels_any_order),
             &has_default,
             &using.arguments,
             using.place,
@@ -306,7 +306,7 @@ impl<'a> Checker<'a> {
         // The cases see the handler's own parameters, and the top level's names as a procedure's body does.
         self.handlers_in_use.push(key);
         let saved = std::mem::take(&mut self.context.scopes);
-        let around: Vec<HashMap<String, super::tree::VariableId>> =
+        let around: Vec<HashMap<&'a str, super::tree::VariableId>> =
             if self.context.procedure.is_none() { saved.first().cloned().into_iter().collect() } else { Vec::new() };
         let mut read = vec![false; handler.parameters.len()];
         let mut cases: Vec<(FailureId, Block)> = Vec::new();
@@ -336,7 +336,7 @@ impl<'a> Checker<'a> {
                     made_at: 0,
                     place: parameter.name.place,
                 });
-                scope.insert(parameter.name.text.to_owned(), id);
+                scope.insert(parameter.name.text, id);
                 before.push(Statement {
                     kind: StatementKind::Make { variable: id, value: value.clone() },
                     place: using.place,

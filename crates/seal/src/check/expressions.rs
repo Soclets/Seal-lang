@@ -98,9 +98,9 @@ impl<'a> Checker<'a> {
                     return self.build(&path, None, wanted, place);
                 }
                 if !self.is_value(receiver) {
-                    let path = name_path(expression).unwrap_or_default().join(".");
-                    let word = path.split('.').next().unwrap_or("").to_owned();
-                    if self.words.contains(&word) || super::BUILT_IN_WORDS.contains(&word.as_str()) {
+                    let path = name_path(expression).map(|path| path.join(".")).unwrap_or_default();
+                    let word = path.split('.').next().unwrap_or("");
+                    if self.words.contains(word) || super::BUILT_IN_WORDS.contains(&word) {
                         // trace: Unio D4
                         self.refuse_why(
                             place,
@@ -147,7 +147,10 @@ impl<'a> Checker<'a> {
                     place,
                 }
             }
-            Kind::Call { callee, arguments } => self.call(expression, callee, arguments, wanted),
+            Kind::Call { .. } => match expression.kind.as_call() {
+                Some((callee, arguments)) => self.call(expression, callee, arguments, wanted),
+                None => Self::error(place),
+            },
             Kind::Bracketed { receiver, entries } => self.bracketed(receiver, entries, wanted, place),
             Kind::List(items) => self.list_literal(items, wanted, place),
             Kind::Pairs(pairs) => self.pairs(pairs, wanted, place),
@@ -751,7 +754,7 @@ impl<'a> Checker<'a> {
             };
         }
         if !self.is_value(receiver) {
-            let path = name_path(receiver).unwrap_or_default().join(".");
+            let path = name_path(receiver).map(|path| path.join(".")).unwrap_or_default();
             self.refuse_why(
                 place,
                 format!("`{path}` is a procedure, and a call writes `( )`"),
@@ -1335,8 +1338,7 @@ impl<'a> Checker<'a> {
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
-        let start_is_call =
-            matches!(&start.kind, syntax::ExpressionKind::Call { callee, .. } if !self.is_method(callee));
+        let start_is_call = matches!(start.kind.as_call(), Some((callee, _)) if !self.is_method(callee));
         let calls = steps.len() + usize::from(start_is_call);
         if calls < 3 {
             // trace: Unio D128
@@ -1349,13 +1351,13 @@ impl<'a> Checker<'a> {
         }
         let mut nested = start.clone();
         for step in steps {
-            let mut arguments = vec![syntax::Entry { label: None, value: nested }];
-            arguments.extend(step.arguments.clone().unwrap_or_default());
-            nested = syntax::Expression {
-                id: u32::MAX,
-                kind: syntax::ExpressionKind::Call { callee: Box::new(step.target.clone()), arguments },
-                place: step.place,
-            };
+            let mut parts = vec![
+                syntax::Entry { label: None, value: step.target.clone() },
+                syntax::Entry { label: None, value: nested },
+            ];
+            parts.extend(step.arguments.clone().unwrap_or_default());
+            nested =
+                syntax::Expression { id: u32::MAX, kind: syntax::ExpressionKind::Call { parts }, place: step.place };
         }
         self.slide_depth += 1;
         let mut checked = self.expression(&nested, wanted);
@@ -1427,15 +1429,35 @@ fn type_word<'r, 'e>(expression: &'r syntax::Expression<'e>) -> Option<&'r synta
 }
 
 /// A procedure's name with its narrowings, as `show_msg` and `same_line`.
-pub(super) fn name_path<'e>(expression: &syntax::Expression<'e>) -> Option<Vec<&'e str>> {
+pub(super) fn name_path<'e>(expression: &syntax::Expression<'e>) -> Option<NamePath<'e>> {
     match &expression.kind {
-        syntax::ExpressionKind::Name(name) => Some(vec![*name]),
+        syntax::ExpressionKind::Name(name) => Some(NamePath::One([*name])),
         syntax::ExpressionKind::Member { receiver, name } => {
-            let mut path = name_path(receiver)?;
+            let mut path = match name_path(receiver)? {
+                NamePath::One([first]) => vec![first],
+                NamePath::Many(path) => path,
+            };
             path.push(name.text);
-            Some(path)
+            Some(NamePath::Many(path))
         }
         _ => None,
+    }
+}
+
+/// A name with its narrowings, as words: one held in place, as most are, so reading it allocates nothing (D140).
+pub(super) enum NamePath<'e> {
+    One([&'e str; 1]),
+    Many(Vec<&'e str>),
+}
+
+impl<'e> std::ops::Deref for NamePath<'e> {
+    type Target = [&'e str];
+
+    fn deref(&self) -> &[&'e str] {
+        match self {
+            NamePath::One(word) => word,
+            NamePath::Many(words) => words,
+        }
     }
 }
 

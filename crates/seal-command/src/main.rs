@@ -121,7 +121,7 @@ fn read_call(line: &str) -> Option<(String, Vec<Argument>)> {
     let script = seal::syntax::parser::parse(line).ok()?;
     let [Item::Statement(statement)] = script.items.as_slice() else { return None };
     let StatementKind::Expression(expression) = &statement.kind else { return None };
-    let ExpressionKind::Call { callee, arguments } = &expression.kind else { return None };
+    let (callee, arguments) = expression.kind.as_call()?;
     let name = procedure_name(callee)?;
     let arguments = arguments
         .iter()

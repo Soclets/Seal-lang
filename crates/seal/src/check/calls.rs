@@ -8,9 +8,78 @@ use crate::message::Place;
 use crate::syntax::tree as syntax;
 
 /// How many calls are nested here, each the first argument of the next (Unio D128).
+/// What a call's arguments are matched against: each value's label, when it has one (D41, D51, D87).
+pub(super) trait Labels {
+    fn count(&self) -> usize;
+    fn label(&self, index: usize) -> Option<&str>;
+}
+
+impl Labels for [Option<String>] {
+    fn count(&self) -> usize {
+        self.len()
+    }
+
+    fn label(&self, index: usize) -> Option<&str> {
+        self.get(index).and_then(Option::as_deref)
+    }
+}
+
+impl Labels for [Option<&str>] {
+    fn count(&self) -> usize {
+        self.len()
+    }
+
+    fn label(&self, index: usize) -> Option<&str> {
+        self.get(index).copied().flatten()
+    }
+}
+
+impl Labels for [crate::signature::DoorParameter] {
+    fn count(&self) -> usize {
+        self.len()
+    }
+
+    fn label(&self, index: usize) -> Option<&str> {
+        self.get(index).and_then(|parameter| parameter.label.as_deref())
+    }
+}
+
+/// Which argument each parameter gets, held in place for the usual few, so matching a call allocates nothing.
+#[derive(Clone, Debug)]
+pub(super) enum Bound {
+    Few([Option<usize>; 8], usize),
+    Many(Vec<Option<usize>>),
+}
+
+impl Bound {
+    fn empty(count: usize) -> Bound {
+        if count <= 8 { Bound::Few([None; 8], count) } else { Bound::Many(vec![None; count]) }
+    }
+}
+
+impl std::ops::Deref for Bound {
+    type Target = [Option<usize>];
+
+    fn deref(&self) -> &[Option<usize>] {
+        match self {
+            Bound::Few(slots, count) => slots.get(..*count).unwrap_or(&[]),
+            Bound::Many(slots) => slots,
+        }
+    }
+}
+
+impl std::ops::DerefMut for Bound {
+    fn deref_mut(&mut self) -> &mut [Option<usize>] {
+        match self {
+            Bound::Few(slots, count) => slots.get_mut(..*count).unwrap_or(&mut []),
+            Bound::Many(slots) => slots,
+        }
+    }
+}
+
 fn chain_length(expression: &syntax::Expression) -> usize {
-    match &expression.kind {
-        syntax::ExpressionKind::Call { callee, arguments } if is_name_path(callee) => {
+    match expression.kind.as_call() {
+        Some((callee, arguments)) if is_name_path(callee) => {
             // Brackets around the inner call don't make the chain any shorter.
             let inner = arguments.first().filter(|entry| entry.label.is_none()).map_or(0, |entry| {
                 let mut value = &entry.value;
@@ -48,7 +117,7 @@ impl<'a> Checker<'a> {
             let length = chain_length(expression);
             if length >= 3 && path.first().is_none_or(|word| self.visible(word).is_none()) {
                 let mut inner = expression;
-                while let syntax::ExpressionKind::Call { arguments, .. } = &inner.kind {
+                while let Some((_, arguments)) = inner.kind.as_call() {
                     self.judged_chains.insert(inner.id);
                     let Some(first) = arguments.first() else { break };
                     inner = &first.value;
@@ -105,11 +174,15 @@ impl<'a> Checker<'a> {
                 Self::error(place)
             }
             _ => {
-                let full = path.join(".");
-                if let Some(&procedure) = self.procedure_names.get(&full) {
+                // A one-word name is itself; only a narrowed one is joined up.
+                let full: std::borrow::Cow<'_, str> = match &*path {
+                    [only] => std::borrow::Cow::Borrowed(only),
+                    _ => std::borrow::Cow::Owned(path.join(".")),
+                };
+                if let Some(&procedure) = self.procedure_names.get(full.as_ref()) {
                     return self.procedure_call(procedure, &full, arguments, place);
                 }
-                if let Some(door) = self.doors.iter().position(|door| door.name == full) {
+                if let Some(door) = self.doors.iter().position(|door| door.name == *full) {
                     return self.door_call(u32::try_from(door).unwrap_or(u32::MAX), arguments, wanted, place);
                 }
                 for entry in arguments {
@@ -154,9 +227,7 @@ impl<'a> Checker<'a> {
             );
             return Self::error(place);
         }
-        let owned: Vec<Option<String>> = labels.iter().map(|label| label.map(str::to_owned)).collect();
-        let Some(bound) = self.bind_arguments(word, (&owned, false), &vec![false; owned.len()], arguments, place)
-        else {
+        let Some(bound) = self.bind_arguments(word, (labels, false), &[], arguments, place) else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -322,7 +393,7 @@ impl<'a> Checker<'a> {
         let mut real: Vec<String> = self
             .procedure_names
             .keys()
-            .map(String::as_str)
+            .map(AsRef::as_ref)
             .chain(self.doors.iter().map(|door| door.name.as_str()))
             .filter(|name| name.starts_with(&prefix))
             .map(|name| format!("`{name}`"))
@@ -382,21 +453,21 @@ impl<'a> Checker<'a> {
 
     /// Matches a call's arguments to parameters by position and label (D41, D42, Unio D24). Gives, for each
     /// parameter, which argument fills it, or nothing where a default does.
-    pub(super) fn bind_arguments(
+    pub(super) fn bind_arguments<L: Labels + ?Sized>(
         &mut self,
         name: &str,
-        (labels, any_order): (&[Option<String>], bool),
+        (labels, any_order): (&L, bool),
         has_default: &[bool],
         arguments: &[syntax::Entry<'a>],
         place: Place,
-    ) -> Option<Vec<Option<usize>>> {
+    ) -> Option<Bound> {
         let mut out_of_order = false;
-        let mut bound: Vec<Option<usize>> = vec![None; labels.len()];
+        let mut bound = Bound::empty(labels.count());
         let mut last: Option<usize> = None;
         let mut failed = false;
         for (index, entry) in arguments.iter().enumerate() {
             let parameter = if let Some(label) = &entry.label {
-                let found = labels.iter().position(|known| known.as_deref() == Some(label.text));
+                let found = (0..labels.count()).position(|index| labels.label(index) == Some(label.text));
                 if found.is_none() {
                     self.refuse_why(
                         label.place,
@@ -408,14 +479,13 @@ impl<'a> Checker<'a> {
                 found
             } else {
                 let start = last.map_or(0, |last| last + 1);
-                let found = (start..labels.len()).find(|&candidate| {
-                    labels.get(candidate).is_some_and(Option::is_none)
-                        && bound.get(candidate).is_some_and(Option::is_none)
+                let found = (start..labels.count()).find(|&candidate| {
+                    labels.label(candidate).is_none() && bound.get(candidate).is_some_and(Option::is_none)
                 });
                 if found.is_none() {
-                    let next_label = (0..labels.len())
+                    let next_label = (0..labels.count())
                         .find(|&candidate| bound.get(candidate).is_some_and(Option::is_none))
-                        .and_then(|candidate| labels.get(candidate).cloned().flatten());
+                        .and_then(|candidate| labels.label(candidate));
                     match next_label {
                         Some(label) => self.refuse_why(
                             entry.value.place,
@@ -452,14 +522,11 @@ impl<'a> Checker<'a> {
             self.refuse_order(name, &bound, arguments, place);
             return None;
         }
-        let missing: Vec<usize> = (0..labels.len())
-            .filter(|&parameter| {
-                bound.get(parameter).is_some_and(Option::is_none)
-                    && !has_default.get(parameter).copied().unwrap_or(false)
-            })
-            .collect();
-        if let Some(&first) = missing.first() {
-            match labels.get(first).cloned().flatten() {
+        let missing = (0..labels.count()).find(|&parameter| {
+            bound.get(parameter).is_some_and(Option::is_none) && !has_default.get(parameter).copied().unwrap_or(false)
+        });
+        if let Some(first) = missing {
+            match labels.label(first) {
                 Some(label) => self.refuse_why(
                     place,
                     format!("this call leaves out `{label}:`"),
@@ -469,8 +536,8 @@ impl<'a> Checker<'a> {
                     place,
                     format!(
                         "`{name}` takes {} argument{}, but this call gives {}",
-                        labels.len(),
-                        if labels.len() == 1 { "" } else { "s" },
+                        labels.count(),
+                        if labels.count() == 1 { "" } else { "s" },
                         arguments.len()
                     ),
                 ),
@@ -530,7 +597,8 @@ impl<'a> Checker<'a> {
         let parameters = procedure.parameters.clone();
         let result = procedure.result;
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
-        let Some(bound) = self.bind_arguments(name, (&labels, any_order), &has_default, arguments, place) else {
+        let Some(bound) = self.bind_arguments(name, (labels.as_slice(), any_order), &has_default, arguments, place)
+        else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -587,22 +655,11 @@ impl<'a> Checker<'a> {
         let doors = self.doors;
         let Some(signature) = doors.get(door as usize) else { return Self::error(place) };
         let name = signature.name.as_str();
-        let (labels, parameter_types, result) = if let Some(types) = self.door_types.get(&door) {
-            types.clone()
-        } else {
-            let before = self.messages.len();
-            let labels: std::rc::Rc<[Option<String>]> =
-                signature.parameters.iter().map(|parameter| parameter.label.clone()).collect();
-            let parameters: std::rc::Rc<[TypeId]> =
-                signature.parameters.iter().map(|parameter| self.host_type(&parameter.host_type)).collect();
-            let result = self.host_type(&signature.result);
-            if self.messages.len() == before {
-                self.door_types.insert(door, (labels.clone(), parameters.clone(), result));
-            }
-            (labels, parameters, result)
-        };
+        // A door's types are worked out where they're used: a plain one is a constant, so nothing is kept (D140).
+        let result = self.host_type(&signature.result);
         // A door's values have no defaults (D51).
-        let Some(bound) = self.bind_arguments(name, (&labels, false), &[], arguments, place) else {
+        let Some(bound) = self.bind_arguments(name, (signature.parameters.as_slice(), false), &[], arguments, place)
+        else {
             for entry in arguments {
                 self.expression(&entry.value, None);
             }
@@ -610,8 +667,9 @@ impl<'a> Checker<'a> {
         };
         let mut checked = Vec::with_capacity(bound.len());
         for (position, argument) in bound.iter().enumerate() {
-            let parameter_type = parameter_types.get(position).copied().unwrap_or(ERROR);
             let Some(entry) = argument.and_then(|index| arguments.get(index)) else { continue };
+            let parameter_type =
+                signature.parameters.get(position).map_or(ERROR, |parameter| self.host_type(&parameter.host_type));
             let value = self.expression(&entry.value, Some(parameter_type));
             // A list with `len.max` and an array both cross a door as a Rust `Vec` (the standard, chapter 6).
             let crossing =
@@ -866,7 +924,7 @@ impl<'a> Checker<'a> {
                 ExpressionKind::Text(text) => text.is_empty(),
                 ExpressionKind::Variable(variable) => self.variable(*variable).is_some_and(|variable| {
                     variable.top_level
-                        && self.plain_names.get(&variable.name).is_some_and(
+                        && self.plain_names.get(variable.name.as_str()).is_some_and(
                             |value| matches!(&value.kind, syntax::ExpressionKind::Text(text) if text.is_empty()),
                         )
                 }),

@@ -122,11 +122,14 @@ impl Script<'_> {
     }
 }
 
-impl Procedure<'_> {
-    /// The full name, with its narrowings joined by `.`.
+impl<'a> Procedure<'a> {
+    /// The full name, with its narrowings joined by `.`, borrowed from the script when it's one word.
     #[must_use]
-    pub fn name(&self) -> String {
-        self.path.iter().map(|word| word.text).collect::<Vec<_>>().join(".")
+    pub fn name(&self) -> std::borrow::Cow<'a, str> {
+        match self.path.as_slice() {
+            [word] => std::borrow::Cow::Borrowed(word.text),
+            path => std::borrow::Cow::Owned(path.iter().map(|word| word.text).collect::<Vec<_>>().join(".")),
+        }
     }
 }
 
@@ -319,6 +322,20 @@ pub enum BinaryOperator {
     Or,
 }
 
+impl<'a> ExpressionKind<'a> {
+    /// A call's callee and arguments.
+    #[must_use]
+    pub fn as_call(&self) -> Option<(&Expression<'a>, &[Entry<'a>])> {
+        match self {
+            ExpressionKind::Call { parts } => {
+                let (callee, arguments) = parts.split_first()?;
+                Some((&callee.value, arguments))
+            }
+            _ => None,
+        }
+    }
+}
+
 impl BinaryOperator {
     #[must_use]
     pub fn text(self) -> &'static str {
@@ -419,10 +436,10 @@ pub enum ExpressionKind<'a> {
         receiver: Box<Expression<'a>>,
         name: Word<'a>,
     },
-    /// `callee(arguments)`.
+    /// `callee(arguments)`: the callee first, with no label, then the arguments, in one list so a call is one
+    /// allocation (D140). Read with [`ExpressionKind::as_call`].
     Call {
-        callee: Box<Expression<'a>>,
-        arguments: Vec<Entry<'a>>,
+        parts: Vec<Entry<'a>>,
     },
     /// `receiver[entries]`, all labelled: reaching an item, building a record or a case, or a `range`.
     Bracketed {

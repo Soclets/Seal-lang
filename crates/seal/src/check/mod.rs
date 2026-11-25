@@ -94,11 +94,11 @@ struct DeferredArgument {
 }
 
 #[derive(Default)]
-struct Context {
+struct Context<'a> {
     procedure: Option<ProcedureId>,
-    scopes: Vec<HashMap<String, VariableId>>,
+    scopes: Vec<HashMap<&'a str, VariableId>>,
     /// Emptied scope tables, for the next scope to use (D140).
-    spare_scopes: Vec<HashMap<String, VariableId>>,
+    spare_scopes: Vec<HashMap<&'a str, VariableId>>,
     loop_depth: u32,
     /// The names being gone through by a `for each`, which can't change inside it (Unio D173).
     iterating: Vec<VariableId>,
@@ -108,9 +108,9 @@ struct Context {
     instead_types: Vec<TypeId>,
 }
 
-impl Context {
+impl<'a> Context<'a> {
     /// An empty table for a new scope, one kept from an earlier scope when there is one.
-    fn spare_scope(&mut self) -> HashMap<String, VariableId> {
+    fn spare_scope(&mut self) -> HashMap<&'a str, VariableId> {
         self.spare_scopes.pop().unwrap_or_default()
     }
 
@@ -121,7 +121,7 @@ impl Context {
     }
 
     /// A scope's table, emptied and kept for the next scope.
-    fn keep_scope(&mut self, scope: HashMap<String, VariableId>) {
+    fn keep_scope(&mut self, scope: HashMap<&'a str, VariableId>) {
         if self.spare_scopes.len() < SPARE_LIMIT {
             self.spare_scopes.push(keep(scope));
         }
@@ -136,35 +136,34 @@ pub(crate) struct Checker<'a> {
     host_units: &'a [HostUnitGroup],
     /// Top-level names made with no `mut` from a value written out plainly, which are known while loading (D103,
     /// D104), and the top-level names made with `mut`, which aren't.
-    plain_names: HashMap<String, &'a syntax::Expression<'a>>,
-    changing_names: HashSet<String>,
+    // Names are the script's own, borrowed, as keys too (D140).
+    plain_names: HashMap<&'a str, &'a syntax::Expression<'a>>,
+    changing_names: HashSet<&'a str>,
     /// The handler groups, by name (D110).
-    handler_groups: HashMap<String, &'a syntax::HandlerGroup<'a>>,
+    handler_groups: HashMap<&'a str, &'a syntax::HandlerGroup<'a>>,
     /// The handlers whose cases are being checked where they're used, so that one can't use itself.
     handlers_in_use: Vec<String>,
     /// Their names.
-    host_type_names: HashSet<String>,
+    host_type_names: HashSet<&'a str>,
     /// Whether a type being read may leave out the parts its value shows: a name's written type (D82).
     partial_types: bool,
     /// The script as it's written, for fixes that show a whole line put right.
     script: &'a syntax::Script<'a>,
     /// Each door's types in the script's terms, worked out the first time the door is used.
-    /// Each door's labels, parameters' types and result type, worked out the first time it's called (D48).
-    door_types: HashMap<u32, DoorTypes>,
     messages: Vec<Message>,
     program: Program,
     procedure_syntax: Vec<&'a syntax::Procedure<'a>>,
     procedure_state: Vec<ProcedureState>,
-    procedure_names: HashMap<String, ProcedureId>,
+    procedure_names: HashMap<std::borrow::Cow<'a, str>, ProcedureId>,
     /// The first word of every procedure and door, for telling an unknown narrowing from an unknown word.
-    words: HashSet<String>,
-    record_names: HashMap<String, u32>,
-    one_of_names: HashMap<String, u32>,
+    words: HashSet<&'a str>,
+    record_names: HashMap<&'a str, u32>,
+    one_of_names: HashMap<&'a str, u32>,
     failure_ids: HashMap<std::borrow::Cow<'static, str>, FailureId>,
     /// The top level's own names, known before they're made so that procedures can use them (D4).
-    globals: HashMap<String, VariableId>,
+    globals: HashMap<&'a str, VariableId>,
     made: HashSet<VariableId>,
-    context: Context,
+    context: Context<'a>,
     pending: Vec<Pending>,
     deferred: Vec<DeferredArgument>,
     demand_depth: u32,
@@ -207,7 +206,6 @@ pub fn check(
         handler_groups: HashMap::new(),
         handlers_in_use: Vec::new(),
         script,
-        door_types: HashMap::new(),
         messages: Vec::new(),
         program: Program {
             types: types::TypeTable::new(),
@@ -216,15 +214,15 @@ pub fn check(
         },
         procedure_syntax: Vec::new(),
         procedure_state: Vec::new(),
-        procedure_names: std::mem::take(&mut spare.procedure_names),
-        words: std::mem::take(&mut spare.words),
+        procedure_names: HashMap::new(),
+        words: HashSet::new(),
         record_names: HashMap::new(),
         one_of_names: HashMap::new(),
         // Room for Seal's own failures and a few of the script's, so they don't grow one at a time.
         failure_ids: HashMap::with_capacity(12),
-        globals: std::mem::take(&mut spare.globals),
+        globals: HashMap::new(),
         made: std::mem::take(&mut spare.made),
-        context: Context { spare_scopes: std::mem::take(&mut spare.scopes), ..Context::default() },
+        context: Context::default(),
         pending: Vec::new(),
         deferred: Vec::new(),
         demand_depth: 0,
@@ -239,13 +237,7 @@ pub fn check(
     };
     checker.run(script);
     // The tables are emptied and kept for the next script this thread checks, when they're not too big to keep.
-    spare.procedure_names = keep(std::mem::take(&mut checker.procedure_names));
-    spare.words = keep_set(std::mem::take(&mut checker.words));
-    spare.globals = keep(std::mem::take(&mut checker.globals));
     spare.made = keep_set(std::mem::take(&mut checker.made));
-    spare.scopes = std::mem::take(&mut checker.context.spare_scopes);
-    spare.scopes.extend(checker.context.scopes.drain(..).map(keep));
-    spare.scopes.truncate(SPARE_LIMIT);
     SPARE_TABLES.with(|kept| *kept.borrow_mut() = spare);
     if checker.messages.is_empty() {
         Ok(checker.program)
@@ -267,11 +259,7 @@ const SPARE_LIMIT: usize = 64;
 /// free them all again (D140).
 #[derive(Default)]
 struct SpareTables {
-    procedure_names: HashMap<String, ProcedureId>,
-    words: HashSet<String>,
-    globals: HashMap<String, VariableId>,
     made: HashSet<VariableId>,
-    scopes: Vec<HashMap<String, VariableId>>,
 }
 
 thread_local! {
@@ -294,9 +282,6 @@ fn keep_set<K>(mut set: HashSet<K>) -> HashSet<K> {
     set.clear();
     set
 }
-
-/// A door's labels, its parameters' types and its result type, shared by every call to it.
-type DoorTypes = (std::rc::Rc<[Option<String>]>, std::rc::Rc<[TypeId]>, TypeId);
 
 impl<'a> Checker<'a> {
     // ---- messages ----
@@ -379,17 +364,17 @@ impl<'a> Checker<'a> {
                 HostType::Record { name, .. } => {
                     let index = u32::try_from(self.program.types.records.len()).unwrap_or(u32::MAX);
                     self.program.types.records.push(RecordType { name: name.clone(), fields: Vec::new() });
-                    self.record_names.insert(name.clone(), index);
+                    self.record_names.insert(name.as_str(), index);
                 }
                 HostType::OneOf { name, .. } => {
                     let index = u32::try_from(self.program.types.one_ofs.len()).unwrap_or(u32::MAX);
                     self.program.types.one_ofs.push(OneOfType { name: name.clone(), cases: Vec::new() });
-                    self.one_of_names.insert(name.clone(), index);
+                    self.one_of_names.insert(name.as_str(), index);
                 }
                 _ => continue,
             }
             if let HostType::Record { name, .. } | HostType::OneOf { name, .. } = host {
-                self.host_type_names.insert(name.clone());
+                self.host_type_names.insert(name.as_str());
             }
         }
         for host in self.host_types {
@@ -397,7 +382,7 @@ impl<'a> Checker<'a> {
                 HostType::Record { name, fields } => {
                     let fields: Vec<(String, TypeId)> =
                         fields.iter().map(|(field, inner)| (field.clone(), self.host_type(inner))).collect();
-                    if let Some(&index) = self.record_names.get(name)
+                    if let Some(&index) = self.record_names.get(name.as_str())
                         && let Some(record) = self.program.types.records.get_mut(index as usize)
                     {
                         record.fields = fields;
@@ -414,7 +399,7 @@ impl<'a> Checker<'a> {
                                 .collect(),
                         })
                         .collect();
-                    if let Some(&index) = self.one_of_names.get(name)
+                    if let Some(&index) = self.one_of_names.get(name.as_str())
                         && let Some(one_of) = self.program.types.one_ofs.get_mut(index as usize)
                     {
                         one_of.cases = cases;
@@ -464,13 +449,13 @@ impl<'a> Checker<'a> {
                 syntax::Item::Record(record) => {
                     let index = u32::try_from(self.program.types.records.len()).unwrap_or(u32::MAX);
                     self.program.types.records.push(RecordType { name: name.text.to_owned(), fields: Vec::new() });
-                    self.record_names.insert(name.text.to_owned(), index);
+                    self.record_names.insert(name.text, index);
                     records.push((index, record));
                 }
                 syntax::Item::OneOf(one_of) => {
                     let index = u32::try_from(self.program.types.one_ofs.len()).unwrap_or(u32::MAX);
                     self.program.types.one_ofs.push(OneOfType { name: name.text.to_owned(), cases: Vec::new() });
-                    self.one_of_names.insert(name.text.to_owned(), index);
+                    self.one_of_names.insert(name.text, index);
                     one_ofs.push((index, one_of));
                 }
                 _ => {}
@@ -1020,7 +1005,7 @@ impl<'a> Checker<'a> {
 
     fn declare_procedures(&mut self, script: &'a syntax::Script<'a>) {
         for door in self.doors {
-            self.words.insert(door.name.split('.').next().unwrap_or("").to_owned());
+            self.words.insert(door.name.split('.').next().unwrap_or(""));
         }
         let mut list: Vec<&'a syntax::Procedure<'a>> = Vec::new();
         for item in &script.items {
@@ -1065,9 +1050,9 @@ impl<'a> Checker<'a> {
     fn declare_procedure(&mut self, procedure: &'a syntax::Procedure<'a>) {
         let name = procedure.name();
         let name_place = procedure.path.first().map_or(procedure.place, |word| word.place);
-        let word = procedure.path.first().map(|word| word.text.to_owned()).unwrap_or_default();
+        let word = procedure.path.first().map_or("", |word| word.text);
         // trace: D71, D93. One spelling means one thing, so a procedure can't take a built-in's or a door's name.
-        if BUILT_IN_WORDS.contains(&word.as_str()) {
+        if BUILT_IN_WORDS.contains(&word) {
             self.refuse_why(
                 name_place,
                 format!("`{word}` is one of Seal's own words, so a procedure can't be named `{word}`"),
@@ -1075,7 +1060,7 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        if self.doors.iter().any(|door| door.name.split('.').next() == Some(word.as_str())) {
+        if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
             self.refuse_why(
                 name_place,
                 format!("`{word}` is one of the host's doors, so a procedure can't be named `{word}`"),
@@ -1083,7 +1068,7 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        if let Some(&earlier) = self.procedure_names.get(&name) {
+        if let Some(&earlier) = self.procedure_names.get(name.as_ref()) {
             let earlier_place = self.program.procedure(earlier).map_or(Place::default(), |earlier| earlier.place);
             self.messages.push(
                 Message::refused(name_place, format!("the procedure `{name}` is declared twice"))
@@ -1187,7 +1172,7 @@ impl<'a> Checker<'a> {
         let labels_any_order = procedure.labels_any_order;
         let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
         self.program.procedures.push(Procedure {
-            name: name.clone(),
+            name: name.to_string(),
             parameters,
             labels,
             labels_any_order,
@@ -1271,9 +1256,9 @@ impl<'a> Checker<'a> {
                 continue;
             }
             if *marker == syntax::Marker::Mut {
-                self.changing_names.insert(name.text.to_owned());
+                self.changing_names.insert(name.text);
             } else if *marker == syntax::Marker::None && is_plain(value, &self.plain_names) {
-                self.plain_names.insert(name.text.to_owned(), value);
+                self.plain_names.insert(name.text, value);
             }
         }
     }
@@ -1300,7 +1285,7 @@ impl<'a> Checker<'a> {
                     made_at: position,
                     place: name.place,
                 });
-                self.globals.insert(name.text.to_owned(), id);
+                self.globals.insert(name.text, id);
             }
             position += 1;
         }
@@ -1340,9 +1325,9 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn declare(&mut self, name: &str, id: VariableId) {
+    fn declare(&mut self, name: &'a str, id: VariableId) {
         if let Some(scope) = self.context.scopes.last_mut() {
-            scope.insert(name.to_owned(), id);
+            scope.insert(name, id);
         }
     }
 
@@ -1470,7 +1455,7 @@ impl<'a> Checker<'a> {
     }
 
     /// trace: D2, D61, D135
-    fn check_unused(&mut self, scope: &HashMap<String, VariableId>) {
+    fn check_unused(&mut self, scope: &HashMap<&'a str, VariableId>) {
         let mut unchanged: Vec<(Place, String)> = scope
             .values()
             .filter_map(|&id| self.variable(id))
@@ -1542,15 +1527,13 @@ impl<'a> Checker<'a> {
         self.demand_depth += 1;
         let mut scope = self.context.spare_scope();
         let parameters = self.program.procedure(id).map(|procedure| procedure.parameters.clone()).unwrap_or_default();
-        for &parameter in &parameters {
+        // Each written parameter made one variable, in order, so the two lists pair up.
+        for (&parameter, written) in parameters.iter().zip(&procedure.parameters) {
             // trace: D71. A parameter can't take a spelling that already means something.
-            if let Some(variable) = self.variable(parameter) {
-                let (name, place) = (variable.name.clone(), variable.place);
-                let word = syntax::Word { text: &name, place };
-                self.check_new_name(&word);
-                self.refuse_top_level_spelling(&word, "a parameter");
-                scope.insert(name.clone(), parameter);
-            }
+            let word = &written.name;
+            self.check_new_name(word);
+            self.refuse_top_level_spelling(word, "a parameter");
+            scope.insert(word.text, parameter);
         }
         self.context.scopes.push(scope);
         let body = self.block(&procedure.body);
@@ -2794,15 +2777,19 @@ impl<'a> Checker<'a> {
                 self.program.types.maybe(inner)
             }
             // trace: D85. The host's types were declared from its own description before anything else.
-            HostType::Record { name, .. } => match self.record_names.get(name) {
-                Some(&record) if self.host_type_names.contains(name) => self.program.types.intern(Type::Record(record)),
+            HostType::Record { name, .. } => match self.record_names.get(name.as_str()) {
+                Some(&record) if self.host_type_names.contains(name.as_str()) => {
+                    self.program.types.intern(Type::Record(record))
+                }
                 _ => {
                     self.messages.push(Message::internal(format!("the host's record `{name}` wasn't opened")));
                     ERROR
                 }
             },
-            HostType::OneOf { name, .. } => match self.one_of_names.get(name) {
-                Some(&one_of) if self.host_type_names.contains(name) => self.program.types.intern(Type::OneOf(one_of)),
+            HostType::OneOf { name, .. } => match self.one_of_names.get(name.as_str()) {
+                Some(&one_of) if self.host_type_names.contains(name.as_str()) => {
+                    self.program.types.intern(Type::OneOf(one_of))
+                }
                 _ => {
                     self.messages.push(Message::internal(format!("the host's `one_of` `{name}` wasn't opened")));
                     ERROR
@@ -2823,7 +2810,7 @@ impl<'a> Checker<'a> {
 /// Whether an expression is a value written out plainly, which is the same every time (D104): a number, text with
 /// nothing filled in, a `Bool`, a list, an array's `[all: …]`, a `Dict`, a record or a case built from plain values,
 /// or a top-level name made from one with no `mut`.
-fn is_plain(expression: &syntax::Expression, names: &HashMap<String, &syntax::Expression>) -> bool {
+fn is_plain(expression: &syntax::Expression, names: &HashMap<&str, &syntax::Expression>) -> bool {
     use syntax::ExpressionKind as Kind;
     match &expression.kind {
         Kind::Whole(_) | Kind::Float { .. } | Kind::Bool(_) | Kind::EmptyDict => true,
@@ -2905,7 +2892,7 @@ fn expression_can_fail(expression: &syntax::Expression) -> bool {
         | Kind::TypeName(_)
         | Kind::EmptyDict => false,
         Kind::Member { receiver, .. } => expression_can_fail(receiver),
-        Kind::Call { callee, arguments } => expression_can_fail(callee) || entries_can_fail(arguments),
+        Kind::Call { parts } => entries_can_fail(parts),
         Kind::Bracketed { receiver, entries } => expression_can_fail(receiver) || entries_can_fail(entries),
         Kind::List(items) => items.iter().any(expression_can_fail),
         Kind::Pairs(pairs) => pairs.iter().any(|(key, value)| expression_can_fail(key) || expression_can_fail(value)),

@@ -1617,9 +1617,10 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Symbol(Symbol::OpenRound) if touching => {
                     self.advance();
-                    let arguments = self.entries(Symbol::CloseRound)?;
-                    let place = value.place.to(self.previous_place());
-                    value = self.expression(ExpressionKind::Call { callee: Box::new(value), arguments }, place);
+                    let start = value.place;
+                    let parts = self.entries_after(Some(Entry { label: None, value }), Symbol::CloseRound)?;
+                    let place = start.to(self.previous_place());
+                    value = self.expression(ExpressionKind::Call { parts }, place);
                 }
                 TokenKind::Symbol(Symbol::OpenSquare) if touching => {
                     self.advance();
@@ -1663,7 +1664,13 @@ impl<'a> Parser<'a> {
 
     /// The entries up to `closer`, which is read too: values, each with a label when it has one.
     fn entries(&mut self, closer: Symbol) -> Result<Vec<Entry<'a>>, Message> {
-        let mut entries = Vec::new();
+        self.entries_after(None, closer)
+    }
+
+    /// The entries up to `closer`, after `first` when there is one, all in one list.
+    fn entries_after(&mut self, first: Option<Entry<'a>>, closer: Symbol) -> Result<Vec<Entry<'a>>, Message> {
+        let mut entries = Vec::with_capacity(4);
+        entries.extend(first);
         if self.at_symbol(closer) {
             self.advance();
             return Ok(entries);
