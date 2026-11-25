@@ -25,4 +25,4 @@ pub use host::{
 pub use message::{Message, MessageKind, Messages, Place};
 /// Makes a struct a Seal record, or an enum a Seal `one_of`, at the doors (D27, D35, D48).
 pub use seal_derive::Seal;
-pub use signature::{DoorParameter, DoorSignature, HostType};
+pub use signature::{DoorParameter, DoorSignature, HostType, HostUnitGroup};

@@ -601,6 +601,183 @@ pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
     round_dyadic(&total, low)
 }
 
+/// The exact rational values of sin at multiples of 30°, by how many twelfths of a turn: `Some` where sin is
+/// rational (Niven's theorem), as the `Float` it is.
+const SINE_OF_TWELFTHS: [Option<f64>; 12] =
+    [Some(0.0), Some(0.5), None, Some(1.0), None, Some(0.5), Some(0.0), Some(-0.5), None, Some(-1.0), None, Some(-0.5)];
+
+/// sin, cos or tan (`which` 0, 1 or 2) of an angle of `x` units, `per_turn` to a full turn: 360 for `degs` and 1
+/// for `turns` (D113). The angle is worked out as an exact fraction of a turn, so `sin(90 degs)` is exactly 1.0, and
+/// the rest is correctly rounded (D50). `tan` of a quarter turn is infinite, which the float check stops on.
+#[must_use]
+pub fn angle_function(which: u8, x: f64, per_turn: u64) -> f64 {
+    if !x.is_finite() {
+        return f64::NAN;
+    }
+    let (m, e) = decompose(x);
+    // Twelfths of a turn, when the angle is a whole number of them: m × 2^e × 12 / per_turn. m is odd, so m × 12 ×
+    // 2^e is whole only when e is at least -2.
+    let twelve_m = m.multiply(&Big::from_u64(12));
+    let whole =
+        if e >= 0 { Some(fixed(&twelve_m, e, 0)) } else { (-e <= 2).then(|| twelve_m.shift_right((-e) as u64)) };
+    let twelfths = whole.and_then(|whole| {
+        let (quotient, remainder) = whole.divide_floor(&Big::from_u64(per_turn))?;
+        remainder
+            .is_zero()
+            .then(|| quotient.divide_floor(&Big::from_u64(12)).map(|(_, rest)| rest.to_i64().unwrap_or(0)))?
+    });
+    if let Some(k) = twelfths {
+        let sine = |k: i64| SINE_OF_TWELFTHS.get(k.rem_euclid(12) as usize).copied().flatten();
+        match which {
+            0 => {
+                if let Some(value) = sine(k) {
+                    return value;
+                }
+            }
+            1 => {
+                if let Some(value) = sine(k + 3) {
+                    return value;
+                }
+            }
+            _ => {
+                let k = k.rem_euclid(12);
+                if k % 3 == 0 {
+                    // tan at multiples of 45°: 0, 1, infinite, -1 by eighths; at twelfths only the quarters are these.
+                    return [0.0, f64::INFINITY, 0.0, f64::INFINITY][(k / 3) as usize];
+                }
+            }
+        }
+    }
+    // tan at 45°, 135° and their like, which aren't twelfths.
+    if which == 2 {
+        let eighths = if e >= 0 {
+            Some(fixed(&m.multiply(&Big::from_u64(8)), e, 0))
+        } else {
+            (-e <= 3).then(|| m.multiply(&Big::from_u64(8)).shift_right((-e) as u64))
+        };
+        if let Some(eighths) = eighths
+            && let Some((quotient, remainder)) = eighths.divide_floor(&Big::from_u64(per_turn))
+            && remainder.is_zero()
+        {
+            let k = quotient.divide_floor(&Big::from_u64(8)).map_or(0, |(_, rest)| rest.to_i64().unwrap_or(0));
+            return [0.0, 1.0, f64::INFINITY, -1.0, 0.0, 1.0, f64::INFINITY, -1.0][k.rem_euclid(8) as usize];
+        }
+    }
+    correctly_rounded(|precision| {
+        let lead = e + m.bits() as i64 - 8;
+        let working = relative(precision, lead.min(0)) + 32;
+        // The angle's fraction of a turn, in fixed point, and what's left after whole quarter turns.
+        let fraction = fixed(&m, e, working)
+            .divide_floor(&Big::from_u64(per_turn))
+            .map(|(quotient, _)| quotient)
+            .unwrap_or_default();
+        let one = Big::from_u64(1).shift_left(working);
+        let (_, within) = fraction.divide_floor(&one).unwrap_or_default();
+        let quarter = one.shift_right(2);
+        let (quadrant, rest) = within.divide_floor(&quarter).unwrap_or_default();
+        let quadrant = quadrant.to_i64().unwrap_or(0) as u64;
+        // Centred on the nearest quarter turn, so the series stays short and tan's division is safe.
+        let (quadrant, rest) = if rest.compare(&quarter.shift_right(1)) == Ordering::Greater {
+            ((quadrant + 1) % 4, rest.subtract(&quarter))
+        } else {
+            (quadrant, rest)
+        };
+        let two_pi = pi(working).shift_left(1);
+        let r = multiply(&rest, &two_pi, working);
+        let (sine, cosine, error) = sine_and_cosine(&r, working);
+        let approx = match which {
+            0 => [sine.clone(), cosine.clone(), sine.negated(), cosine.negated()][quadrant as usize % 4].clone(),
+            1 => [cosine.clone(), sine.negated(), cosine.negated(), sine.clone()][quadrant as usize % 4].clone(),
+            _ => {
+                let (top, bottom) = if quadrant % 2 == 0 { (sine, cosine) } else { (cosine.negated(), sine) };
+                let bottom_bits = bottom.abs().bits() as i64;
+                let magnification = (working as i64 - bottom_bits + 2).clamp(0, 62) as u32;
+                return Approximation {
+                    approx: divide(&top, &bottom, working),
+                    exponent: -(working as i64),
+                    error: (error + 8).saturating_mul(4u64.saturating_mul(1 << magnification)).saturating_add(8),
+                };
+            }
+        };
+        Approximation { approx, exponent: -(working as i64), error: error + 8 }
+    })
+}
+
+/// `x × numerator / denominator × π^pi` for a whole `x`, correctly rounded: a unit conversion (D120).
+#[must_use]
+pub fn scale_whole(x: i64, numerator: u128, denominator: u128, pi: i8) -> f64 {
+    scale(&Big::from_i64(x), 0, numerator, denominator, pi)
+}
+
+/// `x × numerator / denominator × π^pi` for a `Float` `x`, correctly rounded: a unit conversion (D120).
+#[must_use]
+pub fn scale_float(x: f64, numerator: u128, denominator: u128, pi: i8) -> f64 {
+    if x == 0.0 {
+        return x;
+    }
+    let (m, e) = decompose(x);
+    scale(&m, e, numerator, denominator, pi)
+}
+
+/// `m × 2^e × numerator / denominator × π^power`: exact and rounded once without π, and with it, worked out by
+/// Ziv's strategy, as π's powers are never a tie.
+fn scale(m: &Big, e: i64, numerator: u128, denominator: u128, power: i8) -> f64 {
+    let product = m.multiply(&Big::from_u128(numerator));
+    if power == 0 {
+        return divide_rounded(&product, e, denominator);
+    }
+    if product.is_zero() {
+        return 0.0;
+    }
+    let negative = product.is_negative();
+    let magnitude = if negative { product.negated() } else { product };
+    let times = u64::from(power.unsigned_abs());
+    let denominator = Big::from_u128(denominator);
+    let answer = correctly_rounded(|precision| {
+        let room = precision + denominator.bits();
+        let mut approx = magnitude.shift_left(room);
+        let pi_fixed = pi(precision + 8);
+        for _ in 0..times {
+            approx = if power > 0 {
+                approx.multiply(&pi_fixed).shift_right(precision + 8)
+            } else {
+                approx.shift_left(precision + 8).divide_truncating(&pi_fixed).map(|(q, _)| q).unwrap_or_default()
+            };
+        }
+        let approx = approx.divide_truncating(&denominator).map(|(q, _)| q).unwrap_or_default();
+        // Each step is wrong by under 2^-(precision + 6) of the value and one unit; kept to `precision` bits, the
+        // whole error is a few units.
+        let shift = approx.bits().saturating_sub(precision);
+        Approximation {
+            approx: approx.shift_right(shift),
+            exponent: e - room as i64 + shift as i64,
+            error: 2 * times + 4,
+        }
+    });
+    if negative { -answer } else { answer }
+}
+
+/// `m × 2^e / denominator`, rounded once: the quotient is worked out with 140 more bits than a `Float` keeps, and a
+/// remainder makes the last bit sticky, so rounding it is rounding the exact value.
+fn divide_rounded(m: &Big, e: i64, denominator: u128) -> f64 {
+    if denominator == 1 {
+        return round_dyadic(m, e);
+    }
+    let extra = 140 + Big::from_u128(denominator).bits();
+    let scaled = m.shift_left(extra);
+    let Some((quotient, remainder)) = scaled.divide_truncating(&Big::from_u128(denominator)) else { return f64::NAN };
+    // A remainder past the kept bits only ever nudges a value that isn't a tie, so one sticky bit is enough.
+    let sticky = if remainder.is_zero() {
+        quotient
+    } else if quotient.is_negative() {
+        quotient.shift_left(1).subtract(&Big::from_u64(1))
+    } else {
+        quotient.shift_left(1).add(&Big::from_u64(1))
+    };
+    let shift = if remainder.is_zero() { extra as i64 } else { extra as i64 + 1 };
+    round_dyadic(&sticky, e - shift)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +822,20 @@ mod tests {
         assert_eq!(lerp(0.0, 10.0, 0.25), 2.5);
         assert_eq!(lerp(1.0, 3.0, 1.0), 3.0);
         assert_eq!(lerp(0.1, 0.2, 0.0), 0.1);
+        assert_eq!(angle_function(0, 90.0, 360), 1.0);
+        assert_eq!(angle_function(0, 30.0, 360), 0.5);
+        assert_eq!(angle_function(1, 60.0, 360), 0.5);
+        assert_eq!(angle_function(1, 90.0, 360), 0.0);
+        assert_eq!(angle_function(2, 45.0, 360), 1.0);
+        assert_eq!(angle_function(2, 90.0, 360), f64::INFINITY);
+        assert_eq!(angle_function(0, 0.25, 1), 1.0);
+        assert_eq!(angle_function(0, 1.0, 360), (1.0f64).to_radians().sin());
+        assert_eq!(scale_whole(2500, 1, 1000, 0), 2.5);
+        assert_eq!(scale_float(1.0, 1, 3, 0), 1.0 / 3.0);
+        // A radian in degrees, and 90 degrees in radians, through an exact π.
+        assert_eq!(scale_float(1.0, 180, 1, -1), 57.295_779_513_082_32);
+        assert_eq!(scale_whole(90, 1, 180, 1), std::f64::consts::FRAC_PI_2);
+        assert_eq!(scale_float(-0.5, 2, 1, 1), -std::f64::consts::PI);
     }
 
     #[test]
@@ -692,6 +883,9 @@ mod dump {
             println!("asin {:e} {:e}", y, super::asin(y).unwrap_or(0.0));
             println!("atan2 {:e} {:e} {:e}", x, y, super::atan2(x, y).unwrap_or(0.0));
             println!("pow {:e} {:e} {:e}", b, y * 5.0, super::power(b, y * 5.0));
+            println!("sindeg {:e} {:e}", x * 37.0, super::angle_function(0, x * 37.0, 360));
+            println!("costurn {:e} {:e}", y, super::angle_function(1, y, 1));
+            println!("tandeg {:e} {:e}", x * 9.0, super::angle_function(2, x * 9.0, 360));
         }
     }
 }

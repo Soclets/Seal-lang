@@ -1,5 +1,5 @@
 {
-  "passed": 15,
+  "passed": 18,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -16,6 +16,9 @@
     "d044_fail": { "status": "pass" },
     "d049_wait": { "status": "pass" },
     "d077_braces_join": { "status": "pass" },
-    "d102_closer_notes": { "status": "pass" }
+    "d102_closer_notes": { "status": "pass" },
+    "d130_fallback_only_on_failure": { "status": "pass" },
+    "d131_handler_extra_cases": { "status": "pass" },
+    "d132_power_order": { "status": "pass" }
   }
 }

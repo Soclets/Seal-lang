@@ -142,6 +142,8 @@ pub struct Generator {
     budget: usize,
     /// Whether the script has a handler group for its failing procedures (D110).
     handlers: bool,
+    /// Whether the script declares its own unit group, `coins` (D123).
+    coins: bool,
 }
 
 const WORDS: [&str; 12] =
@@ -163,6 +165,7 @@ impl Generator {
             in_loop: false,
             budget: 0,
             handlers: false,
+            coins: false,
         }
     }
 
@@ -331,6 +334,9 @@ impl Generator {
                 if simple {
                     return self.whole_literal();
                 }
+                if self.seal() && self.random.chance(1, 10) {
+                    return self.measured(Kind::Whole);
+                }
                 // The maths built-ins and `**` on `Whole`s (D107, D108).
                 if self.seal() && self.random.chance(1, 8) {
                     let a = self.operand(Kind::Whole, level - 1);
@@ -425,6 +431,9 @@ impl Generator {
                 if simple {
                     return self.float_literal();
                 }
+                if self.seal() && self.random.chance(1, 8) {
+                    return self.measured(Kind::Float);
+                }
                 match self.random.below(6) {
                     0..=2 => {
                         let operator = *self.random.pick(&["+", "-", "*", "/"]).unwrap_or(&"+");
@@ -444,8 +453,9 @@ impl Generator {
                             0 => format!("sin({a})"),
                             1 => format!("cos({a})"),
                             2 => format!("tan({a})"),
-                            3 => format!("asin({a})"),
-                            4 => format!("atan2(y: {a}, x: {b})"),
+                            // trace: D113. These give `rads`, measured back into a plain number.
+                            3 => format!("asin({a}) in rads"),
+                            4 => format!("atan2(y: {a}, x: {b}) in rads"),
                             5 => format!("lerp({a}, to: {b}, by: 0.5)"),
                             6 => {
                                 let base = self.operand(Kind::Float, level - 1);
@@ -663,6 +673,34 @@ impl Generator {
     }
 
     /// A value as one side of `==`: anything that isn't a single word gets brackets.
+    /// Numbers with units, worked with and measured back into a plain number with `in` (D111 to D113, D120 to
+    /// D123).
+    fn measured(&mut self, kind: Kind) -> String {
+        let (a, b) = (self.random.below(1000), self.random.below(1000));
+        if kind == Kind::Whole {
+            return match self.random.below(6) {
+                0 => format!("({a} secs + {b} ms) in ms"),
+                1 => format!("(-{a} mins + {b} secs) in secs"),
+                2 => format!("({a} turns) in degs"),
+                3 if self.coins => format!("({a} stacks - {b} bits) in bits"),
+                4 => format!("({a} px * {}) in px", self.random.below(9)),
+                _ => format!("({a} secs) in secs"),
+            };
+        }
+        let (x, y) = (self.float_literal(), self.float_literal());
+        match self.random.below(9) {
+            0 => format!("({x} secs - {y} ms) in secs"),
+            1 => format!("({x} px per secs * {y} secs) in px"),
+            2 => format!("atan2(y: {x} px, x: {y} px) in degs"),
+            3 => format!("({x} px.point - {y} px.point) in px"),
+            4 => format!("sin({a} degs) + cos({x} turns)"),
+            5 => format!("tan({x} rads)"),
+            6 => format!("({a} degs * {b}) in turns"),
+            7 => format!("({x} secs / {y} secs)"),
+            _ => format!("({x} rads) in degs"),
+        }
+    }
+
     fn bracketed(value: String) -> String {
         if value.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
             value
@@ -680,7 +718,8 @@ impl Generator {
     /// A value as one side of maths or a comparison: anything looser is put in brackets.
     fn operand(&mut self, kind: Kind, level: usize) -> String {
         let value = self.value(kind, level);
-        if value.contains(' ') && !value.starts_with('(') && !value.ends_with(')') {
+        let measured = value.contains(" in ");
+        if value.contains(' ') && (measured || (!value.starts_with('(') && !value.ends_with(')'))) {
             format!("({value})")
         } else {
             value
@@ -1458,6 +1497,11 @@ impl Generator {
     pub fn script(mut self) -> String {
         if self.seal() {
             self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+        }
+        // trace: D123. Now and then a unit group of the script's own.
+        if self.seal() && self.random.chance(1, 3) {
+            self.out.push_str("group.unit coins\n    ::bits base\n    ::stacks = 12 bits\nend\n\n");
+            self.coins = true;
         }
         for _ in 0..self.random.below(4) {
             self.budget = 12;

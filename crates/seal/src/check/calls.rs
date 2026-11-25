@@ -120,30 +120,32 @@ impl Checker<'_> {
         }
     }
 
-    /// The maths built-ins (D107, D109, D114): `abs`, `min`, `max` and `clamp` on two `Whole`s or two `Float`s, never
-    /// mixed, and the angle built-ins and `lerp` on `Float`s.
+    /// The maths built-ins (D107, D109, D113, D114): `abs`, `min`, `max` and `clamp` on two `Whole`s or two `Float`s,
+    /// never mixed, with units or without; `sin`, `cos` and `tan` on an angle in `rads`, `degs` or `turns`, or a
+    /// plain `Float` in radians; `asin`, `acos` and `atan2` giving `rads`; `lerp` on two values of one unit group.
+    #[allow(clippy::too_many_lines)] // one case per kind of built-in, each with its units
     fn maths_call(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
         use super::tree::MathsFunction as Function;
         let word = path.first().map(String::as_str).unwrap_or_default();
-        let (function, labels, number): (Function, &[Option<&str>], bool) = match word {
-            "abs" => (Function::Abs, &[None], true),
-            "min" => (Function::Min, &[None, None], true),
-            "max" => (Function::Max, &[None, None], true),
-            "clamp" => (Function::Clamp, &[None, Some("low"), Some("high")], true),
-            "sin" => (Function::Sin, &[None], false),
-            "cos" => (Function::Cos, &[None], false),
-            "tan" => (Function::Tan, &[None], false),
-            "asin" => (Function::Asin, &[None], false),
-            "acos" => (Function::Acos, &[None], false),
-            "atan2" => (Function::Atan2, &[Some("y"), Some("x")], false),
-            _ => (Function::Lerp, &[None, Some("to"), Some("by")], false),
+        let (function, labels): (Function, &[Option<&str>]) = match word {
+            "abs" => (Function::Abs, &[None]),
+            "min" => (Function::Min, &[None, None]),
+            "max" => (Function::Max, &[None, None]),
+            "clamp" => (Function::Clamp, &[None, Some("low"), Some("high")]),
+            "sin" => (Function::Sin, &[None]),
+            "cos" => (Function::Cos, &[None]),
+            "tan" => (Function::Tan, &[None]),
+            "asin" => (Function::Asin, &[None]),
+            "acos" => (Function::Acos, &[None]),
+            "atan2" => (Function::Atan2, &[Some("y"), Some("x")]),
+            _ => (Function::Lerp, &[None, Some("to"), Some("by")]),
         };
         if let Some(narrowing) = path.get(1) {
             // trace: D113. The `.degrees` versions went; an angle's unit says it.
             self.refuse_why(
                 place,
                 format!("`{word}` has no narrowing `.{narrowing}`"),
-                &format!("`{word}` takes its angle in radians as a plain `Float`."),
+                &format!("`{word}` takes an angle in `rads`, `degs` or `turns`, as `{word}(90 degs)`, or a plain `Float` in radians."),
             );
             return Self::error(place);
         }
@@ -155,41 +157,135 @@ impl Checker<'_> {
             }
             return Self::error(place);
         };
-        let mut checked: Vec<Expression> = Vec::new();
-        for argument in &bound {
-            let Some(entry) = argument.and_then(|index| arguments.get(index)) else { return Self::error(place) };
-            let wanted = if number { checked.first().map(|first| first.type_id) } else { Some(FLOAT) };
-            checked.push(self.expression(&entry.value, wanted));
-        }
-        let type_id = if number {
-            let first = checked.first().map_or(ERROR, |first| first.type_id);
-            for other in checked.iter().skip(1) {
-                if !self.program.types.unify(other.type_id, first) {
-                    let (left, right) = (self.describe(first), self.describe(other.type_id));
-                    // trace: D107, Unio D162. The two never mix.
-                    self.refuse_why(
-                        other.place,
-                        format!("`{word}` takes values of one type, but this is {right} and the first is {left}"),
-                        "`Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`.",
-                    );
-                    return Self::error(place);
+        let entries: Vec<&syntax::Entry> =
+            bound.iter().filter_map(|argument| argument.and_then(|index| arguments.get(index))).collect();
+        let refuse_float = |checker: &mut Self, value: &Expression| {
+            let found = checker.describe(value.type_id);
+            checker.refuse_why(
+                value.place,
+                format!("`{word}` takes a `Float`, but this is {found}"),
+                "angles and `lerp` work on `Float`s; a number written with a point, as `2.0`, is a `Float`.",
+            );
+            Self::error(place)
+        };
+        let mut unit = 0u8;
+        let (checked, type_id): (Vec<Expression>, TypeId) = match function {
+            Function::Abs | Function::Min | Function::Max | Function::Clamp => {
+                let Some(first) = entries.first() else { return Self::error(place) };
+                let first = self.expression(&first.value, None);
+                let first_type = first.type_id;
+                let mut checked = vec![first];
+                for entry in entries.iter().skip(1) {
+                    // The others land in the first's type, its unit included (D120).
+                    let value = self.expression(&entry.value, Some(first_type));
+                    if !self.program.types.unify(value.type_id, first_type)
+                        && !matches!(value.kind, ExpressionKind::Error)
+                    {
+                        let (left, right) = (self.describe(first_type), self.describe(value.type_id));
+                        // trace: D107, Unio D162. The two never mix.
+                        self.refuse_why(
+                            value.place,
+                            format!("`{word}` takes values of one type, but this is {right} and the first is {left}"),
+                            "`Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`.",
+                        );
+                        return Self::error(place);
+                    }
+                    checked.push(value);
                 }
+                self.require(
+                    first_type,
+                    Requirement::Number,
+                    place,
+                    &format!("`{word}` works on a `Whole` or a `Float`"),
+                );
+                (checked, first_type)
             }
-            self.require(first, Requirement::Number, place, &format!("`{word}` works on a `Whole` or a `Float`"));
-            first
-        } else {
-            for value in &checked {
+            Function::Sin | Function::Cos | Function::Tan => {
+                let Some(entry) = entries.first() else { return Self::error(place) };
+                let value = self.expression(&entry.value, None);
+                // trace: D113. An angle in `rads`, `degs` or `turns`, or a plain `Float` in radians.
+                let value = match self.angle_unit(value.type_id) {
+                    Some(Ok(angle)) => {
+                        unit = angle;
+                        let base = self.program.types.measured(value.type_id).map_or(FLOAT, |(base, _)| base);
+                        if base == WHOLE {
+                            let place = value.place;
+                            Expression {
+                                kind: ExpressionKind::Convert {
+                                    conversion: Conversion::WholeToFloat,
+                                    value: Box::new(value),
+                                },
+                                type_id: FLOAT,
+                                place,
+                            }
+                        } else {
+                            value
+                        }
+                    }
+                    Some(Err(())) => {
+                        let found = self.describe(value.type_id);
+                        self.refuse_why(
+                            value.place,
+                            format!("`{word}` takes an angle, but this is {found}"),
+                            "an angle is in `rads`, `degs` or `turns`, or a plain `Float` in radians.",
+                        );
+                        return Self::error(place);
+                    }
+                    None => {
+                        if !self.program.types.unify(value.type_id, FLOAT) {
+                            return refuse_float(self, &value);
+                        }
+                        value
+                    }
+                };
+                (vec![value], FLOAT)
+            }
+            Function::Asin | Function::Acos => {
+                let Some(entry) = entries.first() else { return Self::error(place) };
+                let value = self.expression(&entry.value, Some(FLOAT));
                 if !self.program.types.unify(value.type_id, FLOAT) {
-                    let found = self.describe(value.type_id);
+                    return refuse_float(self, &value);
+                }
+                // trace: D113. They give their angle in `rads`.
+                (vec![value], self.radians())
+            }
+            Function::Atan2 | Function::Lerp => {
+                let (Some(first), Some(second)) = (entries.first(), entries.get(1)) else { return Self::error(place) };
+                let first = self.expression(&first.value, None);
+                // The second lands in the first's type, unit included, so the two are of one group (D114).
+                let second = self.expression(&second.value, Some(first.type_id));
+                let plain = self
+                    .program
+                    .types
+                    .measured(first.type_id)
+                    .map_or(self.program.types.resolve(first.type_id), |(base, _)| base);
+                if plain != FLOAT && !self.program.types.is_open(plain) {
+                    return refuse_float(self, &first);
+                }
+                if !self.program.types.unify(second.type_id, first.type_id)
+                    && !matches!(second.kind, ExpressionKind::Error)
+                {
+                    let (left, right) = (self.describe(first.type_id), self.describe(second.type_id));
                     self.refuse_why(
-                        value.place,
-                        format!("`{word}` takes a `Float`, but this is {found}"),
-                        "angles and `lerp` work on `Float`s; a number written with a point, as `2.0`, is a `Float`.",
+                        second.place,
+                        format!("`{word}` takes values of one type, but this is {right} and the first is {left}"),
+                        "the two are `Float`s of one unit group, or both plain.",
                     );
                     return Self::error(place);
                 }
+                let mut checked = vec![first.clone(), second];
+                if function == Function::Lerp {
+                    let Some(by) = entries.get(2) else { return Self::error(place) };
+                    let by = self.expression(&by.value, Some(FLOAT));
+                    if !self.program.types.unify(by.type_id, FLOAT) {
+                        return refuse_float(self, &by);
+                    }
+                    checked.push(by);
+                    (checked, first.type_id)
+                } else {
+                    (checked, self.radians())
+                }
             }
-            FLOAT
         };
         // trace: D107. A `clamp` whose edges are written the wrong way round has no answer anyone decided.
         if function == Function::Clamp
@@ -205,7 +301,7 @@ impl Checker<'_> {
                 return Self::error(place);
             }
         }
-        Expression { kind: ExpressionKind::Maths { function, arguments: checked }, type_id, place }
+        Expression { kind: ExpressionKind::Maths { function, arguments: checked, unit }, type_id, place }
     }
 
     /// An unknown narrowing is refused, with the word's real narrowings listed (D13, Unio D102).

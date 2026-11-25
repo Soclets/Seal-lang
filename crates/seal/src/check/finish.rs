@@ -161,7 +161,7 @@ fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Vis
                 walk_expression(value, false, visitor);
             }
         }
-        ExpressionKind::Otherwise { call, cases } => {
+        ExpressionKind::Otherwise { call, cases, .. } => {
             walk_expression(call, true, visitor);
             for (_, body) in cases {
                 walk_block(body, visitor);
@@ -290,7 +290,7 @@ impl Visitor for HandlingChecker<'_> {
                 .with_why("every call that can fail is dealt with, by `?`, `??` or `otherwise`."),
             );
         }
-        if let ExpressionKind::Otherwise { call, cases } = &expression.kind {
+        if let ExpressionKind::Otherwise { call, cases, shared } = &expression.kind {
             let possible = self.facts.failures_of(call);
             let missing: Vec<FailureId> =
                 possible.iter().copied().filter(|failure| !cases.iter().any(|(case, _)| case == failure)).collect();
@@ -304,8 +304,12 @@ impl Visitor for HandlingChecker<'_> {
                     .with_why("the cases cover every failure the call can give."),
                 );
             }
-            let extra: Vec<FailureId> =
-                cases.iter().map(|(case, _)| *case).filter(|case| !possible.contains(case)).collect();
+            // trace: D131. A handler's case for a failure this call can't give is there for its other calls.
+            let extra: Vec<FailureId> = cases
+                .iter()
+                .map(|(case, _)| *case)
+                .filter(|case| !possible.contains(case) && !shared.contains(case))
+                .collect();
             if !extra.is_empty() {
                 self.messages.push(
                     Message::refused(
@@ -456,7 +460,7 @@ impl Checker<'_> {
         let purpose = pending.purpose.as_str();
         match &pending.requirement {
             Requirement::Number => {
-                if !matches!(kind, Type::Whole | Type::Float) {
+                if !matches!(kind, Type::Whole | Type::Float | Type::Measured { .. }) {
                     self.refuse(place, format!("{purpose}, but this is {found}"));
                 }
             }

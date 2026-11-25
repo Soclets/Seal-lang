@@ -83,6 +83,11 @@ pub fn show(
             Task::Value(slot, type_id) => (slot, type_id),
         };
         match types.get(type_id) {
+            // trace: D100, D112. A number with a unit shows as it's written, with its unit after it.
+            Type::Measured { base, unit } => {
+                tasks.push(Task::Owned(format!(" {}", types.unit_text(*unit))));
+                tasks.push(Task::Value(slot, *base));
+            }
             Type::Whole => out.push_str(&slot.cast_signed().to_string()),
             Type::Float => out.push_str(&float_to_text(f64::from_bits(slot))),
             Type::Bool => out.push_str(if slot == 0 { "false" } else { "true" }),
@@ -203,6 +208,10 @@ pub fn equal(
     while let Some((left, right, type_id)) = pending.pop() {
         *work = work.saturating_add(1);
         let same = match types.get(type_id) {
+            Type::Measured { base, .. } => {
+                pending.push((left, right, *base));
+                true
+            }
             #[allow(clippy::float_cmp)] // `==` on floats is exact (Unio D184)
             Type::Float => f64::from_bits(left) == f64::from_bits(right),
             Type::Whole | Type::Bool => left == right,

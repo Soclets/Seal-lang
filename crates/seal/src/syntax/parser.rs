@@ -8,7 +8,7 @@ use super::tree::{
     BinaryOperator, Block, CaseDeclaration, DefaultDeclaration, Entry, Expression, ExpressionKind, Fallback, Family,
     FieldDeclaration, Handler, HandlerGroup, HandlerUse, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration,
     OtherwiseCase, Parameter, PositionKind, Procedure, RecordDeclaration, Script, SlideStep, Statement, StatementKind,
-    TypeExpression, UnaryOperator, Word,
+    TypeExpression, UnaryOperator, UnitGroup, UnitMember, UnitName, UnitWritten, Word,
 };
 use crate::message::{Message, Place};
 
@@ -328,6 +328,13 @@ impl Parser<'_> {
                 && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "handler") =>
             {
                 Ok(Item::HandlerGroup(self.handler_group()?))
+            }
+            // trace: D123. `group.unit name` declares a script's own units.
+            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "group")
+                && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
+                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "unit") =>
+            {
+                Ok(Item::UnitGroup(self.unit_group()?))
             }
             _ => {
                 let documented = self.line().and_then(|line| line.documented);
@@ -653,6 +660,82 @@ impl Parser<'_> {
         Ok(HandlerUse { group, name, jumps, arguments, place: place.to(self.previous_place()) })
     }
 
+    /// trace: D123. `group.unit name`, then each member: `::name base`, or `::name = amount unit`.
+    fn unit_group(&mut self) -> Result<UnitGroup, Message> {
+        let mut opener = self.opener("group.unit");
+        self.advance();
+        self.expect_symbol(Symbol::Dot)?;
+        self.advance();
+        let name = self.expect_name("the unit group's name")?;
+        opener.note = format!("group.unit {}", name.text);
+        self.end_line()?;
+        let mut members = Vec::new();
+        while self.in_body(&opener)? {
+            if !self.at_symbol(Symbol::Path) {
+                return Err(Message::refused(self.line_place(), "a unit group holds only units, each `::name`")
+                    .with_why(
+                        "a unit group's members are written with the `::` they're reached with, as `::cents base`.",
+                    ));
+            }
+            self.advance();
+            let member = self.expect_name("a unit's name")?;
+            let size = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "base") {
+                self.advance();
+                None
+            } else {
+                self.expect_symbol(Symbol::Equals)?;
+                // `100 cents` reads as a number with its unit, which is what it is.
+                let amount = self.unary()?;
+                match amount.kind {
+                    ExpressionKind::Measured { number, unit } if unit.per.is_none() && !unit.point => {
+                        Some((*number, unit.top))
+                    }
+                    _ => {
+                        let unit = self.unit_name()?;
+                        Some((amount, unit))
+                    }
+                }
+            };
+            self.end_line()?;
+            members.push(UnitMember { name: member, size });
+        }
+        self.end_of(&opener)?;
+        Ok(UnitGroup { name, members, place: opener.place })
+    }
+
+    /// A unit's name, with its group before `::` when it's written (D112).
+    fn unit_name(&mut self) -> Result<UnitName, Message> {
+        let first = self.expect_name("a unit")?;
+        if self.at_symbol(Symbol::Path) {
+            self.advance();
+            let name = self.expect_name("a unit")?;
+            return Ok(UnitName { group: Some(first), name });
+        }
+        Ok(UnitName { group: None, name: first })
+    }
+
+    /// A unit as written: its name, `.point` when it's a point, and `per` and another unit for a rate (D112, D120,
+    /// D121).
+    fn unit_written(&mut self) -> Result<UnitWritten, Message> {
+        let start = self.here();
+        let top = self.unit_name()?;
+        let mut point = false;
+        if self.at_symbol(Symbol::Dot)
+            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "point")
+        {
+            self.advance();
+            self.advance();
+            point = true;
+        }
+        let per = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "per") {
+            self.advance();
+            Some(self.unit_name()?)
+        } else {
+            None
+        };
+        Ok(UnitWritten { top, point, per, place: start.to(self.previous_place()) })
+    }
+
     /// Whether a handler is written here: `::name`, or a group's name and `::`.
     fn at_handler(&self) -> bool {
         self.at_symbol(Symbol::Path)
@@ -796,8 +879,18 @@ impl Parser<'_> {
                     path.push(self.expect_name("a setting's name")?);
                 }
                 self.expect_symbol(Symbol::Colon)?;
-                // A ranged number's edge can be below zero (D107).
-                settings.push((path, self.unary()?));
+                if let [word] = path.as_slice()
+                    && word.text == "unit"
+                {
+                    // trace: D112. A number's unit, as `Float[unit: px per secs]`.
+                    let unit = self.unit_written()?;
+                    let place = unit.place;
+                    let value = self.expression(ExpressionKind::Unit(unit), place);
+                    settings.push((path, value));
+                } else {
+                    // A ranged number's edge can be below zero (D107).
+                    settings.push((path, self.unary()?));
+                }
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
@@ -1261,20 +1354,41 @@ impl Parser<'_> {
     }
 
     fn comparison(&mut self) -> Result<Expression, Message> {
-        let left = self.join()?;
+        let left = self.measure_in()?;
         let Some(operator) = self.comparison_operator() else {
             return Ok(left);
         };
         self.deeper()?;
         let at = self.here();
         self.advance();
-        let right = self.join()?;
+        let right = self.measure_in()?;
         if self.comparison_operator().is_some() {
             // trace: Unio D81
             return Err(Message::refused(self.here(), "two comparisons in a row")
                 .with_why("each comparison stands alone; join two with `and`, as in `1 < x and x < 10`."));
         }
         Ok(self.binary(operator, left, right, at))
+    }
+
+    /// trace: D122. `value in unit` measures a value in a unit of its group. Next to maths written without brackets,
+    /// which part it measures isn't decided, so it stops.
+    fn measure_in(&mut self) -> Result<Expression, Message> {
+        let value = self.join()?;
+        if !(self.at_keyword(Keyword::In)
+            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(_))))
+        {
+            return Ok(value);
+        }
+        if matches!(&value.kind, ExpressionKind::Binary { operator, .. } if operator.is_maths()) {
+            return Err(Message::not_designed_yet(
+                self.here(),
+                "`in` after maths written without brackets, which could measure either side,",
+            ));
+        }
+        self.advance();
+        let unit = self.unit_written()?;
+        let place = value.place.to(unit.place);
+        Ok(self.expression(ExpressionKind::MeasureIn { value: Box::new(value), unit }, place))
     }
 
     /// trace: D77. Text is joined only by filling it in with braces, so `&` is refused, with the braces form as the
@@ -1372,8 +1486,7 @@ impl Parser<'_> {
         Ok(left)
     }
 
-    /// trace: D108. `a ** b` binds tighter than `*` and `/`. Which way a chain of them groups, and how a `-` in front
-    /// of the base reads, aren't decided, so both stop.
+    /// trace: D108, D132. `a ** b` binds tighter than a negating `-`, and that than `*` and `/`.
     fn power(&mut self) -> Result<Expression, Message> {
         let base = self.operand()?;
         if !self.at_symbol(Symbol::Power) {
@@ -1382,13 +1495,9 @@ impl Parser<'_> {
         let at = self.here();
         self.advance();
         self.deeper()?;
+        // trace: D132. A chain groups from the right, so the exponent takes in the rest of it, and a `-` after `**`
+        // negates what follows it.
         let exponent = self.unary()?;
-        if self.at_symbol(Symbol::Power) {
-            return Err(Message::not_designed_yet(
-                self.here(),
-                "a chain of `**`, as `a ** b ** c`, which could group either way,",
-            ));
-        }
         Ok(self.binary(BinaryOperator::Power, base, exponent, at))
     }
 
@@ -1421,13 +1530,8 @@ impl Parser<'_> {
             self.deeper()?;
             let place = self.here();
             self.advance();
+            // trace: D132. `**` comes before a negating `-`, so `-2 ** 2` is `-(2 ** 2)`, as maths reads -x².
             let operand = self.unary()?;
-            if matches!(operand.kind, ExpressionKind::Binary { operator: BinaryOperator::Power, .. }) {
-                return Err(Message::not_designed_yet(
-                    place,
-                    "a `-` in front of a power, as `-2 ** 2`, which could mean `-(2 ** 2)` or `(-2) ** 2`,",
-                ));
-            }
             let whole = place.to(operand.place);
             return Ok(self.expression(
                 ExpressionKind::Unary { operator: UnaryOperator::Negate, operand: Box::new(operand) },
@@ -1543,6 +1647,20 @@ impl Parser<'_> {
         };
         let place = token.place;
         let kind = match token.kind {
+            TokenKind::Whole(_) | TokenKind::Float { .. }
+                if matches!(self.peek(), Some(Token { kind: TokenKind::Name(_), gap: Gap::Spaces(_), .. })) =>
+            {
+                // trace: D112. A unit stands right after its number, as `2 secs`.
+                let number = match token.kind {
+                    TokenKind::Whole(digits) => ExpressionKind::Whole(digits),
+                    TokenKind::Float { text, approximate } => ExpressionKind::Float { text, approximate },
+                    _ => ExpressionKind::Whole(String::new()),
+                };
+                let number = self.expression(number, place);
+                let unit = self.unit_written()?;
+                let whole = place.to(unit.place);
+                return Ok(self.expression(ExpressionKind::Measured { number: Box::new(number), unit }, whole));
+            }
             TokenKind::Whole(digits) => ExpressionKind::Whole(digits),
             TokenKind::Float { text, approximate } => ExpressionKind::Float { text, approximate },
             TokenKind::Text(text) => ExpressionKind::Text(text),

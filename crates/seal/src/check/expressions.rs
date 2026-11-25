@@ -14,7 +14,10 @@ impl Checker<'_> {
     pub(super) fn expression(&mut self, expression: &syntax::Expression, wanted: Option<TypeId>) -> Expression {
         let checked = self.expression_as_written(expression, wanted);
         match wanted {
-            Some(wanted) => self.fit_limit(checked, wanted),
+            Some(wanted) => {
+                let checked = self.fit_limit(checked, wanted);
+                self.land_unit(checked, wanted)
+            }
             None => checked,
         }
     }
@@ -171,7 +174,8 @@ impl Checker<'_> {
                 }
                 Kind::Float { text, approximate } => self.float_literal(text, *approximate, true, place),
                 _ => {
-                    let operand = self.expression(operand, wanted);
+                    // The negated value lands where it's used, not its operand on its own.
+                    let operand = self.expression_as_written(operand, wanted);
                     self.require(
                         operand.type_id,
                         Requirement::Number,
@@ -191,7 +195,8 @@ impl Checker<'_> {
                 self.binary(*operator, left, right, *operator_place, wanted, place)
             }
             Kind::Group(inner) => {
-                let mut checked = self.expression(inner, wanted);
+                // The brackets land as a whole where they're used, so what's inside them doesn't land twice.
+                let mut checked = self.expression_as_written(inner, wanted);
                 checked.place = place;
                 checked
             }
@@ -223,6 +228,16 @@ impl Checker<'_> {
             }
             Kind::Handled { call, fallback } => self.handled(call, fallback, wanted, place),
             Kind::Otherwise { call, cases, includes } => self.otherwise(call, cases, includes, wanted, place),
+            Kind::Measured { number, unit } => self.measured_literal(number, unit, place),
+            Kind::MeasureIn { value, unit } => self.measure_in(value, unit, place),
+            Kind::Unit(unit) => {
+                self.refuse_why(
+                    unit.place,
+                    "a unit stands right after its number, as `2 secs`, or in a type, as `Float[unit: secs]`",
+                    "a unit says what a number counts, so it goes with one.",
+                );
+                Self::error(place)
+            }
             Kind::Slide { start, steps } => self.slide(start, steps, wanted, place),
         }
     }
@@ -341,6 +356,26 @@ impl Checker<'_> {
             }
             None => (inside, None),
         };
+        // trace: D122. `{total in secs}` measures the name in a unit, as D122's own example writes it.
+        let (path, measured) = match path.split_once(" in ") {
+            Some((path, unit)) => (path, Some(unit)),
+            None => (path, None),
+        };
+        let measured_unit = match measured {
+            None => None,
+            Some(unit) => {
+                let unit_column = place.column + 1 + u32::try_from(path.len()).unwrap_or(0) + 4;
+                let Some(written) = brace_unit(unit, place.line, unit_column) else {
+                    self.refuse_why(
+                        place,
+                        format!("`{{{inside}}}` measures in `{unit}`, which isn't a unit's name"),
+                        "`in` in braces measures a name in one of its group's units, as `{total in secs}`.",
+                    );
+                    return None;
+                };
+                Some(written)
+            }
+        };
         if !path.split('.').all(is_name) {
             // trace: D12, D28, D75
             self.refuse_why(
@@ -350,32 +385,7 @@ impl Checker<'_> {
             );
             return None;
         }
-        let mut column = place.column + 1;
-        let mut built: Option<syntax::Expression> = None;
-        for word in path.split('.') {
-            let width = u32::try_from(word.len()).unwrap_or(1);
-            let word_place = Place::new(place.line, column, width);
-            built = Some(match built {
-                None => syntax::Expression {
-                    id: u32::MAX,
-                    kind: syntax::ExpressionKind::Name(word.to_owned()),
-                    place: word_place,
-                },
-                Some(receiver) => {
-                    let whole = receiver.place.to(word_place);
-                    syntax::Expression {
-                        id: u32::MAX,
-                        kind: syntax::ExpressionKind::Member {
-                            receiver: Box::new(receiver),
-                            name: syntax::Word { text: word.to_owned(), place: word_place },
-                        },
-                        place: whole,
-                    }
-                }
-            });
-            column += width + 1;
-        }
-        let built = built?;
+        let built = brace_path(path, place)?;
         // `pi` is a built-in value, so braces can hold it as they hold any name (D109).
         if !self.is_value(&built) && path != "pi" {
             let first = path.split('.').next().unwrap_or(path);
@@ -386,6 +396,17 @@ impl Checker<'_> {
             );
             return None;
         }
+        let built = match measured_unit {
+            Some(unit) => {
+                let whole = built.place.to(unit.place);
+                syntax::Expression {
+                    id: u32::MAX,
+                    kind: syntax::ExpressionKind::MeasureIn { value: Box::new(built), unit },
+                    place: whole,
+                }
+            }
+            None => built,
+        };
         let checked = self.expression(&built, None);
         let Some(places) = places else { return Some(checked) };
         // trace: D94, Unio D175. `places:` rounds a `Float` for showing.
@@ -556,9 +577,17 @@ impl Checker<'_> {
             }
             _ => {
                 let operand_wanted = if operator.is_comparison() { None } else { wanted };
+                let operand_wanted = operand_wanted.filter(|wanted| self.program.types.measured(*wanted).is_none());
                 let (left_syntax, right_syntax) = (left, right);
-                let left = self.expression(left, operand_wanted);
-                let right = self.expression(right, Some(left.type_id));
+                // What's wanted only guides the sides' types: a side doesn't land there, the whole does, so
+                // `7.0 secs / 1.1 secs` is a plain `Float` even where one is wanted (D120).
+                let left = self.expression_as_written(left, operand_wanted);
+                // A value with a unit says its own; the other side works its out (D120).
+                let left_measured = self.program.types.measured(left.type_id).is_some();
+                let right = self.expression_as_written(right, (!left_measured).then_some(left.type_id));
+                if left_measured || self.program.types.measured(right.type_id).is_some() {
+                    return self.measured_binary(operator, left, right, operator_place, place);
+                }
                 if !self.program.types.unify(left.type_id, right.type_id) {
                     let left_type = self.program.types.resolve(left.type_id);
                     let right_type = self.program.types.resolve(right.type_id);
@@ -1094,8 +1123,9 @@ impl Checker<'_> {
                     let Some(cases) = self.handler_cases(&checked, using, type_id, gives_nothing) else {
                         return Self::error(place);
                     };
+                    let shared = cases.iter().map(|(failure, _)| *failure).collect();
                     return Expression {
-                        kind: ExpressionKind::Otherwise { call: Box::new(checked), cases },
+                        kind: ExpressionKind::Otherwise { call: Box::new(checked), cases, shared },
                         type_id,
                         place,
                     };
@@ -1177,6 +1207,7 @@ impl Checker<'_> {
         let type_id = checked.type_id;
         let gives_nothing = self.program.types.resolve(type_id) == NOTHING;
         let mut checked_cases: Vec<(super::tree::FailureId, super::tree::Block)> = Vec::new();
+        let mut shared = Vec::new();
         for using in includes {
             let Some(brought_in) = self.handler_cases(&checked, using, type_id, gives_nothing) else { continue };
             for (failure, body) in brought_in {
@@ -1189,6 +1220,7 @@ impl Checker<'_> {
                         "an `otherwise` handles each failure once, with its own `case` or an included handler's.",
                     );
                 }
+                shared.push(failure);
                 checked_cases.push((failure, body));
             }
         }
@@ -1207,7 +1239,11 @@ impl Checker<'_> {
         if !failable {
             return Self::error(place);
         }
-        Expression { kind: ExpressionKind::Otherwise { call: Box::new(checked), cases: checked_cases }, type_id, place }
+        Expression {
+            kind: ExpressionKind::Otherwise { call: Box::new(checked), cases: checked_cases, shared },
+            type_id,
+            place,
+        }
     }
 
     /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `instead`, `return`, `break` or
@@ -1355,4 +1391,67 @@ pub(super) fn name_path(expression: &syntax::Expression) -> Option<Vec<String>> 
         }
         _ => None,
     }
+}
+
+/// The unit after `in` in text's braces, as `secs`, `time::secs` or `px per secs`, placed where it's written (D122).
+fn brace_unit(unit: &str, line: u32, column: u32) -> Option<syntax::UnitWritten> {
+    let name = |text: &str, column: u32| -> Option<syntax::UnitName> {
+        let word = |text: &str, column: u32| {
+            let is_name = !text.is_empty()
+                && text.starts_with(|first: char| first.is_ascii_lowercase())
+                && text
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_');
+            is_name.then(|| syntax::Word {
+                text: text.to_owned(),
+                place: Place::new(line, column, u32::try_from(text.len()).unwrap_or(1)),
+            })
+        };
+        match text.split_once("::") {
+            Some((group, name)) => Some(syntax::UnitName {
+                group: Some(word(group, column)?),
+                name: word(name, column + u32::try_from(group.len()).unwrap_or(0) + 2)?,
+            }),
+            None => Some(syntax::UnitName { group: None, name: word(text, column)? }),
+        }
+    };
+    let place = Place::new(line, column, u32::try_from(unit.len()).unwrap_or(1));
+    let (top, per) = match unit.split_once(" per ") {
+        Some((top, per)) => {
+            let per_column = column + u32::try_from(top.len()).unwrap_or(0) + 5;
+            (name(top, column)?, Some(name(per, per_column)?))
+        }
+        None => (name(unit, column)?, None),
+    };
+    Some(syntax::UnitWritten { top, point: false, per, place })
+}
+
+/// A name and its fields and facts in text's braces, as `hero.hp`, placed where it's written.
+fn brace_path(path: &str, place: Place) -> Option<syntax::Expression> {
+    let mut column = place.column + 1;
+    let mut built: Option<syntax::Expression> = None;
+    for word in path.split('.') {
+        let width = u32::try_from(word.len()).unwrap_or(1);
+        let word_place = Place::new(place.line, column, width);
+        built = Some(match built {
+            None => syntax::Expression {
+                id: u32::MAX,
+                kind: syntax::ExpressionKind::Name(word.to_owned()),
+                place: word_place,
+            },
+            Some(receiver) => {
+                let whole = receiver.place.to(word_place);
+                syntax::Expression {
+                    id: u32::MAX,
+                    kind: syntax::ExpressionKind::Member {
+                        receiver: Box::new(receiver),
+                        name: syntax::Word { text: word.to_owned(), place: word_place },
+                    },
+                    place: whole,
+                }
+            }
+        });
+        column += width + 1;
+    }
+    built
 }

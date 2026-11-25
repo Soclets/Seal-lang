@@ -14,8 +14,9 @@ on Seal, Luau and Node, checks every answer, and writes `bench/RESULTS.md`.
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D73 are built, except the language server's parts and what's listed under "Not built
-   yet" below. All 14 tests in `tests/` pass.
+2. **Decisions built.** D1 to D114 and D117 to D132 are built, except the language server's parts and what's listed
+   under "Not built yet" below; D115, D116, D119 and D124 to D127 (the new number types) are C13. All 18 tests in
+   `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -59,7 +60,8 @@ checker, compiler or VM.
   `*`, parameters.
 - [x] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
   (D109), `lerp` (D114), each correctly rounded (D50).
-- [ ] **C12. Units** (D111 to D113), once the design session has answered how Cyborg's units work in Seal.
+- [x] **C12. Units** (D111 to D113, D120 to D123): numbers with units, Seal's three groups, a script's and a host's own
+  groups, conversions, rates, points, `in`, the angle built-ins taking angles, and units at a host's doors.
 - [ ] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116), timed in the benchmarks.
 - [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
   and sent to the design session.
@@ -169,6 +171,28 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   exactly and rounded once. 600 answers checked against Python's 120-digit decimals: all the same. The platform's own
   `tan` is 2 ulps off at -7.59421142430311, checked by hand. Cost: about 14 µs a call, with no fast path yet.
 - An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
+- **D111 to D113, D120 to D123: units.** A unit is part of a number's type (`Type::Measured`), written bare after a
+  number (`2 secs`, `5.0 px per secs`, `100.0 px.point`) or in a type (`Float[unit: secs]`), with its group only to
+  settle a clash (`time::secs`). Seal's groups are `time` (`ms`, `secs`, `mins`, `frames`), `angle` (`degs`,
+  `turns`, `rads`) and `distance` (`px`, `tiles`); a radian is 180/π degrees, held exactly, so `rads` converts to
+  the others correctly rounded, while `frames` and `tiles` have no fixed size and convert to nothing. A unit's size
+  is a fraction times a power of π, marked inexact when it has π or was written with `~`. Values convert by
+  themselves where they land and where two meet in `+`, `-` or a comparison: into a `Whole` only by a whole number
+  of times and never through an inexact size, into a `Float` by any size, rounded once; two sides meet in the finer
+  unit. A plain number where a unit goes is refused, with the unit added as the fix (and `.0` for a `Float`). An
+  amount over one of its own group is a plain number; over another group, a rate; a rate times its `per` unit is an
+  amount. A point plus or minus a span is a point, a point minus a point a span, two points added refused.
+  `value in unit` measures (D122), also inside text braces as D122's own example writes it. `group.unit name` with
+  `::unit base` and `::unit = amount earlier_unit` (D123). The angle built-ins take `degs`, `turns` or `rads` (exact
+  at multiples of 30° and 45°), and `asin`, `acos` and `atan2` give `rads`. A host gives a door's values and result
+  units (`DoorOptions::units`, `result_unit`) and declares its own groups (`Doors::add_unit_group`); a host type
+  carries one as `HostType::Measured`.
+- **D130** Already built so (C10).
+- **D131** A handler's case for a failure the call can't give is allowed and never runs; one written straight into
+  an `otherwise` block is still refused.
+- **D132** `**` chains from the right and comes before a negating `-`.
+- What a `( … )`, a negating `-` or one side of maths is wanted to be only guides its type now: the whole lands where
+  it's used, so `sqrt(7.0 secs / ~1.1 secs)` and `Whole[max: 5] = 10 - 7` check as the whole, not each part.
 
 ## How it's built (the building session's design)
 
@@ -272,17 +296,27 @@ Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D1
 - 21: `newln` outside braces.
 - D58: whether n-body's Normal program is rightly the one written with D62's direct changes.
 
-New questions from C7 to C10, not sent yet:
-- Unio D44: a handler's arguments are worked out when the call fails, right before its cases run (built that way);
-  or before the call?
-- D108: which way `a ** b ** c` groups, and whether `-2 ** 2` is `-(2 ** 2)` (both stop). A negative power of a
-  `Whole` only known while running is a failed check (built), as D89 treats an empty separator.
+New questions from C7 to C12, not sent yet (the first three of C7 to C10's are answered by D130 to D132):
+- D108: a negative power of a `Whole` only known while running is a failed check (built), as D89 treats an empty
+  separator.
 - D109: `atan2(y: 0.0, x: 0.0)`, a point with no angle (stops; IEEE 754 says 0). D107: `clamp` with `low:` above
   `high:` (stops).
-- A handler with a case for a failure the call can't give is refused at that use, as such a case written in an
-  `otherwise` is (Unio D40, "as if written at the call"); so a group's handler fits only calls that fail exactly so.
 - D91 lists the declarations `///` goes on; a name made inside a block isn't among them (stops).
 - A comment after code inside an open bracket, as `foo(a, // the first`: D91 allows a comment line there (stops).
+- D113 against D111: `asin`, `acos` and `atan2` give `rads`, so a script that never writes a unit gets one anyway, and
+  `asin(x) - 0.7` is refused (`rads` minus a plain number), though D111 says a script that never uses units pays
+  nothing for them and D113 that a plain `Float` still means radians. Should they give `rads` only when given values
+  with units (`atan2(y: 3.0 px, x: 1.0 px)`), and a plain `Float` otherwise? (Built as written: always `rads`.)
+- D121's example `x: Float[unit: px.point] = 100.0` puts a plain number where a unit goes, which D111 refuses (built:
+  refused, with `100.0 px.point` as the fix). Is the example a slip?
+- A `Whole` with a unit becomes a `Float` only when its unit changes: `w: Float[unit: secs] = 2000 ms` passes but
+  `= 2 secs` is refused, as a plain `Whole` into a `Float` is (D16). Is that wanted, or should the second pass too?
+- `a + b in ms`: `in` after maths without brackets could measure the whole or only `b` (stops).
+- Multiplying or dividing units into a unit with no written form, as `px * px` or a rate over a rate, and maths on
+  points other than adding and subtracting a span (stop).
+- D131: two handlers brought into one `otherwise` that both have a case for a failure the call can't give: refused
+  as handled twice (built), though neither case can run.
+- D111 says Seal follows Cyborg on "prefixes"; Seal's units have none, and nothing says what a prefix is in Seal.
 
 ## What Ralph can't compare yet
 
@@ -299,7 +333,8 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - a `///` before a name made inside a block
 - a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
 - a handler used inside its own cases
-- a chain of `**`, as `a ** b ** c`; a `-` in front of a power, as `-2 ** 2`
+- `in` after maths without brackets, as `a + b in ms`
+- maths on units whose answer's unit has no written form, as `px * px`, and maths on points beyond `±` a span
 - `atan2` of (0, 0), which has no angle; a `clamp` whose `low:` is more than its `high:` (both stop while running too)
 
 ## Not built yet

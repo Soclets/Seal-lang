@@ -18,7 +18,7 @@ use super::convert::{Failures, FromSeal, IntoSeal, SealType};
 use super::value::Value;
 use crate::compile::bytecode::Compiled;
 use crate::message::{Message, MessageKind, Place};
-use crate::signature::{DoorParameter, DoorSignature, HostType};
+use crate::signature::{DoorParameter, DoorSignature, HostType, HostUnitGroup};
 use crate::syntax::lexer::{Keyword, check_name_spelling};
 use crate::vm::machine::{DoorAnswer, DoorCaller};
 
@@ -213,6 +213,8 @@ struct Inner {
     doors: Vec<Door>,
     /// The records and `one_of`s the host opens for its scripts beyond its doors' own (D85).
     types: Vec<HostType>,
+    /// The unit groups the host declares for its scripts (D111, D123).
+    unit_groups: Vec<HostUnitGroup>,
     /// The scripts compiled against these doors, most recently used last.
     kept: Mutex<Vec<Loaded>>,
 }
@@ -321,6 +323,7 @@ impl Doors {
             self.inner = Arc::new(Inner {
                 doors: self.inner.doors.clone(),
                 types: self.inner.types.clone(),
+                unit_groups: self.inner.unit_groups.clone(),
                 kept: Mutex::default(),
             });
         }
@@ -382,6 +385,7 @@ impl Doors {
             self.inner = Arc::new(Inner {
                 doors: self.inner.doors.clone(),
                 types: self.inner.types.clone(),
+                unit_groups: self.inner.unit_groups.clone(),
                 kept: Mutex::default(),
             });
         }
@@ -397,6 +401,86 @@ impl Doors {
         Ok(())
     }
 
+    /// Declares a unit group for the host's scripts, as a script's `group.unit` does (D111, D123): each unit is
+    /// `base`, for exactly one, or so many of a unit listed before it, as `("dollars", "100 cents")`, with `~` before
+    /// an inexact amount.
+    ///
+    /// ```
+    /// # fn main() -> Result<(), seal::Message> {
+    /// let mut doors = seal::Doors::new();
+    /// doors.add_unit_group("money", &[("cents", "base"), ("dollars", "100 cents")])?;
+    /// doors.add("pay", |_cents: i64| ())?.units([Some("cents")])?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Refuses names that don't follow Seal's spelling, a group declared twice or named as one of Seal's own, and
+    /// sizes that aren't `base` or an amount and an earlier unit.
+    pub fn add_unit_group(&mut self, name: &str, units: &[(&str, &str)]) -> Result<(), Message> {
+        check_spelling(name, name)?;
+        let why = "a unit is `base`, for exactly one, or so many of a unit listed before it, as `100 cents`.";
+        if ["time", "angle", "distance"].contains(&name)
+            || self.inner.unit_groups.iter().any(|group| group.name == name)
+        {
+            return Err(door_refusal(
+                name,
+                format!("the unit group `{name}` is declared twice, or is one of Seal's own"),
+                "each unit group is declared once; `time`, `angle` and `distance` are Seal's own.",
+            ));
+        }
+        let mut members: Vec<(String, String)> = Vec::new();
+        for (unit, size) in units {
+            check_spelling(name, unit)?;
+            if members.iter().any(|(known, _)| known == unit) {
+                return Err(door_refusal(name, format!("the unit `{unit}` is listed twice in `{name}`"), why));
+            }
+            if *size != "base" {
+                let fits = size.split_once(' ').is_some_and(|(amount, earlier)| {
+                    crate::check::types::Size::written(amount).is_some()
+                        && members.iter().any(|(known, _)| known == earlier)
+                });
+                if !fits {
+                    return Err(door_refusal(name, format!("`{unit}`'s size, `{size}`, isn't a size"), why));
+                }
+            }
+            members.push(((*unit).to_owned(), (*size).to_owned()));
+        }
+        if members.iter().filter(|(_, size)| size == "base").count() != 1 {
+            return Err(door_refusal(name, format!("`{name}` needs exactly one unit marked `base`"), why));
+        }
+        let inner = self.inner_mut()?;
+        inner.unit_groups.push(HostUnitGroup { name: name.to_owned(), members });
+        Ok(())
+    }
+
+    /// The unit groups the host declares (D111, D123).
+    #[must_use]
+    pub fn unit_groups(&self) -> &[HostUnitGroup] {
+        &self.inner.unit_groups
+    }
+
+    /// The doors' own list, to change: copied first when a loaded script shares it, and with what was compiled
+    /// against it forgotten.
+    fn inner_mut(&mut self) -> Result<&mut Inner, Message> {
+        if Arc::get_mut(&mut self.inner).is_none() {
+            self.inner = Arc::new(Inner {
+                doors: self.inner.doors.clone(),
+                types: self.inner.types.clone(),
+                unit_groups: self.inner.unit_groups.clone(),
+                kept: Mutex::default(),
+            });
+        }
+        let Some(inner) = Arc::get_mut(&mut self.inner) else {
+            return Err(Message::internal("a set of doors couldn't be changed"));
+        };
+        if let Ok(kept) = inner.kept.get_mut() {
+            kept.clear();
+        }
+        Ok(inner)
+    }
+
     /// The records and `one_of`s the host opens, its doors' included, each once, inner ones too (D85).
     #[must_use]
     pub fn types(&self) -> Vec<HostType> {
@@ -408,7 +492,9 @@ impl Doors {
         }
         while let Some(host_type) = waiting.pop() {
             match &host_type {
-                HostType::List(inner) | HostType::Maybe(inner) => waiting.push((**inner).clone()),
+                HostType::List(inner) | HostType::Maybe(inner) | HostType::Measured { base: inner, .. } => {
+                    waiting.push((**inner).clone());
+                }
                 HostType::Dict(key, value) => {
                     waiting.push((**key).clone());
                     waiting.push((**value).clone());
@@ -507,6 +593,46 @@ impl DoorOptions<'_> {
         self.set_labels(0, &labels)
     }
 
+    /// Gives the door's values their units, in order, `None` for a value with none, as `[Some("secs")]` for
+    /// `wait(2 secs)` (D111). A script then passes a value in that unit, or another of its group that converts
+    /// to it exactly, and a plain number is refused.
+    ///
+    /// # Errors
+    ///
+    /// Refuses units that don't match the door's values in number, a unit on a value that isn't an `i64` or an
+    /// `f64`, and a unit that isn't written as a script writes one.
+    pub fn units<const COUNT: usize>(self, units: [Option<&str>; COUNT]) -> Result<Self, Message> {
+        let name = self.signature.name.clone();
+        if units.len() != self.signature.parameters.len() {
+            return Err(door_refusal(
+                &name,
+                format!(
+                    "`{name}` takes {} values, but {} units are given",
+                    self.signature.parameters.len(),
+                    units.len()
+                ),
+                "each of a door's values has one unit, or `None`.",
+            ));
+        }
+        for (parameter, unit) in self.signature.parameters.iter_mut().zip(units) {
+            if let Some(unit) = unit {
+                parameter.host_type = measured(&name, parameter.host_type.clone(), unit)?;
+            }
+        }
+        Ok(self)
+    }
+
+    /// Gives the value the door gives back a unit, as `"secs"` for a `now()` that gives a time (D111).
+    ///
+    /// # Errors
+    ///
+    /// Refuses a unit on a value that isn't an `i64` or an `f64`, and one that isn't written as a script writes it.
+    pub fn result_unit(self, unit: &str) -> Result<Self, Message> {
+        let name = self.signature.name.clone();
+        self.signature.result = measured(&name, self.signature.result.clone(), unit)?;
+        Ok(self)
+    }
+
     /// Labels every value after the first, which by convention has none, as `["by"]` for `heal(goblin, by: 5)`.
     ///
     /// # Errors
@@ -515,4 +641,30 @@ impl DoorOptions<'_> {
     pub fn labels_after_first<const COUNT: usize>(self, labels: [&str; COUNT]) -> Result<Self, Message> {
         self.set_labels(1, &labels)
     }
+}
+
+/// A door's `i64` or `f64` with a unit (D111), the unit's spelling checked here and its name when a script loads.
+fn measured(door: &str, base: HostType, unit: &str) -> Result<HostType, Message> {
+    if !matches!(base, HostType::Whole | HostType::Float) {
+        return Err(door_refusal(
+            door,
+            format!("only an `i64` or an `f64` has a unit, but `{door}` is given `{unit}` for another type"),
+            "a unit says what a number measures, as `secs` or `px per secs`.",
+        ));
+    }
+    let (top, per) = unit.split_once(" per ").map_or((unit, None), |(top, per)| (top, Some(per)));
+    let top = top.strip_suffix(".point").unwrap_or(top);
+    for part in std::iter::once(top).chain(per) {
+        let name = part.split_once("::").map_or(part, |(group, name)| {
+            if check_name_spelling(group, Place::default()).is_err() { "" } else { name }
+        });
+        if name.is_empty() || check_name_spelling(name, Place::default()).is_err() {
+            return Err(door_refusal(
+                door,
+                format!("`{unit}` isn't written as a unit"),
+                "a unit is written as a script writes it: `secs`, `px.point`, `px per secs`, or `time::secs`.",
+            ));
+        }
+    }
+    Ok(HostType::Measured { base: Box::new(base), unit: unit.to_owned() })
 }

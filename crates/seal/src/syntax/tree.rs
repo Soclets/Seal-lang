@@ -20,6 +20,40 @@ pub enum Item {
     Record(RecordDeclaration),
     OneOf(OneOfDeclaration),
     HandlerGroup(HandlerGroup),
+    UnitGroup(UnitGroup),
+}
+
+/// `group.unit name` and its members, each `::name base` or `::name = amount unit` (D123).
+#[derive(Clone, Debug)]
+pub struct UnitGroup {
+    pub name: Word,
+    pub members: Vec<UnitMember>,
+    pub place: Place,
+}
+
+/// One unit of a group a script declares: its name, and how many of an earlier unit it is, or `base` (D123).
+#[derive(Clone, Debug)]
+pub struct UnitMember {
+    pub name: Word,
+    /// `None` for the base; otherwise the amount, as written, and the unit it counts.
+    pub size: Option<(Expression, UnitName)>,
+}
+
+/// A unit's name, with its group when it's written to settle a clash, as `time::secs` (D112).
+#[derive(Clone, Debug)]
+pub struct UnitName {
+    pub group: Option<Word>,
+    pub name: Word,
+}
+
+/// A unit as written after a number or in a type: `secs`, `px.point`, or a rate as `px per secs` (D112, D120,
+/// D121).
+#[derive(Clone, Debug)]
+pub struct UnitWritten {
+    pub top: UnitName,
+    pub point: bool,
+    pub per: Option<UnitName>,
+    pub place: Place,
 }
 
 /// `group.handler name`, with its `handles [ … ]` line and its members (D110).
@@ -394,6 +428,18 @@ pub enum ExpressionKind {
     Bracketed {
         receiver: Box<Expression>,
         entries: Vec<Entry>,
+    },
+    /// A number written with its unit, as `2 secs` (D112).
+    Measured {
+        number: Box<Expression>,
+        unit: UnitWritten,
+    },
+    /// A unit standing alone, as a type's `unit:` setting (D112).
+    Unit(UnitWritten),
+    /// `value in unit`: the plain number a value is when measured in a unit of its group (D122).
+    MeasureIn {
+        value: Box<Expression>,
+        unit: UnitWritten,
     },
     /// `[a, b, c]` (Unio D75); empty for `[]`.
     List(Vec<Expression>),

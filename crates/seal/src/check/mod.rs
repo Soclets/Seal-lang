@@ -7,11 +7,12 @@ mod finish;
 mod handlers;
 pub mod tree;
 pub mod types;
+mod units;
 
 use std::collections::{HashMap, HashSet};
 
 use crate::message::{Message, MessageKind, Place};
-use crate::signature::{DoorSignature, HostType};
+use crate::signature::{DoorSignature, HostType, HostUnitGroup};
 use crate::syntax::tree as syntax;
 use tree::{
     Block, Expression, ExpressionKind, FailureId, Inside, MatchArm, PathStep, Procedure, ProcedureId, Program,
@@ -110,6 +111,8 @@ pub(crate) struct Checker<'a> {
     doors: &'a [DoorSignature],
     /// The records and `one_of`s the host opens, used with nothing declared (D85).
     host_types: &'a [HostType],
+    /// The unit groups the host declares (D111, D123).
+    host_units: &'a [HostUnitGroup],
     /// Top-level names made with no `mut` from a value written out plainly, which are known while loading (D103,
     /// D104), and the top-level names made with `mut`, which aren't.
     plain_names: HashMap<String, &'a syntax::Expression>,
@@ -168,10 +171,12 @@ pub fn check(
     script: &syntax::Script,
     doors: &[DoorSignature],
     host_types: &[HostType],
+    host_units: &[HostUnitGroup],
 ) -> Result<Program, Vec<Message>> {
     let mut checker = Checker {
         doors,
         host_types,
+        host_units,
         host_type_names: HashSet::new(),
         partial_types: false,
         plain_names: HashMap::new(),
@@ -251,6 +256,7 @@ impl<'a> Checker<'a> {
     fn run(&mut self, script: &'a syntax::Script) {
         self.collect_plain_names(script);
         self.declare_globals(script);
+        self.declare_unit_groups(script);
         self.declare_types(script);
         self.declare_procedures(script);
         self.declare_handler_groups(script);
@@ -539,10 +545,15 @@ impl<'a> Checker<'a> {
 
     /// `Whole[…]` or `Float[…]` with its limits, `min:` and `max:` stopping the script past them and `min.clamp:` and
     /// `max.clamp:` pulling a value back, one of each kind per edge (D107).
-    fn ranged_type(&mut self, written: &syntax::TypeExpression, float: bool) -> TypeId {
-        let base = if float { FLOAT } else { WHOLE };
+    fn ranged_type(
+        &mut self,
+        written: &syntax::TypeExpression,
+        settings: &[(Vec<syntax::Word>, syntax::Expression)],
+        base: TypeId,
+        float: bool,
+    ) -> TypeId {
         let mut limits = types::Limits { min: None, max: None, float };
-        for (path, value) in &written.settings {
+        for (path, value) in settings {
             let setting = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
             let place = path.first().map_or(written.place, |word| word.place);
             let (is_min, clamp) = match setting.as_str() {
@@ -738,7 +749,27 @@ impl<'a> Checker<'a> {
             return ERROR;
         }
         if matches!(name, "Whole" | "Float") && !written.settings.is_empty() {
-            return self.ranged_type(written, name == "Float");
+            let plain = if name == "Float" { FLOAT } else { WHOLE };
+            // trace: D112. `unit:` gives the number a unit; its other settings are its limits (D107).
+            let unit =
+                written.settings.iter().find(|(path, _)| matches!(path.as_slice(), [word] if word.text == "unit"));
+            let base = match unit.map(|(_, value)| &value.kind) {
+                Some(syntax::ExpressionKind::Unit(unit)) => {
+                    let Some(unit) = self.resolve_unit(unit) else { return ERROR };
+                    self.measured_type(plain, unit)
+                }
+                _ => plain,
+            };
+            let limits: Vec<(Vec<syntax::Word>, syntax::Expression)> = written
+                .settings
+                .iter()
+                .filter(|(path, _)| !matches!(path.as_slice(), [word] if word.text == "unit"))
+                .cloned()
+                .collect();
+            if limits.is_empty() {
+                return base;
+            }
+            return self.ranged_type(written, &limits, base, name == "Float");
         }
         let mut settings: HashMap<String, i64> = HashMap::new();
         for (path, value) in &written.settings {
@@ -2630,6 +2661,14 @@ impl<'a> Checker<'a> {
                     ERROR
                 }
             },
+            // trace: D111
+            HostType::Measured { base, unit } => {
+                let base = self.host_type(base);
+                match self.host_unit(unit) {
+                    Some(unit) => self.measured_type(base, unit),
+                    None => ERROR,
+                }
+            }
         }
     }
 }
@@ -2708,7 +2747,10 @@ fn expression_can_fail(expression: &syntax::Expression) -> bool {
     let entries_can_fail = |entries: &[syntax::Entry]| entries.iter().any(|entry| expression_can_fail(&entry.value));
     match &expression.kind {
         Kind::Try(_) => true,
-        Kind::Whole(_)
+        Kind::MeasureIn { value, .. } => expression_can_fail(value),
+        Kind::Measured { .. }
+        | Kind::Unit(_)
+        | Kind::Whole(_)
         | Kind::Float { .. }
         | Kind::Bool(_)
         | Kind::Text(_)
@@ -2766,7 +2808,7 @@ pub(crate) mod tests {
 
     pub(crate) fn check_source(source: &str) -> Result<Program, Vec<Message>> {
         let script = crate::syntax::parser::parse(source).map_err(|message| vec![message])?;
-        check(&script, &test_doors(), &[])
+        check(&script, &test_doors(), &[], &[])
     }
 
     fn whats(source: &str) -> Vec<String> {

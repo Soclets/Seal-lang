@@ -24,6 +24,16 @@ pub enum HostType {
     Record { name: String, fields: Vec<(String, HostType)> },
     /// A `one_of`, a Rust enum (D35): its cases, each with its values.
     OneOf { name: String, cases: Vec<HostCase> },
+    /// A `Whole` or a `Float` with a unit, written as a script writes it, as `secs` or `px per secs` (D111).
+    Measured { base: Box<HostType>, unit: String },
+}
+
+/// A unit group the host declares for its scripts, as a script's `group.unit` does (D111, D123): its name, and each
+/// unit's name with its size, `base` or so many of an earlier unit, as `100 cents` or `~0.3048 m`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostUnitGroup {
+    pub name: String,
+    pub members: Vec<(String, String)>,
 }
 
 /// One case of a `one_of` as the host declares it: its name and the values it carries.

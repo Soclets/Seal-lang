@@ -190,7 +190,7 @@ fn d108_d109_d114_maths() {
     let script = "x = 3\nsquare = x ** 2\narea = 2 * x ** 2\nroot = 2.0 ** 0.5\nangle = atan2(y: 1.0, x: 1.0)\nwave = sin(1.0)\nfar = abs(-7)\nlow = min(3.5, 2.5)\nhigh = max(2, 9)\nheld = clamp(150, low: 0, high: 100)\npart = lerp(0.0, to: 10.0, by: 0.25)\nshow_msg(\"{square} {area} {root} {pi} {angle} {wave} {far} {low} {high} {held} {part}\")\n";
     assert_eq!(
         shows(script),
-        ["9 18 ~1.4142135623730951 ~3.141592653589793 ~0.7853981633974483 ~0.8414709848078965 7 2.5 9 100 2.5"]
+        ["9 18 ~1.4142135623730951 ~3.141592653589793 ~0.7853981633974483 rads ~0.8414709848078965 7 2.5 9 100 2.5"]
     );
     assert!(refusal("big = 2 ** 70\nshow_msg(\"{big}\")\n").contains("too big for a `Whole`"));
     assert!(refusal("half = 2 ** -1\nshow_msg(\"{half}\")\n").contains("negative power"));
@@ -198,4 +198,75 @@ fn d108_d109_d114_maths() {
     assert!(refusal("pi = 3.0\nshow_msg(\"{pi}\")\n").contains("one of Seal's own words"));
     assert!(refusal("mixed = min(1, 2.0)\nshow_msg(\"{mixed}\")\n").contains("one type"));
     assert!(refusal("x = newln\nshow_msg(x)\n").contains("{newln}"));
+}
+
+#[test]
+fn d112_d120_d122_units_convert_where_exact_and_measure_with_in() {
+    let script = "total = 2 secs + 500 ms\nseconds = total in secs\nwait_for: Float[unit: secs] = total\nspeed = 120.0 px per secs\nstep = speed * 0.5 secs\nshow_msg(\"{total} {seconds} {total in ms} {wait_for} {step}\")\n";
+    assert_eq!(shows(script), ["2500 ms 2.5 2500 2.5 secs 60.0 px"]);
+    assert!(refusal("x = 2 secs + 3 px\nshow_msg(\"{x}\")\n").contains("units of different groups"));
+    assert!(refusal("x = 2 secs\ny = x in px\nshow_msg(\"{y}\")\n").contains("isn't measured in `px`"));
+    assert!(refusal("x: Whole[unit: secs] = 1500 ms\nshow_msg(\"{x}\")\n").contains("isn't always a whole number"));
+    assert!(refusal("x: Float[unit: secs] = 2.0\nshow_msg(\"{x}\")\n").contains("2.0 secs"));
+}
+
+#[test]
+fn d113_angles_take_units_and_a_radian_is_180_over_pi_degrees() {
+    let script = "up = sin(90 degs)\nside = cos(0.5 turns)\naim = atan2(y: 3.0 px, x: 3.0 px)\nhalf = 0.5 turns\nshow_msg(\"{up} {side} {aim} {aim in degs} {half in rads}\")\n";
+    assert_eq!(shows(script), ["1.0 -1.0 ~0.7853981633974483 rads 45.0 ~3.141592653589793"]);
+    assert!(refusal("x = 2 degs + 1 rads\nshow_msg(\"{x}\")\n").contains("isn't always a whole number"));
+    assert!(refusal("x = sin(2 secs)\nshow_msg(\"{x}\")\n").contains("angle"));
+}
+
+#[test]
+fn d121_points_and_spans() {
+    let script = "mut x: Float[unit: px.point] = 100.0 px.point\nx = x + 5.0 px\ngap = x - 40.0 px.point\nshow_msg(\"{x} {gap}\")\n";
+    assert_eq!(shows(script), ["105.0 px.point 65.0 px"]);
+    assert!(refusal("a = 1.0 px.point\nb = a + a\nshow_msg(\"{b}\")\n").contains("point"));
+}
+
+#[test]
+fn d123_a_script_declares_its_own_units() {
+    let script = "group.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\nprice = 3 dollars + 50 cents\nshow_msg(\"{price} {price in dollars}\")\n";
+    assert_eq!(shows(script), ["350 cents 3.5"]);
+    let inexact = "group.unit length\n    ::m base\n    ::ft = ~0.3048 m\nend\nlong: Whole[unit: m] = 10 ft\nshow_msg(\"{long}\")\n";
+    assert!(refusal(inexact).contains("isn't always a whole number"));
+    let two_bases = "group.unit money\n    ::cents base\n    ::dollars base\nend\nx = 1 cents\nshow_msg(\"{x}\")\n";
+    assert!(refusal(two_bases).contains("exactly one"));
+}
+
+// trace: D111, D123
+#[test]
+fn d111_a_host_gives_its_doors_and_groups_units() {
+    let run = |source: &str| -> Result<Vec<String>, String> {
+        let shown = Arc::new(Mutex::new(Vec::new()));
+        let mut doors = Doors::new();
+        let into = Arc::clone(&shown);
+        let push = move |text: String| into.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(text);
+        let text = |message: seal::Message| message.text();
+        doors.add("show_msg", push.clone()).map_err(text)?;
+        doors.add_unit_group("money", &[("cents", "base"), ("dollars", "100 cents")]).map_err(text)?;
+        doors
+            .add("wait", move |seconds: f64| push(format!("waited {seconds}")))
+            .and_then(|door| door.units([Some("secs")]))
+            .map_err(text)?;
+        doors.add("now", || 1.5).and_then(|door| door.result_unit("secs")).map_err(text)?;
+        doors.add("pay", |cents: i64| cents).and_then(|door| door.units([Some("cents")])).map_err(text)?;
+        match Script::load("test.seal", source, &doors, LIMITS) {
+            Ok(_) => Ok(shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()),
+            Err(Error::Refused(messages)) => Err(messages.text()),
+            Err(other) => Err(other.to_string()),
+        }
+    };
+    assert_eq!(
+        run("wait(500 ms)\nstarted = now()\nshow_msg(\"{started}\")\npaid = pay(2 dollars)\nshow_msg(\"{paid}\")\n"),
+        Ok(vec!["waited 0.5".to_owned(), "1.5 secs".to_owned(), "200".to_owned()])
+    );
+    let plain = run("wait(2)\n").err().unwrap_or_default();
+    assert!(plain.contains("wait(2.0 secs)"), "{plain}");
+    assert!(run("wait(2.0 px)\n").err().unwrap_or_default().contains("px"));
+    let mut doors = Doors::new();
+    assert!(doors.add_unit_group("time", &[("ticks", "base")]).is_err());
+    assert!(doors.add_unit_group("money", &[("cents", "base"), ("dollars", "100 euros")]).is_err());
+    assert!(doors.add("say", |_text: String| ()).and_then(|door| door.units([Some("secs")])).is_err());
 }

@@ -251,6 +251,13 @@ pub enum Conversion {
     /// A list moved into a name whose `len.max` it might not fit, which fails with `full` (D73).
     ListToLimit(i64),
     FloatToWhole(Rounding),
+    /// A value moved into another unit of its group: multiplied by `size`, exactly for a `Whole` and rounded once
+    /// for a `Float` (D120, D122).
+    Scale {
+        size: super::types::Size,
+        from_whole: bool,
+        to_float: bool,
+    },
 }
 
 /// The maths built-ins beyond `sqrt` (D107, D109, D114). `abs`, `min`, `max` and `clamp` work on a `Whole` or a
@@ -338,6 +345,8 @@ pub enum ExpressionKind {
     Maths {
         function: MathsFunction,
         arguments: Vec<Expression>,
+        /// For `sin`, `cos` and `tan`: 0 for radians, 1 for `degs`, 2 for `turns` (D113).
+        unit: u8,
     },
     Negate(Box<Expression>),
     Not(Box<Expression>),
@@ -398,10 +407,12 @@ pub enum ExpressionKind {
         maybe: Box<Expression>,
         fallback: Box<Expression>,
     },
-    /// `call otherwise` and its cases (Unio D40).
+    /// `call otherwise` and its cases (Unio D40), and the failures whose case came from a handler, which may be
+    /// ones the call can't give (D131).
     Otherwise {
         call: Box<Expression>,
         cases: Vec<(FailureId, Block)>,
+        shared: Vec<FailureId>,
     },
     /// `list.add(value)`, with a position when one is given. Fails with `full` when the list has `len.max`
     /// (Unio D80, D168).

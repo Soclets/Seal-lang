@@ -278,8 +278,12 @@ impl<'p> Compiler<'p> {
         self.allocate_many(1)
     }
 
+    /// A type's own kind; a number with a unit is its plain number when the script runs (D111).
     fn kind(&self, type_id: TypeId) -> &Type {
-        self.program.types.get(type_id)
+        match self.program.types.get(type_id) {
+            Type::Measured { base, .. } => self.program.types.get(*base),
+            other => other,
+        }
     }
 
     fn is_reference(&self, type_id: TypeId) -> bool {
@@ -399,7 +403,9 @@ impl<'p> Compiler<'p> {
                 }
                 Crossing::OneOf { name: declared.map(|one_of| one_of.name).unwrap_or_default(), cases }
             }
-            Type::Nothing | Type::Error | Type::Variable(_) | Type::Ranged { .. } => Crossing::Nothing,
+            Type::Nothing | Type::Error | Type::Variable(_) | Type::Ranged { .. } | Type::Measured { .. } => {
+                Crossing::Nothing
+            }
         }
     }
 
@@ -1706,12 +1712,15 @@ impl<'p> Compiler<'p> {
             .map(|piece| match *piece {
                 Piece::Constant(text) => JoinPiece::Constant(text),
                 Piece::Places(register, places) => JoinPiece::Places(register, places),
+                // A number with a unit shows with its unit (D100, D112).
+                Piece::Register(register, piece_type) if self.program.types.measured(piece_type).is_some() => {
+                    JoinPiece::Value(register, self.program.types.resolve(piece_type).0)
+                }
                 Piece::Register(register, piece_type) => match self.kind(piece_type) {
                     Type::Whole => JoinPiece::Whole(register),
                     Type::Bool => JoinPiece::Bool(register),
                     Type::Float => JoinPiece::Float(register),
                     Type::Text => JoinPiece::Text(register),
-                    // trace: D100. Any other value shows as it's written in Seal.
                     _ => JoinPiece::Value(register, self.program.types.resolve(piece_type).0),
                 },
             })
@@ -2206,6 +2215,24 @@ impl<'p> Compiler<'p> {
                         self.emit(Instruction::WholeToFloat { to, from });
                         false
                     }
+                    // trace: D120, D122. Into another unit: an exact whole multiple stays a `Whole` multiplication,
+                    // checked for overflow; anything else is scaled once, rounded once.
+                    Conversion::Scale { size, from_whole, to_float } => {
+                        if *from_whole && !*to_float && size.is_whole() && i64::try_from(size.numerator).is_ok() {
+                            let factor = self.allocate();
+                            self.load_whole(factor, i64::try_from(size.numerator).unwrap_or(1));
+                            self.place = expression.place;
+                            self.emit(Instruction::MultiplyWhole { to, left: from, right: factor });
+                        } else {
+                            let site = u16::try_from(self.out.scales.len()).unwrap_or(u16::MAX);
+                            if site == u16::MAX {
+                                self.too_big("unit conversions");
+                            }
+                            self.out.scales.push((*size, *from_whole));
+                            self.emit(Instruction::Scale { to, from, site });
+                        }
+                        false
+                    }
                     Conversion::TextToBool => {
                         let failure = (1u16..)
                             .zip(&self.program.failure_names)
@@ -2435,7 +2462,7 @@ impl<'p> Compiler<'p> {
                 }
                 self.merge_after_handling(fine, to, held, reference)
             }
-            ExpressionKind::Otherwise { call, cases } => {
+            ExpressionKind::Otherwise { call, cases, .. } => {
                 let held = self.value_into(call, to);
                 self.place = expression.place;
                 let fine = self.emit(Instruction::JumpUnlessFailed { offset: 0 });
@@ -2471,7 +2498,7 @@ impl<'p> Compiler<'p> {
                 self.emit(Instruction::MakeRange { to, base, inclusive: *inclusive });
                 true
             }
-            ExpressionKind::Maths { function, arguments } => {
+            ExpressionKind::Maths { function, arguments, unit } => {
                 use crate::check::tree::MathsFunction as Function;
                 let float = matches!(self.kind(expression.type_id), Type::Float);
                 let number = match function {
@@ -2479,9 +2506,10 @@ impl<'p> Compiler<'p> {
                     Function::Min => 2 + u8::from(float),
                     Function::Max => 4 + u8::from(float),
                     Function::Clamp => 6 + u8::from(float),
-                    Function::Sin => 8,
-                    Function::Cos => 9,
-                    Function::Tan => 10,
+                    // `degs` and `turns` have functions of their own, which work on the exact fraction of a turn (D113).
+                    Function::Sin => [8, 15, 18][usize::from(*unit).min(2)],
+                    Function::Cos => [9, 16, 19][usize::from(*unit).min(2)],
+                    Function::Tan => [10, 17, 20][usize::from(*unit).min(2)],
                     Function::Asin => 11,
                     Function::Acos => 12,
                     Function::Atan2 => 13,
@@ -3018,7 +3046,7 @@ fn expression_uses(expression: &Expression, variable: VariableId) -> bool {
         ExpressionKind::Handle { call, fallback } => {
             uses(call) || matches!(fallback, HandleFallback::Value(value) if uses(value))
         }
-        ExpressionKind::Otherwise { call, cases } => {
+        ExpressionKind::Otherwise { call, cases, .. } => {
             uses(call) || cases.iter().any(|(_, body)| block_uses(body, variable))
         }
         ExpressionKind::ListAdd { variable: changed, value, position } => {

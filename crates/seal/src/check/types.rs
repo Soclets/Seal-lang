@@ -49,12 +49,162 @@ pub enum Type {
     OneOf(u32),
     /// `Maybe<T>` (D38).
     Maybe(TypeId),
+    /// A `Whole` or a `Float` with a unit, as `Float[unit: px per secs]` (D111, D112, D120, D121). Its value is a bare
+    /// number in that unit.
+    Measured {
+        base: TypeId,
+        unit: Unit,
+    },
     /// A `Whole` or a `Float` with limits, as `Whole[min: 0]` (D107). It's its plain type plus a check wherever a
     /// value lands (D128), so resolving it gives the plain type, and only [`TypeTable::limits`] sees the limits.
     Ranged {
         base: TypeId,
         limits: Limits,
     },
+}
+
+/// One unit: a member of a unit group, by their numbers in [`TypeTable::unit_groups`] (D111, D113, D123).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct UnitRef {
+    pub group: u16,
+    pub member: u16,
+}
+
+/// A number's unit: a unit, or a rate of two written with `per`, and whether it's a point, counted from a fixed
+/// place, rather than an amount (D112, D120, D121).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Unit {
+    pub top: UnitRef,
+    pub per: Option<UnitRef>,
+    pub point: bool,
+}
+
+/// A unit group: what its units measure (D113, D123).
+#[derive(Clone, Debug)]
+pub struct UnitGroupType {
+    pub name: String,
+    pub members: Vec<UnitMemberType>,
+}
+
+/// A unit in its group, with its size in the group's base unit, when it has a fixed one (D113, D120, D123).
+/// `frames` and `tiles` have none: they convert only through a rate.
+#[derive(Clone, Debug)]
+pub struct UnitMemberType {
+    pub name: String,
+    pub size: Option<Size>,
+}
+
+/// A unit's size, or the factor between two units: `numerator / denominator × π^pi`, exactly. It's `inexact` when
+/// it comes from a size written with `~` (D123) or has π in it, and then a value converted by it is a `Float`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Size {
+    pub numerator: u128,
+    pub denominator: u128,
+    pub pi: i8,
+    pub inexact: bool,
+}
+
+impl Size {
+    pub const ONE: Size = Size { numerator: 1, denominator: 1, pi: 0, inexact: false };
+
+    #[must_use]
+    pub fn whole(numerator: u128) -> Size {
+        Size { numerator, ..Size::ONE }
+    }
+
+    /// This size times another, when it fits.
+    #[must_use]
+    pub fn times(self, other: Size) -> Option<Size> {
+        Some(Size::reduced(
+            self.numerator.checked_mul(other.numerator)?,
+            self.denominator.checked_mul(other.denominator)?,
+            self.pi.checked_add(other.pi)?,
+            self.inexact || other.inexact,
+        ))
+    }
+
+    /// This size divided by another, when it fits: the number of `other` in one `self`.
+    #[must_use]
+    pub fn over(self, other: Size) -> Option<Size> {
+        Some(Size::reduced(
+            self.numerator.checked_mul(other.denominator)?,
+            self.denominator.checked_mul(other.numerator)?,
+            self.pi.checked_sub(other.pi)?,
+            self.inexact || other.inexact,
+        ))
+    }
+
+    fn reduced(numerator: u128, denominator: u128, pi: i8, inexact: bool) -> Size {
+        let (mut a, mut b) = (numerator, denominator);
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        let divisor = a.max(1);
+        Size { numerator: numerator / divisor, denominator: denominator / divisor, pi, inexact: inexact || pi != 0 }
+    }
+
+    /// An amount as written in a unit's size: a whole number or one with a point, `_` between digits, and `~`
+    /// before it for an inexact one (D123).
+    #[must_use]
+    pub fn written(amount: &str) -> Option<Size> {
+        let (inexact, amount) = match amount.strip_prefix('~') {
+            Some(rest) => (true, rest),
+            None => (false, amount),
+        };
+        let amount = amount.replace('_', "");
+        let (whole, fraction) = amount.split_once('.').unwrap_or((&amount, ""));
+        if whole.is_empty() || !whole.bytes().chain(fraction.bytes()).all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let numerator = format!("{whole}{fraction}").parse::<u128>().ok()?;
+        if numerator == 0 {
+            return None;
+        }
+        let denominator = 10u128.checked_pow(u32::try_from(fraction.len()).ok()?)?;
+        Some(Size::reduced(numerator, denominator, 0, inexact))
+    }
+
+    /// Whether this is a whole number exactly, so a `Whole` stays a `Whole` when converted by it.
+    #[must_use]
+    pub fn is_whole(self) -> bool {
+        self.denominator == 1 && self.pi == 0 && !self.inexact
+    }
+
+    /// Roughly how big it is, only for choosing the finer of two units.
+    #[must_use]
+    pub fn rough(self) -> f64 {
+        #[allow(clippy::cast_precision_loss, reason = "only compared, never shown or kept")]
+        let fraction = self.numerator as f64 / self.denominator as f64;
+        fraction * std::f64::consts::PI.powi(i32::from(self.pi))
+    }
+}
+
+/// Seal's own unit groups (D113): `time`, `angle` and `distance`, each unit's size in the group's first. A radian
+/// is 180/π degrees.
+#[must_use]
+pub fn seal_unit_groups() -> Vec<UnitGroupType> {
+    let member = |name: &str, size: Option<u128>| UnitMemberType { name: name.to_owned(), size: size.map(Size::whole) };
+    let radian = Size { numerator: 180, denominator: 1, pi: -1, inexact: true };
+    vec![
+        UnitGroupType {
+            name: "time".to_owned(),
+            members: vec![
+                member("ms", Some(1)),
+                member("secs", Some(1000)),
+                member("mins", Some(60_000)),
+                member("frames", None),
+            ],
+        },
+        UnitGroupType {
+            name: "angle".to_owned(),
+            members: vec![
+                member("degs", Some(1)),
+                member("turns", Some(360)),
+                UnitMemberType { name: "rads".to_owned(), size: Some(radian) },
+            ],
+        },
+        UnitGroupType { name: "distance".to_owned(), members: vec![member("px", Some(1)), member("tiles", None)] },
+    ]
 }
 
 /// A ranged number's limits (D107): each edge, when it has one, as its value's bits, and whether it pulls a value
@@ -103,6 +253,8 @@ pub struct TypeTable {
     bindings: Vec<Option<TypeId>>,
     pub records: Vec<RecordType>,
     pub one_ofs: Vec<OneOfType>,
+    /// Seal's unit groups, then the script's own (D113, D123).
+    pub unit_groups: Vec<UnitGroupType>,
 }
 
 impl TypeTable {
@@ -112,6 +264,7 @@ impl TypeTable {
         for basic in [Type::Error, Type::Nothing, Type::Whole, Type::Float, Type::Bool, Type::Text] {
             table.intern(basic);
         }
+        table.unit_groups = seal_unit_groups();
         table
     }
 
@@ -242,6 +395,53 @@ impl TypeTable {
         }
     }
 
+    /// A unit's name as it's written, with its group when another group has a unit of the same name (D112).
+    #[must_use]
+    pub fn unit_name(&self, unit: UnitRef) -> String {
+        let name = self
+            .unit_groups
+            .get(usize::from(unit.group))
+            .and_then(|group| group.members.get(usize::from(unit.member)))
+            .map_or("?", |member| member.name.as_str());
+        let clashes = self
+            .unit_groups
+            .iter()
+            .enumerate()
+            .filter(|(index, group)| {
+                *index != usize::from(unit.group) && group.members.iter().any(|member| member.name == name)
+            })
+            .count();
+        if clashes > 0 {
+            let group = self.unit_groups.get(usize::from(unit.group)).map_or("?", |group| group.name.as_str());
+            format!("{group}::{name}")
+        } else {
+            name.to_owned()
+        }
+    }
+
+    /// A unit as it's written: `secs`, `px.point`, `px per secs` (D112, D120, D121).
+    #[must_use]
+    pub fn unit_text(&self, unit: Unit) -> String {
+        let mut text = self.unit_name(unit.top);
+        if unit.point {
+            text.push_str(".point");
+        }
+        if let Some(per) = unit.per {
+            text.push_str(" per ");
+            text.push_str(&self.unit_name(per));
+        }
+        text
+    }
+
+    /// A number type's unit, when it has one, and its plain number type.
+    #[must_use]
+    pub fn measured(&self, id: TypeId) -> Option<(TypeId, Unit)> {
+        match self.get(id) {
+            Type::Measured { base, unit } => Some((*base, *unit)),
+            _ => None,
+        }
+    }
+
     /// A ranged number's limits, when the type as written has them (D107, D128).
     #[must_use]
     pub fn limits(&self, id: TypeId) -> Option<Limits> {
@@ -306,6 +506,7 @@ impl TypeTable {
             }
             Type::Maybe(inner) => format!("Maybe<{}>", self.written(*inner)),
             Type::Ranged { base, .. } => self.written(*base),
+            Type::Measured { base, unit } => format!("{}[unit: {}]", self.written(*base), self.unit_text(*unit)),
         }
     }
 

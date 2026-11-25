@@ -522,6 +522,13 @@ pub enum Instruction {
         register: Register,
         site: u16,
     },
+    /// A number moved into another unit as a `Float`: times the fraction `scales` lists at `site`, worked out
+    /// exactly and rounded once (D120).
+    Scale {
+        to: Register,
+        from: Register,
+        site: u16,
+    },
     /// `?? crash` on a `Maybe`: a failed check when the case number in `number` is `none`'s, 0 (D79).
     CrashIfNone {
         number: Register,
@@ -962,6 +969,8 @@ pub struct Compiled {
     pub joins: Vec<Vec<JoinPiece>>,
     /// The type each `EqualValues` compares, by its site (D95).
     pub compared_types: Vec<u32>,
+    /// Each `Scale`'s fraction, and whether the number it scales is a `Whole` (D120).
+    pub scales: Vec<(crate::check::types::Size, bool)>,
     /// The limits each `CheckLimits` holds a value to, by its site (D107).
     pub limits: Vec<crate::check::types::Limits>,
     /// The jumps too long for their instruction, by the instruction's place in `code`.

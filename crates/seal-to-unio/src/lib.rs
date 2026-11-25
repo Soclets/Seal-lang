@@ -52,7 +52,7 @@ fn not_shared<T>(what: &str) -> Translated<T> {
 /// Gives back why not, when the script is refused or uses something Unio doesn't have.
 pub fn translate(source: &str, doors: &[DoorSignature]) -> Translated<String> {
     let tree = seal::syntax::parser::parse(source).map_err(|message| Untranslatable::Refused(vec![message]))?;
-    let program = seal::check::check(&tree, doors, &[]).map_err(Untranslatable::Refused)?;
+    let program = seal::check::check(&tree, doors, &[], &[]).map_err(Untranslatable::Refused)?;
     let mut translator = Translator { program: &program, doors, out: String::new(), depth: 0 };
     if program.variables.iter().any(|variable| variable.captured) {
         return not_shared("a top-level name used by a procedure");
@@ -97,6 +97,7 @@ impl Translator<'_> {
             Type::OneOf(_) => return not_shared("a `one_of`"),
             Type::Maybe(_) => return not_shared("a `Maybe`"),
             Type::Ranged { .. } => return not_shared("a ranged number"),
+            Type::Measured { .. } => return not_shared("a number with a unit"),
             Type::Nothing | Type::Error | Type::Variable(_) => return not_shared("a value with no type to write"),
         })
     }
@@ -284,6 +285,7 @@ impl Translator<'_> {
                     Conversion::WholeToFloat => "be.Float",
                     Conversion::TextToWhole => "be.Whole",
                     Conversion::TextToBool => return not_shared("`be.Bool`"),
+                    Conversion::Scale { .. } => return not_shared("a unit's conversion"),
                     Conversion::FloatToWhole(Rounding::Floor) => "be.Whole.floor",
                     Conversion::FloatToWhole(Rounding::Trunc) => "be.Whole.trunc",
                     Conversion::FloatToWhole(Rounding::Ceil) => "be.Whole.ceil",

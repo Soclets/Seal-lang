@@ -373,6 +373,27 @@ fn rare_instruction(
             let value = land(get(registers, register)?, limits, pc)?;
             set(registers, register, value)?;
         }
+        Instruction::Scale { to, from, site } => {
+            let Some(&(size, from_whole)) = compiled.scales.get(usize::from(site)) else {
+                return Err(broken("a unit conversion that isn't there", pc));
+            };
+            let bits = get(registers, from)?;
+            let value = if from_whole {
+                maths::scale_whole(bits.cast_signed(), size.numerator, size.denominator, size.pi)
+            } else {
+                maths::scale_float(f64::from_bits(bits), size.numerator, size.denominator, size.pi)
+            };
+            // trace: D18
+            if !value.is_finite() {
+                return Err(check_failed(
+                    "the result isn't a real number a `Float` can hold",
+                    "a unit conversion".to_owned(),
+                    FLOAT_RANGE,
+                    pc,
+                ));
+            }
+            set(registers, to, value.to_bits())?;
+        }
         Instruction::CrashIfNone { number } => {
             if get(registers, number)? == 0 {
                 // trace: D79
@@ -474,7 +495,7 @@ fn land(bits: u64, limits: &Limits, pc: usize) -> Result<u64, Stopped> {
 }
 
 /// How many arguments each of the maths built-ins takes, by its number in [`maths_function`].
-const MATHS_ARGUMENTS: [u8; 15] = [1, 1, 2, 2, 2, 2, 3, 3, 1, 1, 1, 1, 1, 2, 3];
+const MATHS_ARGUMENTS: [u8; 21] = [1, 1, 2, 2, 2, 2, 3, 3, 1, 1, 1, 1, 1, 2, 3, 1, 1, 1, 1, 1, 1];
 
 /// `left ** right` on two `Whole`s (D108). Kept out of [`run`]'s loop.
 #[inline(never)]
@@ -499,8 +520,9 @@ fn power_whole(left: i64, right: i64, pc: usize) -> Result<i64, Stopped> {
 }
 
 /// One of the maths built-ins on its arguments' bits, by its number: `abs`, `min`, `max` and `clamp` on `Whole`s
-/// (0, 2, 4, 6) and `Float`s (1, 3, 5, 7), then `sin`, `cos`, `tan`, `asin`, `acos`, `atan2` and `lerp` (8 to 14)
-/// (D107, D109, D114). Kept out of [`run`]'s loop.
+/// (0, 2, 4, 6) and `Float`s (1, 3, 5, 7), then `sin`, `cos`, `tan`, `asin`, `acos`, `atan2` and `lerp` (8 to 14),
+/// and `sin`, `cos` and `tan` in `degs` (15 to 17) and `turns` (18 to 20) (D107, D109, D113, D114). Kept out of
+/// [`run`]'s loop.
 #[inline(never)]
 fn maths_function(function: u8, arguments: &[u64], pc: usize) -> Result<u64, Stopped> {
     let whole = |index: usize| arguments.get(index).copied().unwrap_or(0).cast_signed();
@@ -565,6 +587,13 @@ fn maths_function(function: u8, arguments: &[u64], pc: usize) -> Result<u64, Sto
                     pc,
                 )
             })
+        }
+        15..=20 => {
+            let per_turn = if function < 18 { 360 } else { 1 };
+            let value = maths::angle_function((function - 15) % 3, float(0), per_turn);
+            let name = ["sin", "cos", "tan"][usize::from((function - 15) % 3)];
+            let unit = if per_turn == 360 { "degs" } else { "turns" };
+            not_real(format!("`{name}({} {unit})`", float_to_text(float(0))), value)
         }
         13 => match maths::atan2(float(0), float(1)) {
             Some(angle) => floats(angle),
@@ -1444,6 +1473,7 @@ pub fn run(
             | Instruction::Maths { .. }
             | Instruction::CheckLimits { .. }
             | Instruction::CrashIfNone { .. }
+            | Instruction::Scale { .. }
             | Instruction::TextToBool { .. }
             | Instruction::JoinPieces { .. }
             | Instruction::AppendPieces { .. } => {
