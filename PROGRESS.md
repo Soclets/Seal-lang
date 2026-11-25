@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D149 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D151 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -213,6 +213,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D148** Measuring is written `to`, as `total to secs`, in braces too; `to` isn't a keyword, since `to:` is also
   `range`'s label.
 - **D149** Maths measured with `to` without brackets is refused, with the bracketed line as the fix (draft wording).
+- **D150** Loading a script from a text of its own is judged against Luau alone; `bench/RESULTS.md` shows LuaJIT's
+  time beside it for reference.
+- **D151** The C API gives every message whole and in parts; `crates/seal-c/PROPOSAL.md` names the functions.
 - **D115** A `HugeWhole`'s limits may be past a `Whole`'s range: such an edge is kept once in the type table's big
   edges, so equal limits are one type, and it's checked, clamped to and shown as any edge is.
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
@@ -300,8 +303,8 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   levels, short lists of names before hash tables, and passes that skip what needs nothing. What's left is spread
   across reading (about 1.5 µs), checking (1.6 µs) and compiling (0.8 µs), with no single place over a few percent.
   LuaJIT reads and compiles in one pass with no types to check; matching it would take a front end rebuilt as one
-  pass. Asked of the design session (2026-11-25): judge this row against Luau, with LuaJIT for reference, and let
-  D141's bytecode files be the fast way to load many scripts.
+  pass. D150 judges this row against Luau alone, with LuaJIT's shown for reference; D141's bytecode files are the
+  fast way to load many scripts.
 - **`fib` and the run loop.** Calls were LuaJIT's interpreter's strong point. Three things got `fib` from 49.9 ms to
   about 30 ms, each general: a call's value lands where it's wanted with no move after it, a call with one argument
   written as a `Whole` plus a small number is one instruction, as is `ret a + b`; the loop hands its rarer

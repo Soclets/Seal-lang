@@ -13,7 +13,8 @@ Everything a Rust host gets (D48), through plain C functions any language can ca
 - **Calls** into a script's procedures, with labelled arguments, giving a value, a pause, a failure on purpose, or a
   stop.
 - **Pauses** resumed with a value, or cancelled (D49, D54).
-- **Messages** for every refusal, stop and failure, as text in Unio's layout (Unio D54).
+- **Messages** for every refusal, stop and failure, both as finished text in Unio's layout (Unio D54) and in parts a
+  host lays out its own way (D151).
 
 Nothing a script does can crash the host or reach past its doors (Building rule 1). A mistake by the host, as a
 handle used after it's freed, is refused with a message where it can be seen, and never trusted.
@@ -74,12 +75,38 @@ seal_status seal_script_resume(seal_script *script, seal_task task, const seal_v
                                seal_task *paused_again);
 seal_status seal_script_cancel(seal_script *script, seal_task task);
 
-const char *seal_script_message(const seal_script *script);   /* the last refusal, stop or failure, as text */
 size_t seal_script_memory_in_use(const seal_script *script);
 ```
 
-`seal_script_load` gives a script only with `SEAL_OK`; with `SEAL_REFUSED` its messages are read with
-`seal_load_message()`, since there's no script to hold them.
+`seal_script_load` gives a script only with `SEAL_OK`; with `SEAL_REFUSED` there's no script, so its messages are
+read as the next section says.
+
+### Messages, whole and in parts (D151)
+
+The messages of the last call on a thread that didn't give `SEAL_OK` or `SEAL_PAUSED`, kept until the next `seal_`
+call on that thread, as C's `errno` is. A refusal may hold several; a stop or a failure holds one.
+
+```c
+typedef enum {
+    SEAL_REFUSAL, SEAL_CHECK_FAILED, SEAL_LIMIT_REACHED, SEAL_NOT_DESIGNED_YET, SEAL_NOT_BUILT_YET,
+    SEAL_FAILURE, SEAL_MISTAKE
+} seal_message_kind;
+
+size_t seal_message_count(void);
+seal_message_kind seal_message_kind_of(size_t index);
+const char *seal_message_text(size_t index);   /* the whole message, laid out as Seal prints it */
+const char *seal_message_what(size_t index);   /* each part, or NULL where the message has none */
+const char *seal_message_why(size_t index);
+const char *seal_message_fix(size_t index);
+const char *seal_message_when(size_t index);
+const char *seal_message_file(size_t index);
+uint32_t seal_message_line(size_t index);      /* counted from 1; 0 where there's no place */
+uint32_t seal_message_column(size_t index);
+uint32_t seal_message_width(size_t index);
+```
+
+A failure on purpose gives its failure's name as `what`. Every text is UTF-8, ends with a zero, and stays readable
+until the next `seal_` call on the thread.
 
 ### Values
 
@@ -115,7 +142,6 @@ const seal_value *seal_value_item(const seal_value *value, size_t position);   /
 
 ## Questions it leaves for Tankun
 
-1. Whether the API's messages are only text, as proposed, or also places and parts (`what`, `why`, `fix`) a host can
-   lay out its own way. The proposal: text now, parts later if a host asks.
+1. (Answered by D151: every message whole and in parts, as above.)
 2. Whether a door's values arrive as `seal_value` handles, as proposed, or plain C types where they're plain
    numbers, which is quicker but makes two ways to write a door. The proposal: handles, one way.

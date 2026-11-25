@@ -663,12 +663,17 @@ impl Report {
             ] {
                 let name = format!("patrol.{part}");
                 let (seal, other) = (time(&name, "Seal"), time(&name, engine));
+                // trace: D150. Loading from a text of its own is judged against Luau alone; LuaJIT's is for reference.
+                let judged = if part == "load_own_text" && engine.starts_with("LuaJIT") {
+                    "for reference, no target (D150)".to_owned()
+                } else {
+                    verdict(seal, other, 1.0)
+                };
                 let _ = writeln!(
                     out,
-                    "| 1. Faster than {bar} | patrolling scripts, {what} | {} | {} | {} |",
+                    "| 1. Faster than {bar} | patrolling scripts, {what} | {} | {} | {judged} |",
                     shown(seal),
                     shown(other),
-                    verdict(seal, other, 1.0)
                 );
             }
         }
@@ -864,7 +869,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     let _ = writeln!(
         text,
-        "\nGoal 3, full V8 with its JITs, has no target, nor has LuaJIT with its JIT (D142): their rows are in every table for reference. Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost."
+        "\nGoal 3, full V8 with its JITs, has no target, nor has LuaJIT with its JIT (D142): their rows are in every table for reference. Loading a script from a text of its own is judged against Luau's interpreter alone, with LuaJIT's shown beside it (D150). Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost."
     );
     text.push_str(&report.out);
     if !report.problems.is_empty() {

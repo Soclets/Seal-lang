@@ -10,7 +10,7 @@ Written by `seal-bench report` (see `bench/run.sh`). The benchmarks are D57's, r
 - **Luau:** `0.736.0`, its interpreter, with native code generation off (the default of the `luau` command).
 - **LuaJIT:** `LuaJIT 2.1.1787165859 -- Copyright (C) 2005-2026 Mike Pall. https://luajit.org/`, with `-joff` (its interpreter alone, a bar for goal 1 by D142) and without (its JIT on, for reference). It runs the Luau programs as they are, which are plain Lua.
 - **Node:** `v24.16.0`, with `--jitless` (only Ignition, V8's bytecode interpreter) and without (V8's JITs on).
-- **How busy the machine was** (load averages over 1, 5 and 15 minutes): `{ 2.42 1.91 1.76 }` before, `{ 1.51 1.77 1.73 }` after. Other sessions were working on this machine during the run.
+- **How busy the machine was** (load averages over 1, 5 and 15 minutes): `{ 2.19 2.25 2.08 }` before, `{ 2.18 2.26 2.11 }` after. Other sessions were working on this machine during the run.
 - **Runs:** each row is one process; `run` is called once (the first run), twice more to warm up, then 10 times, timed. The warmed-up Node row warms up 30 times instead; the from-cold Node row not at all.
 - **Peak memory** is the whole process's, as the system reports it. **Load** is how long loading the script takes: inside the process for Seal (cold, then warm, when Seal reuses what it compiled for the same text), and as a whole process that starts, loads and stops for every engine.
 - **Kinds:** Purpose isolates one thing; Normal is written plainly; Ceil is tuned. `Ceil.source` runs the tuned program on the usual build. `Ceil.machine` builds Seal's VM for this exact CPU, `Ceil.program` builds it with a profile of the benchmarks' own run, and `Ceil.machine.program` does both; a script is never compiled for a CPU (D46), so those apply to the VM. Luau, LuaJIT and Node are the installed builds in every kind.
@@ -19,37 +19,37 @@ Written by `seal-bench report` (see `bench/run.sh`). The benchmarks are D57's, r
 
 | Goal | Benchmark | Seal | Against | Verdict |
 |---|---|---|---|---|
-| 1. Faster than Luau's interpreter | `fib(32)`, recursive | 32.33 ms | 71.29 ms | **met**: Seal takes 45% of its time |
-| 1. Faster than Luau's interpreter | n-body, 100,000 steps | 65.55 ms | 69.57 ms | **met**: Seal takes 94% of its time |
-| 1. Faster than Luau's interpreter | spectral-norm, size 200 | 18.62 ms | 28.19 ms | **met**: Seal takes 66% of its time |
-| 1. Faster than Luau's interpreter | fannkuch-redux, 9 | 103.07 ms | 210.88 ms | **met**: Seal takes 49% of its time |
-| 1. Faster than Luau's interpreter | word count, 500,000 words | 26.26 ms | 29.90 ms | **met**: Seal takes 88% of its time |
-| 1. Faster than Luau's interpreter | text building, 20,000 joins | 342.04 µs | 159.72 ms | **met**: Seal takes 0.2% of its time |
-| 1. Faster than Luau's interpreter | binary-trees, depth 14 | 97.90 ms | 130.97 ms | **met**: Seal takes 75% of its time |
-| 1. Faster than Luau's interpreter | patrolling scripts, the whole run: loading 1000 from one text, resuming each 100 times | 2.19 ms | 3.46 ms | **met**: Seal takes 63% of its time |
-| 1. Faster than Luau's interpreter | patrolling scripts, resuming each | 20 ns | 33 ns | **met**: Seal takes 62% of its time |
-| 1. Faster than Luau's interpreter | patrolling scripts, loading each from the same text | 149 ns | 180 ns | **met**: Seal takes 82% of its time |
-| 1. Faster than Luau's interpreter | patrolling scripts, loading each from a text of its own | 4.43 µs | 4.84 µs | **met**: Seal takes 92% of its time |
-| 1. Faster than LuaJIT's interpreter | `fib(32)`, recursive | 32.33 ms | 33.87 ms | **met**: Seal takes 95% of its time |
-| 1. Faster than LuaJIT's interpreter | n-body, 100,000 steps | 65.55 ms | 71.77 ms | **met**: Seal takes 91% of its time |
-| 1. Faster than LuaJIT's interpreter | spectral-norm, size 200 | 18.62 ms | 46.21 ms | **met**: Seal takes 40% of its time |
-| 1. Faster than LuaJIT's interpreter | fannkuch-redux, 9 | 103.07 ms | 146.51 ms | **met**: Seal takes 70% of its time |
-| 1. Faster than LuaJIT's interpreter | word count, 500,000 words | 26.26 ms | 30.82 ms | **met**: Seal takes 85% of its time |
-| 1. Faster than LuaJIT's interpreter | text building, 20,000 joins | 342.04 µs | 42.21 ms | **met**: Seal takes 0.8% of its time |
-| 1. Faster than LuaJIT's interpreter | binary-trees, depth 14 | 97.90 ms | 128.61 ms | **met**: Seal takes 76% of its time |
-| 1. Faster than LuaJIT's interpreter | patrolling scripts, the whole run: loading 1000 from one text, resuming each 100 times | 2.19 ms | 2.95 ms | **met**: Seal takes 74% of its time |
-| 1. Faster than LuaJIT's interpreter | patrolling scripts, resuming each | 20 ns | 28 ns | **met**: Seal takes 74% of its time |
-| 1. Faster than LuaJIT's interpreter | patrolling scripts, loading each from the same text | 149 ns | 182 ns | **met**: Seal takes 82% of its time |
-| 1. Faster than LuaJIT's interpreter | patrolling scripts, loading each from a text of its own | 4.43 µs | 1.79 µs | **not met**: Seal takes 247% of its time |
-| 2. Faster than V8 `--jitless` | `fib(32)`, recursive | 32.33 ms | 94.96 ms | **met**: Seal takes 34% of its time |
-| 2. Faster than V8 `--jitless` | n-body, 100,000 steps | 65.55 ms | 177.58 ms | **met**: Seal takes 37% of its time |
-| 2. Within twice V8 `--jitless` | word count, 500,000 words | 26.26 ms | 51.63 ms | **met**: Seal takes 51% of its time |
-| 2. Within twice V8 `--jitless` | text building, 20,000 joins | 342.04 µs | 497.56 µs | **met**: Seal takes 69% of its time |
-| 6. Pausing costs about as much as a call | patrolling scripts | resume 20 ns | host call 40 ns | **met** |
+| 1. Faster than Luau's interpreter | `fib(32)`, recursive | 33.71 ms | 71.03 ms | **met**: Seal takes 47% of its time |
+| 1. Faster than Luau's interpreter | n-body, 100,000 steps | 66.39 ms | 79.72 ms | **met**: Seal takes 83% of its time |
+| 1. Faster than Luau's interpreter | spectral-norm, size 200 | 18.77 ms | 28.77 ms | **met**: Seal takes 65% of its time |
+| 1. Faster than Luau's interpreter | fannkuch-redux, 9 | 103.15 ms | 210.63 ms | **met**: Seal takes 49% of its time |
+| 1. Faster than Luau's interpreter | word count, 500,000 words | 26.59 ms | 30.57 ms | **met**: Seal takes 87% of its time |
+| 1. Faster than Luau's interpreter | text building, 20,000 joins | 354.86 µs | 162.71 ms | **met**: Seal takes 0.2% of its time |
+| 1. Faster than Luau's interpreter | binary-trees, depth 14 | 101.22 ms | 140.93 ms | **met**: Seal takes 72% of its time |
+| 1. Faster than Luau's interpreter | patrolling scripts, the whole run: loading 1000 from one text, resuming each 100 times | 2.24 ms | 3.58 ms | **met**: Seal takes 63% of its time |
+| 1. Faster than Luau's interpreter | patrolling scripts, resuming each | 21 ns | 34 ns | **met**: Seal takes 61% of its time |
+| 1. Faster than Luau's interpreter | patrolling scripts, loading each from the same text | 155 ns | 184 ns | **met**: Seal takes 84% of its time |
+| 1. Faster than Luau's interpreter | patrolling scripts, loading each from a text of its own | 4.60 µs | 4.97 µs | **met**: Seal takes 93% of its time |
+| 1. Faster than LuaJIT's interpreter | `fib(32)`, recursive | 33.71 ms | 34.04 ms | **met**: Seal takes 99% of its time |
+| 1. Faster than LuaJIT's interpreter | n-body, 100,000 steps | 66.39 ms | 72.23 ms | **met**: Seal takes 92% of its time |
+| 1. Faster than LuaJIT's interpreter | spectral-norm, size 200 | 18.77 ms | 44.50 ms | **met**: Seal takes 42% of its time |
+| 1. Faster than LuaJIT's interpreter | fannkuch-redux, 9 | 103.15 ms | 147.08 ms | **met**: Seal takes 70% of its time |
+| 1. Faster than LuaJIT's interpreter | word count, 500,000 words | 26.59 ms | 31.69 ms | **met**: Seal takes 84% of its time |
+| 1. Faster than LuaJIT's interpreter | text building, 20,000 joins | 354.86 µs | 42.27 ms | **met**: Seal takes 0.8% of its time |
+| 1. Faster than LuaJIT's interpreter | binary-trees, depth 14 | 101.22 ms | 132.17 ms | **met**: Seal takes 77% of its time |
+| 1. Faster than LuaJIT's interpreter | patrolling scripts, the whole run: loading 1000 from one text, resuming each 100 times | 2.24 ms | 3.04 ms | **met**: Seal takes 74% of its time |
+| 1. Faster than LuaJIT's interpreter | patrolling scripts, resuming each | 21 ns | 28 ns | **met**: Seal takes 73% of its time |
+| 1. Faster than LuaJIT's interpreter | patrolling scripts, loading each from the same text | 155 ns | 186 ns | **met**: Seal takes 83% of its time |
+| 1. Faster than LuaJIT's interpreter | patrolling scripts, loading each from a text of its own | 4.60 µs | 1.85 µs | for reference, no target (D150) |
+| 2. Faster than V8 `--jitless` | `fib(32)`, recursive | 33.71 ms | 95.67 ms | **met**: Seal takes 35% of its time |
+| 2. Faster than V8 `--jitless` | n-body, 100,000 steps | 66.39 ms | 181.53 ms | **met**: Seal takes 37% of its time |
+| 2. Within twice V8 `--jitless` | word count, 500,000 words | 26.59 ms | 53.55 ms | **met**: Seal takes 50% of its time |
+| 2. Within twice V8 `--jitless` | text building, 20,000 joins | 354.86 µs | 521.79 µs | **met**: Seal takes 68% of its time |
+| 6. Pausing costs about as much as a call | patrolling scripts | resume 21 ns | host call 40 ns | **met** |
 | 5. Thousands of scripts, each costing kilobytes | patrolling scripts | 512 B each, counted | | **met** |
-| 4. A 10,000-line script loads in under 100 ms | a generated script of 9996 lines | 5.36 ms best of 10 | 100 ms | **met** |
+| 4. A 10,000-line script loads in under 100 ms | a generated script of 9996 lines | 5.58 ms best of 10 | 100 ms | **met** |
 
-Goal 3, full V8 with its JITs, has no target, nor has LuaJIT with its JIT (D142): their rows are in every table for reference. Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost.
+Goal 3, full V8 with its JITs, has no target, nor has LuaJIT with its JIT (D142): their rows are in every table for reference. Loading a script from a text of its own is judged against Luau's interpreter alone, with LuaJIT's shown beside it (D150). Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost.
 
 ## `fib(32)`, recursive
 
@@ -57,30 +57,30 @@ Tests: calls. Purpose isolates calls alone: a procedure calling itself 1,000 dee
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 83.40 ms | 389.56 µs | 83.08 ms | 102.29 ms | 2.8 MB | 386 B | 720.83 µs cold, 833 ns warm; 2.60 ms as a whole process | 32.0 KB counted by Seal; 176 B compiled |
-| Luau (interpreter) | Purpose | 195.39 ms | 270.51 µs | 195.10 ms | 194.99 ms | 4.8 MB | 339 B | 5.14 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 90.15 ms | 960.65 µs | 88.82 ms | 88.55 ms | 1.9 MB | 339 B | 2.37 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 44.10 ms | 154.47 µs | 43.86 ms | 45.93 ms | 2.2 MB | 339 B | 2.52 ms as a whole process |  |
-| Node `--jitless` | Purpose | 321.20 ms | 257.31 µs | 320.60 ms | 319.76 ms | 43.3 MB | 362 B | 18.88 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 124.30 ms | 491.10 µs | 123.57 ms | 124.65 ms | 49.1 MB | 362 B | 18.30 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 122.74 ms | 365.17 µs | 122.30 ms | 124.90 ms | 49.1 MB | 362 B | 18.62 ms as a whole process |  |
-| Seal | Normal | 32.33 ms | 685.81 µs | 31.36 ms | 30.68 ms | 2.7 MB | 160 B | 75.79 µs cold, 208 ns warm; 2.60 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled |
-| Luau (interpreter) | Normal | 71.29 ms | 148.49 µs | 71.02 ms | 71.04 ms | 4.8 MB | 143 B | 4.99 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 33.87 ms | 96.81 µs | 33.78 ms | 33.88 ms | 1.9 MB | 143 B | 2.32 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 6.97 ms | 11.93 µs | 6.96 ms | 7.08 ms | 2.1 MB | 143 B | 2.43 ms as a whole process |  |
-| Node `--jitless` | Normal | 94.96 ms | 274.40 µs | 94.63 ms | 95.40 ms | 43.4 MB | 137 B | 18.93 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 9.53 ms | 386.36 µs | 9.39 ms | 10.22 ms | 48.6 MB | 137 B | 18.92 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 9.82 ms | 455.19 µs | 9.51 ms | 9.87 ms | 48.6 MB | 137 B | 19.18 ms as a whole process |  |
-| Seal | Ceil.source | 33.19 ms | 567.29 µs | 32.57 ms | 33.26 ms | 2.7 MB | 160 B | 82.33 µs cold, 208 ns warm; 2.54 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 33.70 ms | 787.67 µs | 32.81 ms | 54.07 ms | 2.7 MB | 160 B | 890.33 µs cold, 458 ns warm; 2.72 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 34.54 ms | 1.10 ms | 32.73 ms | 52.93 ms | 2.5 MB | 160 B | 628.12 µs cold, 459 ns warm; 2.43 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 34.94 ms | 91.24 µs | 34.77 ms | 56.73 ms | 2.5 MB | 160 B | 678.12 µs cold, 417 ns warm; 2.62 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 71.21 ms | 209.05 µs | 70.89 ms | 72.33 ms | 4.8 MB | 143 B | 5.05 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 33.89 ms | 38.95 µs | 33.83 ms | 33.91 ms | 1.9 MB | 143 B | 2.36 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 7.41 ms | 30.01 µs | 7.35 ms | 7.53 ms | 2.1 MB | 143 B | 2.23 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 92.81 ms | 512.65 µs | 92.08 ms | 94.37 ms | 43.4 MB | 137 B | 18.61 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 10.01 ms | 785.84 µs | 9.49 ms | 10.53 ms | 48.5 MB | 137 B | 18.62 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 9.43 ms | 54.47 µs | 9.39 ms | 10.25 ms | 48.5 MB | 137 B | 19.18 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 85.45 ms | 927.44 µs | 84.46 ms | 100.64 ms | 2.8 MB | 386 B | 675.75 µs cold, 500 ns warm; 2.67 ms as a whole process | 32.0 KB counted by Seal; 176 B compiled |
+| Luau (interpreter) | Purpose | 196.73 ms | 723.68 µs | 195.94 ms | 198.09 ms | 4.8 MB | 339 B | 5.10 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 89.82 ms | 1.02 ms | 88.61 ms | 89.43 ms | 1.9 MB | 339 B | 2.57 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 44.68 ms | 161.44 µs | 44.46 ms | 45.88 ms | 2.2 MB | 339 B | 2.62 ms as a whole process |  |
+| Node `--jitless` | Purpose | 322.44 ms | 753.95 µs | 321.58 ms | 324.35 ms | 43.3 MB | 362 B | 18.81 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 122.97 ms | 930.13 µs | 122.08 ms | 125.05 ms | 49.2 MB | 362 B | 18.90 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 122.34 ms | 545.22 µs | 121.62 ms | 122.79 ms | 49.1 MB | 362 B | 19.07 ms as a whole process |  |
+| Seal | Normal | 33.71 ms | 655.33 µs | 32.35 ms | 33.86 ms | 2.7 MB | 160 B | 74.88 µs cold, 209 ns warm; 2.66 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled |
+| Luau (interpreter) | Normal | 71.03 ms | 281.11 µs | 70.61 ms | 72.21 ms | 4.8 MB | 143 B | 5.04 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 34.04 ms | 328.22 µs | 33.59 ms | 34.03 ms | 1.9 MB | 143 B | 2.56 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 7.09 ms | 21.58 µs | 7.05 ms | 7.40 ms | 2.2 MB | 143 B | 2.44 ms as a whole process |  |
+| Node `--jitless` | Normal | 95.67 ms | 372.18 µs | 95.19 ms | 95.49 ms | 43.4 MB | 137 B | 18.63 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 9.55 ms | 80.32 µs | 9.47 ms | 11.36 ms | 48.5 MB | 137 B | 19.15 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 9.89 ms | 210.20 µs | 9.63 ms | 11.70 ms | 48.6 MB | 137 B | 19.43 ms as a whole process |  |
+| Seal | Ceil.source | 33.79 ms | 556.49 µs | 32.52 ms | 33.24 ms | 2.7 MB | 160 B | 73.08 µs cold, 125 ns warm; 2.64 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 34.52 ms | 812.62 µs | 33.09 ms | 59.11 ms | 2.7 MB | 160 B | 1.10 ms cold, 583 ns warm; 2.67 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 33.86 ms | 669.70 µs | 32.69 ms | 57.38 ms | 2.4 MB | 160 B | 658.17 µs cold, 500 ns warm; 2.67 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 31.54 ms | 1.27 ms | 29.63 ms | 52.01 ms | 2.5 MB | 160 B | 779.50 µs cold, 417 ns warm; 2.73 ms as a whole process | 2.0 KB counted by Seal; 104 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 71.41 ms | 244.38 µs | 71.14 ms | 71.67 ms | 4.8 MB | 143 B | 5.19 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 33.90 ms | 112.18 µs | 33.71 ms | 33.93 ms | 1.9 MB | 143 B | 2.54 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 7.44 ms | 94.79 µs | 7.36 ms | 7.49 ms | 2.1 MB | 143 B | 2.53 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 95.42 ms | 565.34 µs | 94.29 ms | 96.71 ms | 43.4 MB | 137 B | 18.81 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 9.55 ms | 219.14 µs | 9.44 ms | 10.33 ms | 48.6 MB | 137 B | 19.23 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 9.88 ms | 705.46 µs | 9.51 ms | 10.68 ms | 48.6 MB | 137 B | 20.28 ms as a whole process | the Normal program stands in |
 
 ## n-body, 100,000 steps
 
@@ -88,30 +88,30 @@ Tests: float maths, records. Purpose isolates float maths on one record's fields
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 49.90 ms | 469.51 µs | 49.14 ms | 53.41 ms | 2.7 MB | 547 B | 106.42 µs cold, 291 ns warm; 2.63 ms as a whole process | 512 B counted by Seal; 232 B compiled |
-| Luau (interpreter) | Purpose | 91.98 ms | 402.80 µs | 91.55 ms | 91.13 ms | 4.8 MB | 433 B | 4.95 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 76.82 ms | 366.99 µs | 76.17 ms | 76.16 ms | 1.9 MB | 433 B | 2.44 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 6.54 ms | 85.05 µs | 6.41 ms | 6.78 ms | 2.1 MB | 433 B | 2.40 ms as a whole process |  |
-| Node `--jitless` | Purpose | 243.06 ms | 668.29 µs | 242.20 ms | 245.39 ms | 46.4 MB | 460 B | 18.11 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 18.69 ms | 233.63 µs | 18.24 ms | 18.86 ms | 50.3 MB | 460 B | 18.34 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 18.58 ms | 230.45 µs | 18.17 ms | 18.69 ms | 50.3 MB | 460 B | 18.35 ms as a whole process |  |
-| Seal | Normal | 65.55 ms | 681.63 µs | 64.36 ms | 65.40 ms | 3.2 MB | 3.5 KB | 268.04 µs cold, 250 ns warm; 2.75 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
-| Luau (interpreter) | Normal | 69.57 ms | 173.40 µs | 69.32 ms | 70.03 ms | 4.8 MB | 3.0 KB | 5.16 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 71.77 ms | 268.09 µs | 71.32 ms | 71.83 ms | 1.9 MB | 3.0 KB | 2.44 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 5.26 ms | 19.03 µs | 5.24 ms | 5.47 ms | 2.2 MB | 3.0 KB | 2.43 ms as a whole process |  |
-| Node `--jitless` | Normal | 177.58 ms | 3.84 ms | 173.39 ms | 181.78 ms | 48.1 MB | 3.1 KB | 19.01 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 3.89 ms | 15.58 µs | 3.86 ms | 5.66 ms | 51.9 MB | 3.1 KB | 18.26 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 3.88 ms | 26.36 µs | 3.84 ms | 5.68 ms | 51.8 MB | 3.1 KB | 18.46 ms as a whole process |  |
-| Seal | Ceil.source | 54.31 ms | 548.11 µs | 53.56 ms | 55.02 ms | 3.2 MB | 3.4 KB | 254.67 µs cold, 334 ns warm; 2.72 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
-| Seal | Ceil.machine | 55.72 ms | 634.78 µs | 54.79 ms | 55.23 ms | 3.2 MB | 3.4 KB | 260.38 µs cold, 333 ns warm; 2.93 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
-| Seal | Ceil.program | 49.54 ms | 455.79 µs | 48.81 ms | 49.97 ms | 3.0 MB | 3.4 KB | 266.92 µs cold, 291 ns warm; 2.91 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
-| Seal | Ceil.machine.program | 49.27 ms | 519.90 µs | 48.47 ms | 49.87 ms | 3.0 MB | 3.4 KB | 262.04 µs cold, 291 ns warm; 2.76 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
-| Luau (interpreter) | Ceil.source | 69.62 ms | 120.20 µs | 69.39 ms | 69.95 ms | 4.8 MB | 3.0 KB | 5.15 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 71.91 ms | 251.93 µs | 71.59 ms | 71.21 ms | 1.9 MB | 3.0 KB | 2.59 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 5.20 ms | 28.39 µs | 5.17 ms | 5.40 ms | 2.2 MB | 3.0 KB | 2.44 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 178.10 ms | 3.72 ms | 174.00 ms | 180.41 ms | 48.2 MB | 3.1 KB | 19.12 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 3.87 ms | 19.70 µs | 3.84 ms | 5.71 ms | 51.9 MB | 3.1 KB | 19.33 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 3.87 ms | 24.38 µs | 3.84 ms | 5.68 ms | 52.0 MB | 3.1 KB | 19.24 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 57.16 ms | 666.81 µs | 56.40 ms | 57.34 ms | 2.7 MB | 547 B | 108.46 µs cold, 209 ns warm; 2.76 ms as a whole process | 512 B counted by Seal; 232 B compiled |
+| Luau (interpreter) | Purpose | 92.01 ms | 272.94 µs | 91.54 ms | 91.75 ms | 4.8 MB | 433 B | 5.33 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 77.17 ms | 331.89 µs | 76.79 ms | 76.23 ms | 1.8 MB | 433 B | 2.44 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 6.74 ms | 64.27 µs | 6.62 ms | 6.77 ms | 2.1 MB | 433 B | 2.46 ms as a whole process |  |
+| Node `--jitless` | Purpose | 246.71 ms | 1.24 ms | 245.13 ms | 245.17 ms | 46.4 MB | 460 B | 19.92 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 18.95 ms | 226.28 µs | 18.59 ms | 19.00 ms | 50.3 MB | 460 B | 20.37 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 18.93 ms | 254.64 µs | 18.67 ms | 19.03 ms | 50.2 MB | 460 B | 19.96 ms as a whole process |  |
+| Seal | Normal | 66.39 ms | 1.05 ms | 65.04 ms | 70.15 ms | 3.3 MB | 3.5 KB | 292.25 µs cold, 250 ns warm; 3.02 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
+| Luau (interpreter) | Normal | 79.72 ms | 24.53 ms | 70.56 ms | 70.72 ms | 4.8 MB | 3.0 KB | 5.27 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 72.23 ms | 327.31 µs | 71.70 ms | 72.24 ms | 1.9 MB | 3.0 KB | 2.57 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 5.32 ms | 24.14 µs | 5.28 ms | 5.56 ms | 2.2 MB | 3.0 KB | 2.72 ms as a whole process |  |
+| Node `--jitless` | Normal | 181.53 ms | 2.03 ms | 176.96 ms | 186.28 ms | 48.2 MB | 3.1 KB | 20.62 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 3.93 ms | 27.68 µs | 3.89 ms | 5.80 ms | 51.8 MB | 3.1 KB | 19.17 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 3.97 ms | 24.11 µs | 3.94 ms | 5.88 ms | 51.9 MB | 3.1 KB | 21.32 ms as a whole process |  |
+| Seal | Ceil.source | 57.01 ms | 1.11 ms | 55.17 ms | 60.48 ms | 3.2 MB | 3.4 KB | 273.67 µs cold, 417 ns warm; 2.91 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
+| Seal | Ceil.machine | 55.77 ms | 791.53 µs | 54.71 ms | 57.55 ms | 3.1 MB | 3.4 KB | 263.96 µs cold, 292 ns warm; 2.88 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
+| Seal | Ceil.program | 50.05 ms | 406.42 µs | 49.63 ms | 50.65 ms | 2.9 MB | 3.4 KB | 293.92 µs cold, 208 ns warm; 2.97 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
+| Seal | Ceil.machine.program | 50.15 ms | 366.50 µs | 49.52 ms | 50.89 ms | 3.0 MB | 3.4 KB | 276.62 µs cold, 208 ns warm; 2.97 ms as a whole process | 2.0 KB counted by Seal; 1.8 KB compiled |
+| Luau (interpreter) | Ceil.source | 70.48 ms | 451.27 µs | 69.71 ms | 70.49 ms | 4.8 MB | 3.0 KB | 5.44 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 72.24 ms | 636.48 µs | 71.71 ms | 71.96 ms | 1.9 MB | 3.0 KB | 2.71 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 5.22 ms | 25.56 µs | 5.17 ms | 5.46 ms | 2.2 MB | 3.0 KB | 2.55 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 176.63 ms | 3.64 ms | 171.99 ms | 179.18 ms | 48.1 MB | 3.1 KB | 19.80 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 3.95 ms | 40.61 µs | 3.87 ms | 5.99 ms | 52.1 MB | 3.1 KB | 20.47 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 3.92 ms | 25.19 µs | 3.89 ms | 5.87 ms | 51.9 MB | 3.1 KB | 19.73 ms as a whole process | the Normal program stands in |
 
 ## spectral-norm, size 200
 
@@ -119,30 +119,30 @@ Tests: loops, arrays, floats. Purpose isolates a loop over a list of 1,000 float
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 57.17 ms | 946.38 µs | 55.48 ms | 58.47 ms | 2.9 MB | 426 B | 85.96 µs cold, 208 ns warm; 2.62 ms as a whole process | 8.5 KB counted by Seal; 224 B compiled |
-| Luau (interpreter) | Purpose | 45.53 ms | 251.36 µs | 45.21 ms | 45.07 ms | 4.8 MB | 366 B | 4.85 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 77.10 ms | 115.93 µs | 76.95 ms | 76.98 ms | 1.9 MB | 366 B | 2.50 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 22.64 ms | 280.22 µs | 22.19 ms | 22.38 ms | 2.1 MB | 366 B | 2.54 ms as a whole process |  |
-| Node `--jitless` | Purpose | 363.50 ms | 3.41 ms | 360.37 ms | 368.70 ms | 48.6 MB | 398 B | 18.82 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 34.02 ms | 36.93 ms | 15.57 ms | 19.42 ms | 52.8 MB | 398 B | 18.58 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 14.48 ms | 264.13 µs | 14.30 ms | 20.23 ms | 55.4 MB | 398 B | 19.10 ms as a whole process |  |
-| Seal | Normal | 18.62 ms | 220.08 µs | 18.37 ms | 19.21 ms | 3.0 MB | 1.2 KB | 150.75 µs cold, 208 ns warm; 2.52 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled |
-| Luau (interpreter) | Normal | 28.19 ms | 815.24 µs | 27.27 ms | 28.55 ms | 4.8 MB | 981 B | 4.99 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 46.21 ms | 1.02 ms | 45.11 ms | 46.11 ms | 2.0 MB | 981 B | 2.50 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 1.54 ms | 32.49 µs | 1.51 ms | 1.80 ms | 2.2 MB | 981 B | 2.37 ms as a whole process |  |
-| Node `--jitless` | Normal | 65.25 ms | 225.56 µs | 65.00 ms | 64.96 ms | 48.4 MB | 1.0 KB | 18.79 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 1.61 ms | 190.62 µs | 1.49 ms | 3.32 ms | 52.7 MB | 1.0 KB | 18.94 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 1.62 ms | 20.53 µs | 1.58 ms | 3.66 ms | 52.8 MB | 1.0 KB | 19.15 ms as a whole process |  |
-| Seal | Ceil.source | 18.60 ms | 290.45 µs | 18.20 ms | 19.04 ms | 3.0 MB | 1.2 KB | 146.25 µs cold, 291 ns warm; 2.68 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 18.78 ms | 107.13 µs | 18.59 ms | 18.85 ms | 3.1 MB | 1.2 KB | 147.54 µs cold, 250 ns warm; 2.69 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 18.59 ms | 32.09 µs | 18.50 ms | 18.54 ms | 2.8 MB | 1.2 KB | 119.67 µs cold, 250 ns warm; 2.64 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 18.92 ms | 48.00 µs | 18.85 ms | 18.87 ms | 2.8 MB | 1.2 KB | 121.00 µs cold, 208 ns warm; 2.71 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 27.29 ms | 481.82 µs | 26.72 ms | 27.01 ms | 4.9 MB | 981 B | 5.11 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 44.37 ms | 338.70 µs | 43.70 ms | 43.93 ms | 2.0 MB | 981 B | 2.44 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 1.55 ms | 52.82 µs | 1.50 ms | 1.77 ms | 2.2 MB | 981 B | 2.42 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 64.01 ms | 346.19 µs | 63.62 ms | 63.88 ms | 48.6 MB | 1.0 KB | 17.92 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 1.63 ms | 240.56 µs | 1.48 ms | 3.17 ms | 52.8 MB | 1.0 KB | 18.95 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 1.66 ms | 40.05 µs | 1.61 ms | 3.20 ms | 53.1 MB | 1.0 KB | 18.00 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 54.68 ms | 898.86 µs | 53.29 ms | 55.72 ms | 2.9 MB | 426 B | 107.25 µs cold, 250 ns warm; 2.63 ms as a whole process | 8.5 KB counted by Seal; 224 B compiled |
+| Luau (interpreter) | Purpose | 45.79 ms | 414.66 µs | 45.35 ms | 45.82 ms | 4.8 MB | 366 B | 5.22 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 77.83 ms | 455.40 µs | 77.42 ms | 77.88 ms | 1.9 MB | 366 B | 2.56 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 22.85 ms | 308.23 µs | 22.53 ms | 23.03 ms | 2.1 MB | 366 B | 2.47 ms as a whole process |  |
+| Node `--jitless` | Purpose | 374.40 ms | 6.82 ms | 365.09 ms | 380.91 ms | 48.5 MB | 398 B | 19.86 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 34.22 ms | 37.48 ms | 15.63 ms | 19.33 ms | 52.8 MB | 398 B | 19.06 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 14.43 ms | 52.32 µs | 14.38 ms | 23.66 ms | 55.3 MB | 398 B | 18.99 ms as a whole process |  |
+| Seal | Normal | 18.77 ms | 121.53 µs | 18.59 ms | 19.13 ms | 3.0 MB | 1.2 KB | 138.67 µs cold, 167 ns warm; 2.76 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled |
+| Luau (interpreter) | Normal | 28.77 ms | 498.16 µs | 27.86 ms | 29.14 ms | 4.8 MB | 981 B | 5.24 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 44.50 ms | 224.51 µs | 44.15 ms | 44.41 ms | 2.0 MB | 981 B | 2.42 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 1.53 ms | 20.19 µs | 1.51 ms | 1.72 ms | 2.2 MB | 981 B | 2.37 ms as a whole process |  |
+| Node `--jitless` | Normal | 63.87 ms | 247.07 µs | 63.58 ms | 64.15 ms | 48.6 MB | 1.0 KB | 18.76 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 1.61 ms | 169.26 µs | 1.48 ms | 3.11 ms | 52.7 MB | 1.0 KB | 18.88 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 1.61 ms | 13.57 µs | 1.59 ms | 3.18 ms | 52.8 MB | 1.0 KB | 19.30 ms as a whole process |  |
+| Seal | Ceil.source | 19.03 ms | 535.46 µs | 18.12 ms | 17.98 ms | 3.0 MB | 1.2 KB | 142.88 µs cold, 250 ns warm; 2.88 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 18.90 ms | 151.95 µs | 18.63 ms | 19.05 ms | 3.0 MB | 1.2 KB | 161.42 µs cold, 291 ns warm; 2.90 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 18.68 ms | 92.73 µs | 18.57 ms | 18.68 ms | 2.8 MB | 1.2 KB | 119.17 µs cold, 166 ns warm; 2.79 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 18.93 ms | 57.30 µs | 18.86 ms | 18.95 ms | 2.9 MB | 1.2 KB | 134.75 µs cold, 209 ns warm; 2.79 ms as a whole process | 9.2 KB counted by Seal; 992 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 27.68 ms | 334.32 µs | 27.37 ms | 27.51 ms | 4.8 MB | 981 B | 5.23 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 43.51 ms | 488.27 µs | 42.93 ms | 43.57 ms | 2.0 MB | 981 B | 2.57 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 1.55 ms | 26.90 µs | 1.51 ms | 1.69 ms | 2.2 MB | 981 B | 2.48 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 64.24 ms | 349.90 µs | 63.74 ms | 64.56 ms | 48.3 MB | 1.0 KB | 19.76 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 1.65 ms | 224.99 µs | 1.48 ms | 3.35 ms | 52.8 MB | 1.0 KB | 18.98 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 1.66 ms | 43.69 µs | 1.60 ms | 4.16 ms | 52.9 MB | 1.0 KB | 18.91 ms as a whole process | the Normal program stands in |
 
 ## fannkuch-redux, 9
 
@@ -150,30 +150,30 @@ Tests: array shuffling, `Whole` maths. Purpose isolates reversing a list of 16 w
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 84.19 ms | 188.15 µs | 83.96 ms | 84.44 ms | 2.8 MB | 629 B | 94.50 µs cold, 250 ns warm; 2.56 ms as a whole process | 688 B counted by Seal; 288 B compiled |
-| Luau (interpreter) | Purpose | 89.08 ms | 1.38 ms | 86.76 ms | 89.33 ms | 4.8 MB | 523 B | 5.10 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 53.01 ms | 1.12 ms | 52.29 ms | 52.61 ms | 1.9 MB | 523 B | 2.41 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 6.25 ms | 27.68 µs | 6.19 ms | 7.03 ms | 2.1 MB | 523 B | 2.36 ms as a whole process |  |
-| Node `--jitless` | Purpose | 144.60 ms | 933.43 µs | 143.42 ms | 147.86 ms | 43.4 MB | 568 B | 18.63 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 3.68 ms | 45.43 µs | 3.62 ms | 4.46 ms | 49.2 MB | 568 B | 19.24 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 3.67 ms | 11.60 µs | 3.66 ms | 4.45 ms | 49.3 MB | 568 B | 18.83 ms as a whole process |  |
-| Seal | Normal | 103.07 ms | 204.67 µs | 102.79 ms | 103.73 ms | 3.0 MB | 1.8 KB | 150.12 µs cold, 292 ns warm; 2.69 ms as a whole process | 984 B counted by Seal; 688 B compiled |
-| Luau (interpreter) | Normal | 210.88 ms | 1.85 ms | 205.64 ms | 212.04 ms | 4.8 MB | 1.7 KB | 5.03 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 146.51 ms | 853.22 µs | 145.86 ms | 144.25 ms | 1.9 MB | 1.7 KB | 2.53 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 48.73 ms | 345.96 µs | 48.15 ms | 49.19 ms | 2.3 MB | 1.7 KB | 2.58 ms as a whole process |  |
-| Node `--jitless` | Normal | 157.12 ms | 595.78 µs | 156.17 ms | 160.44 ms | 45.4 MB | 1.7 KB | 18.34 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 14.48 ms | 77.27 µs | 14.33 ms | 16.02 ms | 52.0 MB | 1.7 KB | 18.93 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 14.45 ms | 75.16 µs | 14.36 ms | 16.06 ms | 52.2 MB | 1.7 KB | 18.62 ms as a whole process |  |
-| Seal | Ceil.source | 103.69 ms | 487.48 µs | 103.06 ms | 104.76 ms | 3.0 MB | 1.8 KB | 135.58 µs cold, 250 ns warm; 2.66 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 105.05 ms | 317.92 µs | 104.65 ms | 104.85 ms | 3.0 MB | 1.8 KB | 135.00 µs cold, 208 ns warm; 2.64 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 99.25 ms | 158.34 µs | 98.92 ms | 99.47 ms | 2.8 MB | 1.8 KB | 123.75 µs cold, 209 ns warm; 2.65 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 103.32 ms | 446.56 µs | 102.84 ms | 103.39 ms | 2.8 MB | 1.8 KB | 117.79 µs cold, 209 ns warm; 2.59 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 210.34 ms | 1.40 ms | 206.46 ms | 211.39 ms | 4.8 MB | 1.7 KB | 5.07 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 148.53 ms | 540.28 µs | 147.66 ms | 146.27 ms | 1.9 MB | 1.7 KB | 2.25 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 48.14 ms | 355.00 µs | 47.60 ms | 48.31 ms | 2.3 MB | 1.7 KB | 2.41 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 154.11 ms | 342.39 µs | 153.56 ms | 155.50 ms | 45.3 MB | 1.7 KB | 18.96 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 14.17 ms | 110.80 µs | 13.95 ms | 15.73 ms | 52.1 MB | 1.7 KB | 18.82 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 14.95 ms | 78.78 µs | 14.84 ms | 16.27 ms | 52.1 MB | 1.7 KB | 18.24 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 85.09 ms | 265.17 µs | 84.64 ms | 86.52 ms | 2.8 MB | 629 B | 100.38 µs cold, 250 ns warm; 2.78 ms as a whole process | 688 B counted by Seal; 288 B compiled |
+| Luau (interpreter) | Purpose | 90.30 ms | 1.37 ms | 88.25 ms | 88.05 ms | 4.8 MB | 523 B | 5.12 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 52.93 ms | 472.18 µs | 52.25 ms | 52.69 ms | 1.9 MB | 523 B | 2.48 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 6.18 ms | 18.48 µs | 6.15 ms | 6.24 ms | 2.1 MB | 523 B | 2.40 ms as a whole process |  |
+| Node `--jitless` | Purpose | 147.24 ms | 949.99 µs | 145.90 ms | 145.70 ms | 43.4 MB | 568 B | 18.84 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 3.66 ms | 32.68 µs | 3.63 ms | 4.48 ms | 49.4 MB | 568 B | 18.86 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 3.65 ms | 28.41 µs | 3.62 ms | 4.44 ms | 49.4 MB | 568 B | 19.22 ms as a whole process |  |
+| Seal | Normal | 103.15 ms | 260.95 µs | 102.73 ms | 103.40 ms | 3.0 MB | 1.8 KB | 149.00 µs cold, 291 ns warm; 2.82 ms as a whole process | 984 B counted by Seal; 688 B compiled |
+| Luau (interpreter) | Normal | 210.63 ms | 1.69 ms | 206.03 ms | 211.54 ms | 4.8 MB | 1.7 KB | 5.09 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 147.08 ms | 216.44 µs | 146.68 ms | 145.52 ms | 1.9 MB | 1.7 KB | 2.37 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 49.27 ms | 518.86 µs | 48.02 ms | 47.98 ms | 2.3 MB | 1.7 KB | 2.49 ms as a whole process |  |
+| Node `--jitless` | Normal | 156.62 ms | 782.98 µs | 155.92 ms | 156.37 ms | 45.4 MB | 1.7 KB | 18.76 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 14.09 ms | 155.79 µs | 13.83 ms | 15.69 ms | 52.1 MB | 1.7 KB | 19.31 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 14.87 ms | 56.05 µs | 14.78 ms | 16.36 ms | 52.1 MB | 1.7 KB | 18.61 ms as a whole process |  |
+| Seal | Ceil.source | 103.04 ms | 1.68 ms | 101.93 ms | 104.05 ms | 3.0 MB | 1.8 KB | 145.12 µs cold, 208 ns warm; 2.84 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 106.61 ms | 702.02 µs | 105.36 ms | 105.62 ms | 3.0 MB | 1.8 KB | 140.58 µs cold, 292 ns warm; 2.80 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 99.37 ms | 213.50 µs | 98.99 ms | 99.15 ms | 2.7 MB | 1.8 KB | 119.92 µs cold, 250 ns warm; 2.65 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 103.99 ms | 3.10 ms | 102.83 ms | 102.89 ms | 2.8 MB | 1.8 KB | 123.75 µs cold, 250 ns warm; 2.91 ms as a whole process | 984 B counted by Seal; 688 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 213.50 ms | 2.04 ms | 208.49 ms | 214.97 ms | 4.8 MB | 1.7 KB | 5.42 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 147.49 ms | 336.30 µs | 147.02 ms | 145.89 ms | 1.9 MB | 1.7 KB | 2.67 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 48.76 ms | 217.91 µs | 48.30 ms | 49.14 ms | 2.3 MB | 1.7 KB | 2.53 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 157.27 ms | 1.47 ms | 155.31 ms | 158.60 ms | 45.4 MB | 1.7 KB | 19.62 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 15.07 ms | 409.89 µs | 14.36 ms | 15.67 ms | 51.9 MB | 1.7 KB | 19.17 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 14.25 ms | 61.20 µs | 14.15 ms | 15.71 ms | 52.2 MB | 1.7 KB | 18.77 ms as a whole process | the Normal program stands in |
 
 ## word count, 500,000 words
 
@@ -181,30 +181,30 @@ Tests: `Dict` and `Text`. Purpose isolates looking up and counting 1,000 text ke
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 126.92 ms | 795.84 µs | 126.00 ms | 127.00 ms | 4.0 MB | 566 B | 105.17 µs cold, 375 ns warm; 2.53 ms as a whole process | 793.6 KB counted by Seal; 336 B compiled |
-| Luau (interpreter) | Purpose | 62.70 ms | 412.30 µs | 62.03 ms | 62.97 ms | 4.8 MB | 540 B | 5.03 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 34.17 ms | 2.73 ms | 28.50 ms | 31.96 ms | 2.1 MB | 540 B | 2.47 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 5.11 ms | 19.04 µs | 5.08 ms | 5.21 ms | 2.3 MB | 540 B | 2.32 ms as a whole process |  |
-| Node `--jitless` | Purpose | 240.63 ms | 1.75 ms | 238.78 ms | 245.50 ms | 48.7 MB | 514 B | 18.37 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 88.53 ms | 24.58 ms | 65.38 ms | 92.63 ms | 52.5 MB | 514 B | 18.36 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 65.66 ms | 385.25 µs | 65.22 ms | 89.85 ms | 52.7 MB | 514 B | 18.25 ms as a whole process |  |
-| Seal | Normal | 26.26 ms | 114.81 µs | 26.09 ms | 26.34 ms | 3.9 MB | 535 B | 110.79 µs cold, 334 ns warm; 2.66 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled |
-| Luau (interpreter) | Normal | 29.90 ms | 128.87 µs | 29.69 ms | 30.09 ms | 5.9 MB | 478 B | 5.04 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 30.82 ms | 159.40 µs | 30.43 ms | 29.15 ms | 3.0 MB | 478 B | 2.53 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 12.53 ms | 541.30 µs | 11.71 ms | 12.09 ms | 3.3 MB | 478 B | 2.54 ms as a whole process |  |
-| Node `--jitless` | Normal | 51.63 ms | 175.75 µs | 51.35 ms | 52.79 ms | 56.5 MB | 477 B | 18.41 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 34.79 ms | 172.07 µs | 34.61 ms | 35.36 ms | 62.3 MB | 477 B | 18.08 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 35.31 ms | 220.86 µs | 34.92 ms | 35.70 ms | 88.0 MB | 477 B | 18.41 ms as a whole process |  |
-| Seal | Ceil.source | 26.27 ms | 118.87 µs | 26.09 ms | 26.51 ms | 4.0 MB | 535 B | 99.25 µs cold, 250 ns warm; 2.74 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 27.39 ms | 125.13 µs | 27.17 ms | 27.36 ms | 4.0 MB | 535 B | 97.67 µs cold, 292 ns warm; 2.47 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 23.79 ms | 71.30 µs | 23.65 ms | 23.75 ms | 3.9 MB | 535 B | 89.33 µs cold, 291 ns warm; 2.50 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 23.43 ms | 128.18 µs | 23.19 ms | 23.50 ms | 3.9 MB | 535 B | 87.79 µs cold, 250 ns warm; 2.45 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 29.91 ms | 123.07 µs | 29.64 ms | 30.10 ms | 6.0 MB | 478 B | 4.93 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 32.36 ms | 503.15 µs | 31.68 ms | 32.97 ms | 3.0 MB | 478 B | 2.43 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 11.99 ms | 770.15 µs | 10.78 ms | 12.17 ms | 3.3 MB | 478 B | 2.39 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 51.03 ms | 157.13 µs | 50.76 ms | 52.63 ms | 56.5 MB | 477 B | 18.27 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 35.25 ms | 174.77 µs | 35.11 ms | 35.89 ms | 62.5 MB | 477 B | 18.45 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 35.45 ms | 215.18 µs | 35.14 ms | 35.36 ms | 88.2 MB | 477 B | 18.95 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 125.55 ms | 1.04 ms | 123.82 ms | 126.15 ms | 4.0 MB | 566 B | 100.46 µs cold, 333 ns warm; 2.77 ms as a whole process | 793.6 KB counted by Seal; 336 B compiled |
+| Luau (interpreter) | Purpose | 63.02 ms | 1.22 ms | 62.24 ms | 63.03 ms | 4.8 MB | 540 B | 5.19 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 34.42 ms | 1.95 ms | 31.86 ms | 32.13 ms | 2.1 MB | 540 B | 2.38 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 4.75 ms | 60.25 µs | 4.68 ms | 4.90 ms | 2.3 MB | 540 B | 2.49 ms as a whole process |  |
+| Node `--jitless` | Purpose | 243.26 ms | 1.36 ms | 241.74 ms | 244.37 ms | 48.6 MB | 514 B | 20.57 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 91.74 ms | 24.20 ms | 68.75 ms | 95.24 ms | 52.6 MB | 514 B | 18.99 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 65.04 ms | 780.06 µs | 63.47 ms | 88.57 ms | 52.7 MB | 514 B | 19.91 ms as a whole process |  |
+| Seal | Normal | 26.59 ms | 148.82 µs | 26.33 ms | 26.79 ms | 4.0 MB | 535 B | 106.38 µs cold, 292 ns warm; 2.68 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled |
+| Luau (interpreter) | Normal | 30.57 ms | 228.05 µs | 30.25 ms | 30.32 ms | 6.0 MB | 478 B | 5.13 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 31.69 ms | 451.81 µs | 30.95 ms | 29.75 ms | 3.0 MB | 478 B | 2.53 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 12.43 ms | 409.95 µs | 11.85 ms | 12.28 ms | 3.3 MB | 478 B | 3.43 ms as a whole process |  |
+| Node `--jitless` | Normal | 53.55 ms | 454.74 µs | 52.59 ms | 114.33 ms | 56.5 MB | 477 B | 19.63 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 35.50 ms | 421.48 µs | 35.06 ms | 36.40 ms | 62.5 MB | 477 B | 18.82 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 34.65 ms | 228.77 µs | 34.31 ms | 35.97 ms | 88.1 MB | 477 B | 18.90 ms as a whole process |  |
+| Seal | Ceil.source | 25.96 ms | 199.42 µs | 25.58 ms | 25.63 ms | 4.0 MB | 535 B | 102.42 µs cold, 334 ns warm; 2.56 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 27.01 ms | 75.64 µs | 26.88 ms | 27.08 ms | 4.0 MB | 535 B | 108.46 µs cold, 292 ns warm; 2.60 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 24.03 ms | 177.34 µs | 23.83 ms | 23.89 ms | 3.9 MB | 535 B | 101.04 µs cold, 250 ns warm; 2.74 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 23.66 ms | 72.65 µs | 23.53 ms | 23.72 ms | 4.0 MB | 535 B | 85.46 µs cold, 250 ns warm; 2.61 ms as a whole process | 625.5 KB counted by Seal; 296 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 30.27 ms | 244.98 µs | 29.85 ms | 29.95 ms | 6.0 MB | 478 B | 4.94 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 31.68 ms | 576.11 µs | 31.03 ms | 31.54 ms | 3.0 MB | 478 B | 2.51 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 12.09 ms | 364.23 µs | 11.66 ms | 12.40 ms | 3.3 MB | 478 B | 2.46 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 52.16 ms | 266.76 µs | 51.79 ms | 52.96 ms | 56.4 MB | 477 B | 18.86 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 35.42 ms | 445.32 µs | 34.86 ms | 35.81 ms | 62.3 MB | 477 B | 19.22 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 34.87 ms | 253.86 µs | 34.50 ms | 35.66 ms | 88.3 MB | 477 B | 18.37 ms as a whole process | the Normal program stands in |
 
 ## text building, 20,000 joins
 
@@ -212,30 +212,30 @@ Tests: joining text many times. Purpose isolates one text growing by two charact
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 308.50 µs | 3.37 µs | 305.79 µs | 322.25 µs | 3.1 MB | 230 B | 66.46 µs cold, 292 ns warm; 2.73 ms as a whole process | 64.6 KB counted by Seal; 96 B compiled |
-| Luau (interpreter) | Purpose | 144.14 ms | 491.99 µs | 143.43 ms | 145.45 ms | 10.4 MB | 195 B | 4.96 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 32.93 ms | 101.91 µs | 32.78 ms | 31.40 ms | 3.5 MB | 195 B | 2.44 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 20.94 ms | 129.64 µs | 20.78 ms | 20.84 ms | 3.7 MB | 195 B | 2.40 ms as a whole process |  |
-| Node `--jitless` | Purpose | 360.60 µs | 135.16 µs | 249.50 µs | 1.02 ms | 52.4 MB | 223 B | 18.46 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 220.00 µs | 155.13 µs | 89.00 µs | 892.67 µs | 57.8 MB | 223 B | 18.52 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 136.10 µs | 121.30 µs | 55.92 µs | 881.42 µs | 57.9 MB | 223 B | 17.89 ms as a whole process |  |
-| Seal | Normal | 342.04 µs | 3.23 µs | 338.12 µs | 366.79 µs | 3.2 MB | 179 B | 73.62 µs cold, 375 ns warm; 2.61 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled |
-| Luau (interpreter) | Normal | 159.72 ms | 994.38 µs | 158.81 ms | 163.27 ms | 11.8 MB | 138 B | 4.88 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 42.21 ms | 199.58 µs | 41.83 ms | 41.71 ms | 4.9 MB | 138 B | 2.40 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 19.61 ms | 218.35 µs | 19.14 ms | 19.48 ms | 5.2 MB | 138 B | 2.49 ms as a whole process |  |
-| Node `--jitless` | Normal | 497.56 µs | 335.57 µs | 261.17 µs | 1.11 ms | 61.4 MB | 155 B | 18.17 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 489.05 µs | 466.95 µs | 129.17 µs | 1.05 ms | 65.2 MB | 155 B | 18.41 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 277.61 µs | 326.32 µs | 124.58 µs | 1.05 ms | 69.2 MB | 155 B | 18.50 ms as a whole process |  |
-| Seal | Ceil.source | 343.60 µs | 5.69 µs | 338.33 µs | 350.46 µs | 3.2 MB | 179 B | 75.21 µs cold, 291 ns warm; 2.54 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 352.02 µs | 5.02 µs | 345.75 µs | 398.67 µs | 3.3 MB | 179 B | 75.62 µs cold, 416 ns warm; 2.53 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 286.96 µs | 5.22 µs | 282.00 µs | 322.12 µs | 3.0 MB | 179 B | 57.67 µs cold, 292 ns warm; 2.42 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 292.20 µs | 3.33 µs | 287.67 µs | 311.46 µs | 3.0 MB | 179 B | 59.29 µs cold, 333 ns warm; 2.54 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 159.46 ms | 1.47 ms | 158.17 ms | 163.06 ms | 11.3 MB | 138 B | 4.93 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 42.33 ms | 308.29 µs | 41.55 ms | 41.18 ms | 5.0 MB | 138 B | 2.55 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 19.46 ms | 180.77 µs | 19.24 ms | 19.96 ms | 5.0 MB | 138 B | 2.47 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 504.32 µs | 344.52 µs | 261.62 µs | 1.13 ms | 61.5 MB | 155 B | 18.42 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 496.82 µs | 488.82 µs | 121.38 µs | 1.08 ms | 65.2 MB | 155 B | 18.57 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 280.56 µs | 327.10 µs | 125.54 µs | 1.07 ms | 69.4 MB | 155 B | 18.29 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 319.01 µs | 10.82 µs | 312.38 µs | 338.96 µs | 3.0 MB | 230 B | 68.12 µs cold, 334 ns warm; 2.39 ms as a whole process | 64.6 KB counted by Seal; 96 B compiled |
+| Luau (interpreter) | Purpose | 144.26 ms | 382.44 µs | 143.68 ms | 146.20 ms | 10.5 MB | 195 B | 5.12 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 32.57 ms | 148.01 µs | 32.33 ms | 31.54 ms | 3.5 MB | 195 B | 2.43 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 20.76 ms | 155.21 µs | 20.62 ms | 20.87 ms | 3.7 MB | 195 B | 2.51 ms as a whole process |  |
+| Node `--jitless` | Purpose | 361.70 µs | 145.15 µs | 239.58 µs | 1.03 ms | 52.5 MB | 223 B | 18.69 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 221.35 µs | 158.92 µs | 82.79 µs | 922.12 µs | 57.7 MB | 223 B | 18.24 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 134.43 µs | 120.29 µs | 55.25 µs | 898.71 µs | 57.8 MB | 223 B | 19.13 ms as a whole process |  |
+| Seal | Normal | 354.86 µs | 5.71 µs | 350.58 µs | 396.38 µs | 3.2 MB | 179 B | 78.21 µs cold, 292 ns warm; 2.59 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled |
+| Luau (interpreter) | Normal | 162.71 ms | 786.77 µs | 161.85 ms | 163.99 ms | 11.7 MB | 138 B | 4.96 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 42.27 ms | 417.54 µs | 41.61 ms | 41.85 ms | 4.9 MB | 138 B | 2.43 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 19.86 ms | 205.60 µs | 19.55 ms | 20.51 ms | 5.3 MB | 138 B | 2.45 ms as a whole process |  |
+| Node `--jitless` | Normal | 521.79 µs | 332.09 µs | 277.38 µs | 1.16 ms | 61.4 MB | 155 B | 18.63 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 528.41 µs | 505.78 µs | 137.46 µs | 1.16 ms | 65.1 MB | 155 B | 20.84 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 293.45 µs | 336.60 µs | 132.58 µs | 1.16 ms | 69.4 MB | 155 B | 19.73 ms as a whole process |  |
+| Seal | Ceil.source | 356.50 µs | 8.62 µs | 349.33 µs | 373.29 µs | 3.2 MB | 179 B | 75.62 µs cold, 375 ns warm; 2.58 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 347.84 µs | 6.56 µs | 338.71 µs | 373.58 µs | 3.2 MB | 179 B | 77.17 µs cold, 292 ns warm; 2.69 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 293.87 µs | 4.59 µs | 287.12 µs | 322.12 µs | 3.0 MB | 179 B | 70.25 µs cold, 375 ns warm; 2.68 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 295.80 µs | 8.32 µs | 284.79 µs | 309.25 µs | 3.1 MB | 179 B | 57.08 µs cold, 208 ns warm; 2.50 ms as a whole process | 128.6 KB counted by Seal; 80 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 166.34 ms | 3.74 ms | 162.97 ms | 164.61 ms | 12.4 MB | 138 B | 5.42 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 41.53 ms | 168.91 µs | 41.26 ms | 42.87 ms | 4.9 MB | 138 B | 2.62 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 19.87 ms | 184.77 µs | 19.43 ms | 20.43 ms | 5.2 MB | 138 B | 2.59 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 512.73 µs | 341.55 µs | 271.92 µs | 1.14 ms | 61.3 MB | 155 B | 19.14 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 500.58 µs | 488.12 µs | 125.00 µs | 1.08 ms | 65.1 MB | 155 B | 19.37 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 272.82 µs | 316.59 µs | 122.92 µs | 1.11 ms | 69.4 MB | 155 B | 19.19 ms as a whole process | the Normal program stands in |
 
 ## binary-trees, depth 14
 
@@ -243,30 +243,30 @@ Tests: making and dropping heap values (joined by D72). Purpose isolates making 
 
 | Engine | Kind | Mean | Deviation | Least | First run | Peak memory | Program | Load | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 72.41 ms | 496.12 µs | 71.62 ms | 76.62 ms | 3.0 MB | 528 B | 95.92 µs cold, 209 ns warm; 2.63 ms as a whole process | 65.9 KB counted by Seal; 216 B compiled |
-| Luau (interpreter) | Purpose | 109.12 ms | 2.95 ms | 103.96 ms | 95.72 ms | 4.8 MB | 411 B | 4.94 ms as a whole process |  |
-| LuaJIT `-joff` | Purpose | 118.65 ms | 656.36 µs | 117.28 ms | 117.69 ms | 2.5 MB | 411 B | 2.45 ms as a whole process |  |
-| LuaJIT (JIT) | Purpose | 95.88 ms | 824.78 µs | 94.67 ms | 94.31 ms | 2.9 MB | 411 B | 2.51 ms as a whole process |  |
-| Node `--jitless` | Purpose | 76.46 ms | 190.32 µs | 76.18 ms | 80.25 ms | 59.6 MB | 444 B | 19.18 ms as a whole process |  |
-| Node (JIT), from cold | Purpose | 10.45 ms | 295.19 µs | 10.10 ms | 13.01 ms | 65.7 MB | 444 B | 18.43 ms as a whole process |  |
-| Node (JIT), warmed up | Purpose | 10.42 ms | 594.37 µs | 10.07 ms | 12.98 ms | 114.6 MB | 444 B | 18.78 ms as a whole process |  |
-| Seal | Normal | 97.90 ms | 488.69 µs | 97.17 ms | 98.39 ms | 7.8 MB | 977 B | 126.58 µs cold, 209 ns warm; 2.47 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled |
-| Luau (interpreter) | Normal | 130.97 ms | 1.39 ms | 128.79 ms | 130.53 ms | 42.0 MB | 799 B | 5.09 ms as a whole process |  |
-| LuaJIT `-joff` | Normal | 128.61 ms | 1.31 ms | 126.68 ms | 127.23 ms | 39.0 MB | 799 B | 2.49 ms as a whole process |  |
-| LuaJIT (JIT) | Normal | 81.27 ms | 1.27 ms | 79.36 ms | 80.93 ms | 44.1 MB | 799 B | 2.49 ms as a whole process |  |
-| Node `--jitless` | Normal | 115.01 ms | 1.56 ms | 114.03 ms | 120.03 ms | 213.2 MB | 878 B | 18.40 ms as a whole process |  |
-| Node (JIT), from cold | Normal | 14.15 ms | 936.37 µs | 13.29 ms | 17.15 ms | 129.5 MB | 878 B | 19.49 ms as a whole process |  |
-| Node (JIT), warmed up | Normal | 13.38 ms | 45.19 µs | 13.31 ms | 17.13 ms | 223.9 MB | 878 B | 19.02 ms as a whole process |  |
-| Seal | Ceil.source | 99.99 ms | 1.34 ms | 98.17 ms | 103.68 ms | 7.8 MB | 977 B | 125.83 µs cold, 334 ns warm; 2.62 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
-| Seal | Ceil.machine | 100.54 ms | 620.46 µs | 99.69 ms | 101.88 ms | 7.8 MB | 977 B | 118.62 µs cold, 250 ns warm; 2.49 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
-| Seal | Ceil.program | 83.90 ms | 445.27 µs | 83.25 ms | 84.52 ms | 7.7 MB | 977 B | 105.17 µs cold, 208 ns warm; 2.70 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
-| Seal | Ceil.machine.program | 90.45 ms | 339.14 µs | 89.94 ms | 91.00 ms | 7.6 MB | 977 B | 103.25 µs cold, 125 ns warm; 2.54 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 132.04 ms | 950.81 µs | 130.65 ms | 131.47 ms | 43.4 MB | 799 B | 5.05 ms as a whole process | the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 127.24 ms | 1.12 ms | 125.18 ms | 126.39 ms | 41.5 MB | 799 B | 2.45 ms as a whole process | the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 80.91 ms | 860.47 µs | 80.01 ms | 80.27 ms | 42.6 MB | 799 B | 2.43 ms as a whole process | the Normal program stands in |
-| Node `--jitless` | Ceil.source | 113.37 ms | 1.67 ms | 111.67 ms | 114.49 ms | 213.2 MB | 878 B | 18.85 ms as a whole process | the Normal program stands in |
-| Node (JIT), from cold | Ceil.source | 14.20 ms | 897.29 µs | 13.29 ms | 17.05 ms | 129.3 MB | 878 B | 18.63 ms as a whole process | the Normal program stands in |
-| Node (JIT), warmed up | Ceil.source | 13.45 ms | 74.66 µs | 13.34 ms | 17.04 ms | 224.0 MB | 878 B | 19.09 ms as a whole process | the Normal program stands in |
+| Seal | Purpose | 71.91 ms | 576.90 µs | 70.85 ms | 74.10 ms | 2.9 MB | 528 B | 88.25 µs cold, 333 ns warm; 2.57 ms as a whole process | 65.9 KB counted by Seal; 216 B compiled |
+| Luau (interpreter) | Purpose | 96.49 ms | 1.34 ms | 95.12 ms | 95.62 ms | 4.8 MB | 411 B | 5.12 ms as a whole process |  |
+| LuaJIT `-joff` | Purpose | 117.95 ms | 1.85 ms | 113.68 ms | 120.35 ms | 2.5 MB | 411 B | 2.50 ms as a whole process |  |
+| LuaJIT (JIT) | Purpose | 99.23 ms | 9.73 ms | 94.92 ms | 94.44 ms | 2.9 MB | 411 B | 2.44 ms as a whole process |  |
+| Node `--jitless` | Purpose | 79.42 ms | 1.97 ms | 77.18 ms | 79.74 ms | 59.5 MB | 444 B | 19.81 ms as a whole process |  |
+| Node (JIT), from cold | Purpose | 10.91 ms | 460.06 µs | 10.51 ms | 13.18 ms | 65.7 MB | 444 B | 20.80 ms as a whole process |  |
+| Node (JIT), warmed up | Purpose | 11.19 ms | 1.17 ms | 10.53 ms | 13.31 ms | 114.7 MB | 444 B | 21.57 ms as a whole process |  |
+| Seal | Normal | 101.22 ms | 1.71 ms | 99.59 ms | 103.59 ms | 7.8 MB | 977 B | 124.12 µs cold, 250 ns warm; 2.78 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled |
+| Luau (interpreter) | Normal | 140.93 ms | 2.37 ms | 135.71 ms | 134.93 ms | 38.7 MB | 799 B | 5.46 ms as a whole process |  |
+| LuaJIT `-joff` | Normal | 132.17 ms | 1.45 ms | 130.72 ms | 129.54 ms | 39.1 MB | 799 B | 2.59 ms as a whole process |  |
+| LuaJIT (JIT) | Normal | 83.91 ms | 914.57 µs | 82.52 ms | 84.92 ms | 39.8 MB | 799 B | 2.66 ms as a whole process |  |
+| Node `--jitless` | Normal | 116.39 ms | 3.01 ms | 111.86 ms | 119.65 ms | 213.2 MB | 878 B | 19.90 ms as a whole process |  |
+| Node (JIT), from cold | Normal | 14.37 ms | 998.29 µs | 13.32 ms | 17.02 ms | 129.7 MB | 878 B | 18.70 ms as a whole process |  |
+| Node (JIT), warmed up | Normal | 13.63 ms | 70.06 µs | 13.54 ms | 17.15 ms | 223.6 MB | 878 B | 19.09 ms as a whole process |  |
+| Seal | Ceil.source | 102.29 ms | 8.09 ms | 97.35 ms | 100.95 ms | 7.8 MB | 977 B | 119.75 µs cold, 208 ns warm; 3.50 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
+| Seal | Ceil.machine | 104.52 ms | 1.57 ms | 102.60 ms | 112.92 ms | 7.8 MB | 977 B | 134.54 µs cold, 250 ns warm; 2.59 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
+| Seal | Ceil.program | 85.54 ms | 847.65 µs | 84.48 ms | 85.19 ms | 7.6 MB | 977 B | 101.29 µs cold, 208 ns warm; 2.80 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
+| Seal | Ceil.machine.program | 85.08 ms | 994.71 µs | 83.01 ms | 84.35 ms | 7.6 MB | 977 B | 102.00 µs cold, 167 ns warm; 2.86 ms as a whole process | 4.0 MB counted by Seal; 592 B compiled; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 136.18 ms | 2.11 ms | 130.80 ms | 131.83 ms | 41.7 MB | 799 B | 5.38 ms as a whole process | the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 127.61 ms | 1.09 ms | 126.00 ms | 128.71 ms | 42.7 MB | 799 B | 2.50 ms as a whole process | the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 81.58 ms | 770.14 µs | 80.17 ms | 81.37 ms | 40.4 MB | 799 B | 2.60 ms as a whole process | the Normal program stands in |
+| Node `--jitless` | Ceil.source | 115.97 ms | 2.00 ms | 114.19 ms | 120.12 ms | 213.3 MB | 878 B | 19.34 ms as a whole process | the Normal program stands in |
+| Node (JIT), from cold | Ceil.source | 14.29 ms | 947.13 µs | 13.41 ms | 17.05 ms | 129.7 MB | 878 B | 19.07 ms as a whole process | the Normal program stands in |
+| Node (JIT), warmed up | Ceil.source | 13.46 ms | 75.51 µs | 13.27 ms | 17.01 ms | 224.0 MB | 878 B | 19.13 ms as a whole process | the Normal program stands in |
 
 ## 1,000 patrolling scripts
 
@@ -274,27 +274,27 @@ Tests: loading, pausing, footprint. Each script is loaded from its own copy of t
 
 | Engine | Kind | Load, each from its own text | Load, each from the same text | Resume, each | Call, each | Memory, each script | Peak memory | Notes |
 |---|---|---|---|---|---|---|---|---|
-| Seal | Purpose | 48.29 µs (±6.51 µs, least 42.50 µs) | 14.65 µs (±2.11 µs, least 12.38 µs) | 19 ns (±0 ns, least 19 ns) | 40 ns (±1 ns, least 39 ns) | 512 B | 2.7 MB | counted by Seal |
-| Luau (interpreter) | Purpose | 10.37 µs (±3.00 µs, least 8.21 µs) | 16.69 µs (±3.30 µs, least 14.67 µs) | 42 ns (±1 ns, least 40 ns) | 21 ns (±2 ns, least 19 ns) | 3.0 KB | 4.9 MB | the engine's own heap |
-| LuaJIT `-joff` | Purpose | 3.80 µs (±632 ns, least 3.00 µs) | 6.60 µs (±966 ns, least 5.00 µs) | 22 ns (±1 ns, least 21 ns) | 14 ns (±1 ns, least 12 ns) | 1.2 KB | 1.9 MB | the engine's own heap |
-| LuaJIT (JIT) | Purpose | 3.70 µs (±823 ns, least 3.00 µs) | 6.90 µs (±2.13 µs, least 4.00 µs) | 13 ns (±0 ns, least 13 ns) | 0 ns (±0 ns, least 0 ns) | 1.2 KB | 2.1 MB | the engine's own heap |
-| Node `--jitless` | Purpose | 37.82 µs (±10.41 µs, least 21.08 µs) | 38.22 µs (±1.38 µs, least 36.21 µs) | 56 ns (±2 ns, least 53 ns) | 30 ns (±1 ns, least 29 ns) | 0 B | 45.8 MB | the engine's own heap |
-| Node (JIT) | Purpose | 33.62 µs (±5.23 µs, least 18.96 µs) | 38.05 µs (±2.32 µs, least 35.25 µs) | 9 ns (±0 ns, least 8 ns) | 2 ns (±0 ns, least 2 ns) | 0 B | 53.0 MB | the engine's own heap |
-| Seal | Normal | 4.43 µs (±44 ns, least 4.36 µs) | 149 ns (±5 ns, least 141 ns) | 20 ns (±1 ns, least 20 ns) | 40 ns (±0 ns, least 39 ns) | 512 B | 4.4 MB | counted by Seal |
-| Luau (interpreter) | Normal | 4.84 µs (±129 ns, least 4.70 µs) | 180 ns (±7 ns, least 168 ns) | 33 ns (±1 ns, least 32 ns) | 18 ns (±0 ns, least 18 ns) | 2.0 KB | 6.1 MB | the engine's own heap |
-| LuaJIT `-joff` | Normal | 1.79 µs (±24 ns, least 1.75 µs) | 182 ns (±10 ns, least 173 ns) | 28 ns (±0 ns, least 27 ns) | 15 ns (±1 ns, least 13 ns) | 1.0 KB | 3.3 MB | the engine's own heap |
-| LuaJIT (JIT) | Normal | 1.81 µs (±33 ns, least 1.76 µs) | 369 ns (±35 ns, least 338 ns) | 93 ns (±2 ns, least 91 ns) | 108 ns (±14 ns, least 98 ns) | 1.0 KB | 4.8 MB | the engine's own heap |
-| Node `--jitless` | Normal | 1.15 µs (±16 ns, least 1.13 µs) | 665 ns (±16 ns, least 652 ns) | 50 ns (±1 ns, least 49 ns) | 24 ns (±1 ns, least 23 ns) | 643 B | 48.6 MB | the engine's own heap |
-| Node (JIT) | Normal | 1.11 µs (±27 ns, least 1.07 µs) | 657 ns (±12 ns, least 632 ns) | 22 ns (±0 ns, least 21 ns) | 6 ns (±1 ns, least 5 ns) | 643 B | 55.8 MB | the engine's own heap |
-| Seal | Ceil.source | 4.44 µs (±62 ns, least 4.37 µs) | 150 ns (±4 ns, least 144 ns) | 20 ns (±0 ns, least 20 ns) | 39 ns (±1 ns, least 39 ns) | 512 B | 4.4 MB | counted by Seal; the Normal program stands in |
-| Seal | Ceil.machine | 4.57 µs (±51 ns, least 4.50 µs) | 149 ns (±8 ns, least 139 ns) | 21 ns (±0 ns, least 20 ns) | 40 ns (±0 ns, least 40 ns) | 512 B | 4.5 MB | counted by Seal; the Normal program stands in |
-| Seal | Ceil.program | 3.91 µs (±18 ns, least 3.89 µs) | 140 ns (±8 ns, least 130 ns) | 17 ns (±0 ns, least 17 ns) | 36 ns (±0 ns, least 36 ns) | 512 B | 4.4 MB | counted by Seal; the Normal program stands in |
-| Seal | Ceil.machine.program | 3.96 µs (±50 ns, least 3.91 µs) | 139 ns (±5 ns, least 132 ns) | 18 ns (±0 ns, least 17 ns) | 36 ns (±0 ns, least 36 ns) | 512 B | 4.4 MB | counted by Seal; the Normal program stands in |
-| Luau (interpreter) | Ceil.source | 5.02 µs (±169 ns, least 4.69 µs) | 185 ns (±6 ns, least 175 ns) | 33 ns (±0 ns, least 33 ns) | 18 ns (±0 ns, least 17 ns) | 2.0 KB | 6.1 MB | the engine's own heap; the Normal program stands in |
-| LuaJIT `-joff` | Ceil.source | 1.80 µs (±19 ns, least 1.77 µs) | 185 ns (±13 ns, least 177 ns) | 28 ns (±0 ns, least 27 ns) | 15 ns (±2 ns, least 13 ns) | 1.0 KB | 3.3 MB | the engine's own heap; the Normal program stands in |
-| LuaJIT (JIT) | Ceil.source | 1.82 µs (±20 ns, least 1.79 µs) | 356 ns (±11 ns, least 345 ns) | 95 ns (±3 ns, least 92 ns) | 107 ns (±8 ns, least 100 ns) | 1.0 KB | 4.7 MB | the engine's own heap; the Normal program stands in |
-| Node `--jitless` | Ceil.source | 1.14 µs (±23 ns, least 1.12 µs) | 671 ns (±22 ns, least 645 ns) | 51 ns (±2 ns, least 49 ns) | 24 ns (±2 ns, least 23 ns) | 643 B | 48.7 MB | the engine's own heap; the Normal program stands in |
-| Node (JIT) | Ceil.source | 1.11 µs (±21 ns, least 1.07 µs) | 664 ns (±16 ns, least 642 ns) | 22 ns (±1 ns, least 21 ns) | 7 ns (±0 ns, least 6 ns) | 643 B | 56.0 MB | the engine's own heap; the Normal program stands in |
+| Seal | Purpose | 50.22 µs (±6.09 µs, least 44.79 µs) | 12.82 µs (±2.09 µs, least 10.29 µs) | 19 ns (±0 ns, least 19 ns) | 40 ns (±0 ns, least 40 ns) | 512 B | 2.7 MB | counted by Seal |
+| Luau (interpreter) | Purpose | 9.69 µs (±997 ns, least 8.83 µs) | 16.73 µs (±1.22 µs, least 14.88 µs) | 41 ns (±1 ns, least 39 ns) | 21 ns (±2 ns, least 19 ns) | 3.0 KB | 4.8 MB | the engine's own heap |
+| LuaJIT `-joff` | Purpose | 4.10 µs (±876 ns, least 3.00 µs) | 6.70 µs (±1.25 µs, least 5.00 µs) | 22 ns (±1 ns, least 20 ns) | 14 ns (±1 ns, least 12 ns) | 1.2 KB | 1.9 MB | the engine's own heap |
+| LuaJIT (JIT) | Purpose | 4.10 µs (±876 ns, least 3.00 µs) | 6.70 µs (±1.25 µs, least 5.00 µs) | 13 ns (±0 ns, least 13 ns) | 0 ns (±0 ns, least 0 ns) | 1.2 KB | 2.1 MB | the engine's own heap |
+| Node `--jitless` | Purpose | 35.48 µs (±18.96 µs, least 19.67 µs) | 42.42 µs (±9.22 µs, least 35.88 µs) | 57 ns (±2 ns, least 54 ns) | 30 ns (±1 ns, least 29 ns) | 0 B | 45.8 MB | the engine's own heap |
+| Node (JIT) | Purpose | 32.70 µs (±4.99 µs, least 21.62 µs) | 40.92 µs (±4.41 µs, least 36.08 µs) | 9 ns (±0 ns, least 8 ns) | 2 ns (±0 ns, least 2 ns) | 0 B | 53.1 MB | the engine's own heap |
+| Seal | Normal | 4.60 µs (±128 ns, least 4.46 µs) | 155 ns (±9 ns, least 148 ns) | 21 ns (±1 ns, least 20 ns) | 40 ns (±1 ns, least 39 ns) | 512 B | 4.5 MB | counted by Seal |
+| Luau (interpreter) | Normal | 4.97 µs (±131 ns, least 4.78 µs) | 184 ns (±9 ns, least 171 ns) | 34 ns (±1 ns, least 33 ns) | 18 ns (±0 ns, least 18 ns) | 2.0 KB | 6.1 MB | the engine's own heap |
+| LuaJIT `-joff` | Normal | 1.85 µs (±27 ns, least 1.81 µs) | 186 ns (±11 ns, least 175 ns) | 28 ns (±1 ns, least 28 ns) | 15 ns (±1 ns, least 14 ns) | 1.0 KB | 3.3 MB | the engine's own heap |
+| LuaJIT (JIT) | Normal | 1.84 µs (±27 ns, least 1.79 µs) | 383 ns (±40 ns, least 359 ns) | 101 ns (±3 ns, least 96 ns) | 110 ns (±13 ns, least 103 ns) | 1.0 KB | 4.8 MB | the engine's own heap |
+| Node `--jitless` | Normal | 1.17 µs (±20 ns, least 1.14 µs) | 672 ns (±15 ns, least 652 ns) | 52 ns (±4 ns, least 49 ns) | 24 ns (±0 ns, least 24 ns) | 643 B | 48.6 MB | the engine's own heap |
+| Node (JIT) | Normal | 1.10 µs (±28 ns, least 1.05 µs) | 665 ns (±20 ns, least 636 ns) | 22 ns (±1 ns, least 21 ns) | 6 ns (±1 ns, least 5 ns) | 643 B | 55.9 MB | the engine's own heap |
+| Seal | Ceil.source | 4.51 µs (±56 ns, least 4.45 µs) | 156 ns (±7 ns, least 147 ns) | 21 ns (±1 ns, least 20 ns) | 40 ns (±0 ns, least 39 ns) | 512 B | 4.5 MB | counted by Seal; the Normal program stands in |
+| Seal | Ceil.machine | 4.55 µs (±45 ns, least 4.45 µs) | 150 ns (±7 ns, least 141 ns) | 21 ns (±0 ns, least 20 ns) | 40 ns (±0 ns, least 40 ns) | 512 B | 4.5 MB | counted by Seal; the Normal program stands in |
+| Seal | Ceil.program | 3.91 µs (±64 ns, least 3.84 µs) | 144 ns (±11 ns, least 133 ns) | 17 ns (±0 ns, least 17 ns) | 36 ns (±1 ns, least 36 ns) | 512 B | 4.4 MB | counted by Seal; the Normal program stands in |
+| Seal | Ceil.machine.program | 3.99 µs (±54 ns, least 3.95 µs) | 145 ns (±5 ns, least 138 ns) | 18 ns (±0 ns, least 18 ns) | 36 ns (±0 ns, least 36 ns) | 512 B | 4.3 MB | counted by Seal; the Normal program stands in |
+| Luau (interpreter) | Ceil.source | 4.92 µs (±136 ns, least 4.69 µs) | 184 ns (±7 ns, least 172 ns) | 33 ns (±1 ns, least 33 ns) | 18 ns (±0 ns, least 17 ns) | 2.0 KB | 6.1 MB | the engine's own heap; the Normal program stands in |
+| LuaJIT `-joff` | Ceil.source | 1.80 µs (±20 ns, least 1.76 µs) | 182 ns (±6 ns, least 173 ns) | 28 ns (±1 ns, least 27 ns) | 15 ns (±2 ns, least 14 ns) | 1.0 KB | 3.3 MB | the engine's own heap; the Normal program stands in |
+| LuaJIT (JIT) | Ceil.source | 1.83 µs (±41 ns, least 1.78 µs) | 364 ns (±19 ns, least 346 ns) | 95 ns (±3 ns, least 92 ns) | 110 ns (±14 ns, least 101 ns) | 1.0 KB | 4.8 MB | the engine's own heap; the Normal program stands in |
+| Node `--jitless` | Ceil.source | 1.16 µs (±20 ns, least 1.13 µs) | 674 ns (±20 ns, least 643 ns) | 51 ns (±1 ns, least 50 ns) | 24 ns (±1 ns, least 23 ns) | 643 B | 48.6 MB | the engine's own heap; the Normal program stands in |
+| Node (JIT) | Ceil.source | 1.14 µs (±65 ns, least 1.10 µs) | 674 ns (±34 ns, least 629 ns) | 22 ns (±0 ns, least 22 ns) | 7 ns (±1 ns, least 6 ns) | 643 B | 55.9 MB | the engine's own heap; the Normal program stands in |
 
 ## What Seal's checks cost (Purpose)
 
@@ -302,13 +302,13 @@ D58 asks for the cost of Seal's checks to be measured, not guessed. Each row run
 
 | Benchmark | With every check | Without the-float-check |
 |---|---|---|
-| `fib(32)`, recursive | 32.58 ms | 32.28 ms (-0.9%) |
-| n-body, 100,000 steps | 65.52 ms | 58.39 ms (-10.9%) |
-| spectral-norm, size 200 | 18.40 ms | 19.24 ms (+4.6%) |
-| fannkuch-redux, 9 | 104.95 ms | 104.63 ms (-0.3%) |
-| word count, 500,000 words | 27.04 ms | 33.45 ms (+23.7%) |
-| text building, 20,000 joins | 348.26 µs | 344.98 µs (-0.9%) |
-| binary-trees, depth 14 | 99.26 ms | 99.76 ms (+0.5%) |
+| `fib(32)`, recursive | 32.99 ms | 34.12 ms (+3.4%) |
+| n-body, 100,000 steps | 68.70 ms | 60.29 ms (-12.2%) |
+| spectral-norm, size 200 | 19.53 ms | 18.13 ms (-7.1%) |
+| fannkuch-redux, 9 | 104.33 ms | 105.68 ms (+1.3%) |
+| word count, 500,000 words | 26.65 ms | 26.68 ms (+0.1%) |
+| text building, 20,000 joins | 358.09 µs | 353.35 µs (-1.3%) |
+| binary-trees, depth 14 | 99.74 ms | 98.65 ms (-1.1%) |
 
 ## The new number types (D115, D116), Normal
 
@@ -316,7 +316,7 @@ Timed on Seal alone, since Luau has neither, and D57 sets no goal for them; the 
 
 | Program | Mean | Deviation | Least | Peak memory |
 |---|---|---|---|---|
-| `Decimal`: 1,000,000 prices summed with tax, then split three ways | 177.60 ms | 5.76 ms | 171.01 ms | 2.9 MB |
-| the same sums in `Float`s, as a yardstick | 10.29 ms | 170.26 µs | 9.95 ms | 2.7 MB |
-| `HugeWhole`: 3000 factorial, 9,131 digits | 4.40 ms | 47.54 µs | 4.33 ms | 3.8 MB |
-| `HugeDecimal`: 2,000 years of exact 5% interest, 4,048 digits | 1.42 ms | 11.28 µs | 1.40 ms | 3.6 MB |
+| `Decimal`: 1,000,000 prices summed with tax, then split three ways | 169.10 ms | 1.39 ms | 167.01 ms | 2.9 MB |
+| the same sums in `Float`s, as a yardstick | 10.42 ms | 375.68 µs | 10.12 ms | 2.7 MB |
+| `HugeWhole`: 3000 factorial, 9,131 digits | 3.92 ms | 169.65 µs | 3.71 ms | 3.9 MB |
+| `HugeDecimal`: 2,000 years of exact 5% interest, 4,048 digits | 1.33 ms | 41.86 µs | 1.28 ms | 3.6 MB |
