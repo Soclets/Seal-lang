@@ -1,4 +1,4 @@
-//! Runs every benchmark of D57 in every kind of D58, on Seal, Luau and Node, and writes `bench/RESULTS.md`.
+//! Runs every benchmark of D57 in every kind of D58, on Seal, Luau, `LuaJIT` and Node, and writes `bench/RESULTS.md`.
 //!
 //! Each program runs in a process of its own, under `/usr/bin/time -l`, so its peak memory is its own. A result is
 //! checked before its time counts: every engine must give the same answer, and the Normal programs the answers
@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const LUAU: &str = "/Users/ts/.rokit/bin/luau";
+const LUAJIT: &str = "/opt/homebrew/bin/luajit";
 const NODE: &str = "/usr/local/bin/node";
 
 /// One of D57's benchmarks, as run from a single script.
@@ -222,8 +223,11 @@ struct Engine {
     warmups: usize,
 }
 
-const ENGINES: [Engine; 4] = [
+// trace: D142. LuaJIT runs the Luau programs as they are, which are plain Lua; with `-joff` it's its interpreter alone.
+const ENGINES: [Engine; 6] = [
     Engine { name: "Luau (interpreter)", program: LUAU, flags: &[], extension: "luau", warmups: 2 },
+    Engine { name: "LuaJIT `-joff`", program: LUAJIT, flags: &["-joff"], extension: "luau", warmups: 2 },
+    Engine { name: "LuaJIT (JIT)", program: LUAJIT, flags: &[], extension: "luau", warmups: 2 },
     Engine { name: "Node `--jitless`", program: NODE, flags: &["--jitless"], extension: "js", warmups: 2 },
     Engine { name: "Node (JIT), from cold", program: NODE, flags: &[], extension: "js", warmups: 0 },
     Engine { name: "Node (JIT), warmed up", program: NODE, flags: &[], extension: "js", warmups: 30 },
@@ -427,7 +431,7 @@ impl Report {
              paused in its patrol; then every one is resumed {} times, and then a procedure of each is called {} \
              times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes. Loading is timed two \
              ways: every script from a text of its own, so that nothing compiled is reused, and every script from the \
-             same text, where Seal reuses what it compiled, and Luau and Node compile once and make each script from \
+             same text, where Seal reuses what it compiled, and the other engines compile once and make each script from \
              that.\n",
             PATROL.1, PATROL.1, PATROL_PURPOSE.1, self.runs
         );
@@ -620,49 +624,53 @@ impl Report {
             _ => "not measured".to_owned(),
         };
         let shown = |value: Option<f64>| value.map_or_else(|| "?".to_owned(), seconds);
-        for benchmark in &BENCHMARKS {
-            let (seal, luau) = (time(benchmark.name, "Seal"), time(benchmark.name, "Luau (interpreter)"));
-            let _ = writeln!(
-                out,
-                "| 1. Faster than Luau's interpreter | {} | {} | {} | {} |",
-                benchmark.title,
-                shown(seal),
-                shown(luau),
-                verdict(seal, luau, 1.0)
-            );
-        }
-        // The patrolling scripts as one run: every script loaded from the same text, then resumed. Luau is taken
-        // at its better way of loading the same text, compiled once.
+        // The patrolling scripts as one run: every script loaded from the same text, then resumed. Each engine is
+        // taken at its better way of loading the same text, compiled once.
         #[allow(clippy::cast_precision_loss)] // counts of scripts and rounds
         let whole_run = |engine: &str| {
             let load = time("patrol.load_same_text", engine)?;
             let resume = time("patrol.resume_each", engine)?;
             Some(load * PATROL.0 as f64 + resume * (PATROL.0 * PATROL.1) as f64)
         };
-        let (seal, luau) = (whole_run("Seal"), whole_run("Luau (interpreter)"));
-        let _ = writeln!(
-            out,
-            "| 1. Faster than Luau's interpreter | patrolling scripts, the whole run: loading {} from one text, resuming each {} times | {} | {} | {} |",
-            PATROL.0,
-            PATROL.1,
-            shown(seal),
-            shown(luau),
-            verdict(seal, luau, 1.0)
-        );
-        for (part, what) in [
-            ("resume_each", "resuming each"),
-            ("load_same_text", "loading each from the same text"),
-            ("load_own_text", "loading each from a text of its own"),
-        ] {
-            let name = format!("patrol.{part}");
-            let (seal, luau) = (time(&name, "Seal"), time(&name, "Luau (interpreter)"));
+        // trace: D57, D142. Goal 1 has two bars, Luau's interpreter and LuaJIT's.
+        for (bar, engine) in [("Luau's interpreter", "Luau (interpreter)"), ("LuaJIT's interpreter", "LuaJIT `-joff`")]
+        {
+            for benchmark in &BENCHMARKS {
+                let (seal, other) = (time(benchmark.name, "Seal"), time(benchmark.name, engine));
+                let _ = writeln!(
+                    out,
+                    "| 1. Faster than {bar} | {} | {} | {} | {} |",
+                    benchmark.title,
+                    shown(seal),
+                    shown(other),
+                    verdict(seal, other, 1.0)
+                );
+            }
+            let (seal, other) = (whole_run("Seal"), whole_run(engine));
             let _ = writeln!(
                 out,
-                "| 1. Faster than Luau's interpreter | patrolling scripts, {what} | {} | {} | {} |",
+                "| 1. Faster than {bar} | patrolling scripts, the whole run: loading {} from one text, resuming each {} times | {} | {} | {} |",
+                PATROL.0,
+                PATROL.1,
                 shown(seal),
-                shown(luau),
-                verdict(seal, luau, 1.0)
+                shown(other),
+                verdict(seal, other, 1.0)
             );
+            for (part, what) in [
+                ("resume_each", "resuming each"),
+                ("load_same_text", "loading each from the same text"),
+                ("load_own_text", "loading each from a text of its own"),
+            ] {
+                let name = format!("patrol.{part}");
+                let (seal, other) = (time(&name, "Seal"), time(&name, engine));
+                let _ = writeln!(
+                    out,
+                    "| 1. Faster than {bar} | patrolling scripts, {what} | {} | {} | {} |",
+                    shown(seal),
+                    shown(other),
+                    verdict(seal, other, 1.0)
+                );
+            }
         }
         for (name, limit, goal) in [
             ("fib", 1.0, "2. Faster than V8 `--jitless`"),
@@ -818,6 +826,11 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     );
     let _ = writeln!(
         text,
+        "- **LuaJIT:** `{}`, with `-joff` (its interpreter alone, a bar for goal 1 by D142) and without (its JIT on, for reference). It runs the Luau programs as they are, which are plain Lua.",
+        version(LUAJIT, "-v")
+    );
+    let _ = writeln!(
+        text,
         "- **Node:** `{}`, with `--jitless` (only Ignition, V8's bytecode interpreter) and without (V8's JITs on).",
         version(NODE, "--version")
     );
@@ -836,7 +849,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     );
     let _ = writeln!(
         text,
-        "- **Kinds:** Purpose isolates one thing; Normal is written plainly; Ceil is tuned. `Ceil.source` runs the tuned program on the usual build. `Ceil.machine` builds Seal's VM for this exact CPU, `Ceil.program` builds it with a profile of the benchmarks' own run, and `Ceil.machine.program` does both; a script is never compiled for a CPU (D46), so those apply to the VM. Luau and Node are the installed builds in every kind.\n"
+        "- **Kinds:** Purpose isolates one thing; Normal is written plainly; Ceil is tuned. `Ceil.source` runs the tuned program on the usual build. `Ceil.machine` builds Seal's VM for this exact CPU, `Ceil.program` builds it with a profile of the benchmarks' own run, and `Ceil.machine.program` does both; a script is never compiled for a CPU (D46), so those apply to the VM. Luau, LuaJIT and Node are the installed builds in every kind.\n"
     );
     text.push_str(&report.goals());
     if let Some(lines) = lines {
@@ -851,7 +864,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     let _ = writeln!(
         text,
-        "\nGoal 3, full V8 with its JITs, has no target: its rows are in every table for reference. Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost."
+        "\nGoal 3, full V8 with its JITs, has no target, nor has LuaJIT with its JIT (D142): their rows are in every table for reference. Goal 7 holds for every number here: every check was on, except in the table that measures what the checks cost."
     );
     text.push_str(&report.out);
     if !report.problems.is_empty() {
