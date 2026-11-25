@@ -4566,3 +4566,25 @@ expects at about 0.16 µs.
 **Tankun's words.** "Days of work?", "What about the bytecode comp thingy?", "How close are we to LuaJIT interp now?",
 then, asked "Should LuaJIT's interpreter be the bar for running code, with fresh loading judged against Luau and
 LuaJIT's shown for reference?", the owner chose: "yea"
+
+## D151. The C API gives every message in parts, as well as whole
+
+2026-11-25.
+
+**Chosen.** Through the C API (D136), each refusal, stop and failure comes both as its finished text, laid out as Seal
+prints it (Unio D54), and in parts a host can lay out its own way: its kind, `what`, `why`, `fix` where it has one,
+and its place, as the file's name and the line and column as numbers. A game's own script editor or mod tool can
+underline the line, restyle the parts, or show them where it likes. The functions that read them are the building
+session's to name, in its C API proposal (`crates/seal-c/PROPOSAL.md`).
+
+**Weighed.**
+- Text only for now, with parts later if a host asked, as the building session proposed and the design session first
+  agreed: most hosts print a message to a log, where the finished text reads well.
+- Text plus the place alone, as the design session then proposed, since the place is the part a host acts on and the
+  rest are sentences it would show as text anyway.
+
+**Why this won.** Tankun's choice: a host gets everything Seal knows about a message, in a form it can use, from the
+start.
+
+**Tankun's words.** "why not 1", "Q1", "Why", "nope" (to text plus the place), then, asked "Every part now, then?", the
+owner chose: "yea"
