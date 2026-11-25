@@ -3659,3 +3659,37 @@ started: Float[unit: secs.point] = now()
 
 **Tankun's words.** "yes, but no to 3" (quoted in D120), "Is it narrowing?", "Why `point` name?", then, asked "Should
 units be spans by default, with points marked `.point` and following those three rules?", the owner chose: "yea"
+
+## D122. `in` measures a value in a unit, giving its plain number
+
+2026-11-25.
+
+**Chosen.** `value in unit` measures a value in one of its group's units and gives the plain number, with no unit:
+
+```
+total = 2 secs + 500 ms
+total in secs            // 2.5
+total in ms              // 2500
+show_msg("{total in secs} seconds")
+```
+
+- **This is measuring,** the docs' name for it: the amount doesn't change, only the number it's read as. A
+  conversion, `be.`, changes what kind of value something is, and can round or fail.
+- **Only a unit of the value's own group measures it:** `total in px` is refused.
+- **The result is a `Whole` when the count is whole, and a `Float` otherwise,** as `total in mins` is `~0.0416…`.
+
+**Weighed.**
+- A fact, `total.secs`, as the design session first proposed. Tankun: a fact such as `xs.len` just says what a value
+  has, while this picks a unit and translates into it, which is an operation.
+- `as`, as Cyborg converts units (Cyborg D255). In Seal `as` already renames, in `labels [amount as by]`.
+- Dividing by one unit, `total / 1 secs`, which D120 already allows: cryptic for a script.
+- "Translation" for the name. Seal already has the Unio translator (D19).
+
+**Why this won.** "Total in seconds" is how it's said aloud.
+
+**Tankun's words.** "Is it a narrowing? Or conversion?", "So, it's a meth?", "Why fact name", "Why `.`?", "Is it
+really?  Idk, man", "What does `total.secs` do", "What is `mins`", "Feels more like a conversion? Or a translation
+(because conversion might mean from computer type to another). Why? `xs.len` just says the length. This? It fucking
+says the unit, and also can become another unit.", "So, first of all, what should we call it? Translation?", "Diff
+between conversion?", "yex" (to measuring), then, asked "should measuring be written `total in secs`, giving the plain
+number?", the owner chose: "yea"
