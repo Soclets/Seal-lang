@@ -4588,3 +4588,39 @@ start.
 
 **Tankun's words.** "why not 1", "Q1", "Why", "nope" (to text plus the place), then, asked "Every part now, then?", the
 owner chose: "yea"
+
+## D152. A C door gets its values as an array of plain tagged values
+
+2026-11-25.
+
+**Chosen.** Through the C API (D136), every door takes the same shape: an array of tagged values, each a kind and, for
+a number or a `Bool`, the value itself, so reading one is a single load with no call into Seal; text, lists, records
+and the other big values come as handles Seal still owns, borrowed for the call. The result is written the same way.
+
+```c
+seal_status damage(void *game, const seal_arg *args, size_t count, seal_arg *result) {
+    hurt(game, args[0].as.whole, args[1].as.whole);
+    result->kind = SEAL_NOTHING;
+    return SEAL_OK;
+}
+```
+
+- **No type checks in a door:** Seal's checker proved every argument's type when the script loaded.
+- **Nothing is made or freed per call** for numbers, as plain numbers already cross a Rust door as their bare bits.
+- **The aim:** a door call through C costs about what one from Rust does. The names and the exact layout are the
+  building session's.
+
+**Weighed.**
+- `seal_value` handles for every value, as the building session proposed: one way to write a door, but each read a
+  call into Seal's library, and, done naively, an object made and freed for every number on every call.
+- Doors typed as plain C functions, as `int64_t damage(int64_t id, int64_t amount)`. The fastest, but C can't call a
+  function of any shape without libffi or C code generated for each door: two ways to write a door, and a generator.
+- Luau's stack, where a C function reads each argument with a call, as `luaL_checkinteger(L, 1)`, checked while
+  running since a script can pass anything.
+
+**Why this won.** It's the fastest way that keeps one way to write a door, as Wasmtime's C API passes its values, and
+Seal's static types let it skip the checks a dynamic language's API can't.
+
+**Tankun's words.** "Is calling host optimized?", "Is that the most optimized way?", "How does that compare to Luau",
+then, asked "Should a C door receive its values as an array of plain tagged values, with numbers inside and big values
+as handles, aiming at Rust's door-call speed?", the owner chose: "yea"
