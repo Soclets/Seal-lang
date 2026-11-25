@@ -1,0 +1,17 @@
+record Enemy
+    hp: Whole
+end
+
+mut score = 5
+score = _ + 10
+mut x = 3
+x = _ * _
+mut enemies = [Enemy[hp: 4], Enemy[hp: 9]]
+for_each i in range[from: 1, to: enemies.len]
+    enemies[pos: i].hp = _ - 1
+end
+mut hp = 95
+hp = min(_ + 20, 100)
+first = enemies[pos: 1].hp
+second = enemies[pos: 2].hp
+show_msg("{score} {x} {first} {second} {hp}")

@@ -36,7 +36,24 @@ unused saved = save(game) ?? 0
   outside are visible inside, and while a name exists it can't be made again: `name = value` changes it (D56, Unio
   D93, D94).
 
-**Not decided:** shorthand like `+=`.
+## `_`: what's being changed
+
+On the right of an `=` that changes a name, `_` is that name's current value, or the current value of whatever part of
+it is being changed (D147):
+
+```
+mut score = 0
+score = _ + 10
+hp = clamp(_ + heal, low: 0, high: max_hp)
+enemies[pos: i].hp = _ - 1
+```
+
+- **It works with anything,** maths, calls or facts, so Seal has no `+=` and its kin.
+- **The left side is worked out once,** positions and keys included, and `_` reads it.
+- **It can appear more than once,** as `x = _ * _`.
+- **It's refused where nothing is being changed:** when the `=` makes a new name, and anywhere outside the right of a
+  changing `=`. The name must be `mut`, as for any change (D2).
+- `_` alone is never a name, since a name never starts with `_` (D24).
 
 ## Spelling
 

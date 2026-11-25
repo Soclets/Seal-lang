@@ -4433,3 +4433,38 @@ Nothing else about the loop changes. The Unio translator (D19) writes `for each`
 is not really another thing, it's the same shit", "What? Why?", "It's not the same fucking thing, though. It's not
 like `let mut`", "Bro, what is going onnn", "It's one keyword, right? It doesn't modify like `let mut`?", "Wait, `in`
 has two meanings?", then, asked "Should `for each` become `for_each`?", the owner chose: "yea"
+
+## D147. `_` is the current value of what's being changed, in place of `+=`
+
+2026-11-25.
+
+**Chosen.** On the right of an `=` that changes a name, `_` stands for the current value of what's on the left:
+
+```
+score = _ + 10
+hp = clamp(_ + heal, low: 0, high: max_hp)
+enemies[pos: i].hp = _ - 1
+bodies[pos: i].vx = _ * 0.99
+```
+
+- **It works with anything** on the right, maths, calls, facts or `**`, so Seal has no `+=`, `-=` and their kin: one
+  way to do it.
+- **The left side is worked out once,** with its positions and keys, and `_` reads that.
+- **It can appear more than once,** as `x = _ * _`.
+- **It's refused where nothing is being changed:** on an `=` that makes a new name, and anywhere else. The name must be
+  `mut`, as any change needs (D2).
+- `_` alone is never a name (D24), and Seal has no other `_`, since throwaways are `unused` (D3).
+
+**Weighed.**
+- `+=`, `-=`, `*=` and `/=`, as most languages have them. Only four operations, while `_` covers every one, calls
+  included.
+- `__`, as Tankun asked about. It means special names in Python and names reserved for the compiler in C and C++, and
+  it's hard to tell from `_` at a glance.
+- Writing the left side out again, as now. A long path, as `bodies[pos: i].vx`, is written twice and can drift.
+
+**Why this won.** One small mark replaces a family of operators, says "the thing on the left" wherever it's needed, and
+takes no word from the language.
+
+**Tankun's words.** has code (asking what a loop changing `enemy.hp` does), has code (proposing
+`enemies[pos: i].hp = _ - 1`, `_` saying the left side shortly), "So, then `__`?", then, asked "Should Seal write `_` for the current value of what's being
+changed, as `hp = _ - 1`, in place of `+=`-style shorthands?", the owner chose: "yea"
