@@ -236,6 +236,8 @@ pub struct Limits {
 pub struct Edge {
     pub bits: u64,
     pub clamp: bool,
+    /// A `HugeWhole`'s edge past a `Whole`'s range (D115): `bits` is then its place among the table's big edges.
+    pub big: bool,
 }
 
 /// A record's declaration (D27).
@@ -269,6 +271,8 @@ pub struct TypeTable {
     pub one_ofs: Vec<OneOfType>,
     /// Seal's unit groups, then the host's and the script's own (D113, D123), shared until one is added.
     pub unit_groups: std::sync::Arc<Vec<UnitGroupType>>,
+    /// The `HugeWhole` edges past a `Whole`'s range, each once, so equal limits make the same type (D115).
+    big_edges: Vec<crate::big::Big>,
 }
 
 impl Default for TypeTable {
@@ -282,11 +286,40 @@ impl Default for TypeTable {
             records: Vec::new(),
             one_ofs: Vec::new(),
             unit_groups: NO_UNIT_GROUPS.get_or_init(std::sync::Arc::default).clone(),
+            big_edges: Vec::new(),
         }
     }
 }
 
 impl TypeTable {
+    /// A `HugeWhole`'s edge with this value (D115): a `Whole`'s bits when it's in a `Whole`'s range, and otherwise
+    /// its place among the big edges.
+    pub fn huge_edge(&mut self, value: &crate::big::Big, clamp: bool) -> Edge {
+        if let Some(small) = value.to_i64() {
+            return Edge { bits: small.cast_unsigned(), clamp, big: false };
+        }
+        let known = self.big_edges.iter().position(|known| known.compare(value) == std::cmp::Ordering::Equal);
+        let place = known.unwrap_or_else(|| {
+            self.big_edges.push(value.clone());
+            self.big_edges.len() - 1
+        });
+        Edge { bits: u64::try_from(place).unwrap_or(u64::MAX), clamp, big: true }
+    }
+
+    /// A `HugeWhole` edge's value (D115).
+    #[must_use]
+    pub fn edge_value(&self, edge: Edge) -> crate::big::Big {
+        if edge.big {
+            usize::try_from(edge.bits)
+                .ok()
+                .and_then(|place| self.big_edges.get(place))
+                .cloned()
+                .unwrap_or_else(|| crate::big::Big::from_i64(0))
+        } else {
+            crate::big::Big::from_i64(edge.bits.cast_signed())
+        }
+    }
+
     #[must_use]
     pub fn new() -> Self {
         // Built once, then copied for each script: Seal's own types and unit groups are the same every time.

@@ -386,3 +386,19 @@ fn d17_a_fused_instruction_points_at_its_maths() {
     let sum = "proc add[a: Whole, b: Whole] -> Whole\n    ret a + b\nend\nc = add(9223372036854775807, 1)\nshow_msg(\"{c}\")\n";
     assert!(refusal(sum).contains("test.seal:2:9"), "{}", refusal(sum));
 }
+
+// trace: D115, D107. A `HugeWhole`'s limits may be past a `Whole`'s range.
+#[test]
+fn d115_a_huge_whole_limit_past_a_whole() {
+    let clamped =
+        "mut x: HugeWhole[max.clamp: 100000000000000000000] = 5\nx = x * 100000000000000000000\nshow_msg(\"{x}\")\n";
+    assert_eq!(shows(clamped), ["100000000000000000000"]);
+    let checked = "mut y: HugeWhole[max: 100000000000000000000] = 1\ny = y * 10000000000\nshow_msg(\"{y}\")\ny = y * 100000000000\n";
+    assert!(refusal(checked).contains("above its type's `max: 100000000000000000000`"), "{}", refusal(checked));
+    let written = "z: HugeWhole[max: 100000000000000000000] = 200000000000000000000\nshow_msg(\"{z}\")\n";
+    assert!(refusal(written).contains("this is above its type's `max: 100000000000000000000`"), "{}", refusal(written));
+    let crossed = "w: HugeWhole[min: 100000000000000000000, max: 5] = 7\nshow_msg(\"{w}\")\n";
+    assert!(refusal(crossed).contains("lowest edge is above its highest"), "{}", refusal(crossed));
+    let same = "a: HugeWhole[max: 100000000000000000000] = 5\nb: HugeWhole[max: 100000000000000000000] = a\nshow_msg(\"{b}\")\n";
+    assert_eq!(shows(same), ["5"]);
+}

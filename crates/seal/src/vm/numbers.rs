@@ -399,6 +399,7 @@ pub fn with_places(number: NumberRef<'_>, places: u8) -> String {
 pub fn land(
     slot: u64,
     limits: &crate::check::types::Limits,
+    types: &crate::check::types::TypeTable,
     heap: &mut Heap,
     layouts: &[crate::compile::bytecode::Layout],
 ) -> Result<u64, Stop> {
@@ -407,7 +408,8 @@ pub fn land(
     };
     for (edge, is_min) in [(limits.min, true), (limits.max, false)] {
         let Some(edge) = edge else { continue };
-        let edge_value = Big::from_i64(edge.bits.cast_signed());
+        // trace: D115. An edge may be past a `Whole`'s range.
+        let edge_value = types.edge_value(edge);
         let order = value.compare(&edge_value);
         let outside = if is_min { order == Ordering::Less } else { order == Ordering::Greater };
         if !outside {
@@ -419,7 +421,7 @@ pub fn land(
             return Ok(made);
         }
         let (word, side) = if is_min { ("min", "below") } else { ("max", "above") };
-        let edge_text = edge.bits.cast_signed().to_string();
+        let edge_text = edge_value.to_decimal();
         return Err(failed(
             &format!("this value is {side} its type's `{word}: {edge_text}`"),
             format!("`{}` lands where the type says `{word}: {edge_text}`", value.to_decimal()),

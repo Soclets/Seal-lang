@@ -380,7 +380,8 @@ fn rare_instruction(
             let held = get(registers, register)?;
             if limits.huge {
                 // trace: D115
-                let value = super::numbers::land(held, limits, heap, &compiled.layouts).map_err(stop)?;
+                let value =
+                    super::numbers::land(held, limits, &compiled.types, heap, &compiled.layouts).map_err(stop)?;
                 set(registers, register, value)?;
             } else {
                 let value = land(held, limits, pc)?;

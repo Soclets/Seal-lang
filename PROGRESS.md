@@ -213,6 +213,8 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D148** Measuring is written `to`, as `total to secs`, in braces too; `to` isn't a keyword, since `to:` is also
   `range`'s label.
 - **D149** Maths measured with `to` without brackets is refused, with the bracketed line as the fix (draft wording).
+- **D115** A `HugeWhole`'s limits may be past a `Whole`'s range: such an edge is kept once in the type table's big
+  edges, so equal limits are one type, and it's checked, clamped to and shown as any edge is.
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
   entry itself, in two 64-bit halves, so working with one allocates nothing beyond the entry; the money benchmark
   went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/seal/src/decimal.rs` holds
@@ -350,7 +352,7 @@ Batch 2, sent 2026-11-25 after C12 (C7 to C10's first three were answered by D13
 - (Answered: D134 for the angle built-ins' units; D121's example was a slip, noted under it.)
 - A `Whole` with a unit becomes a `Float` only when its unit changes: `w: Float[unit: secs] = 2000 ms` passes but
   `= 2 secs` is refused, as a plain `Whole` into a `Float` is (D16). Is that wanted, or should the second pass too?
-- `a + b in ms`: `in` after maths without brackets could measure the whole or only `b` (stops).
+- (Answered: D149, maths measured with `to` is bracketed, built.)
 - Multiplying or dividing units into a unit with no written form, as `px * px` or a rate over a rate, and maths on
   points other than adding and subtracting a span (stop).
 - D131: two handlers brought into one `otherwise` that both have a case for a failure the call can't give: refused
@@ -404,7 +406,6 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
 - Passing a value of a type that holds itself between a host and a script (D72).
-- A `HugeWhole`'s limit past a `Whole`'s range, as `HugeWhole[max: 100000000000000000000]` (refused as too big).
 - The language server (D47): an empty package, as the prompt says.
 
 ## Draft wordings

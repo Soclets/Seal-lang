@@ -673,7 +673,14 @@ impl<'a> Checker<'a> {
                     return ERROR;
                 }
             };
-            let Some(bits) = self.plain_number(value, float) else { return ERROR };
+            // trace: D115. A `HugeWhole`'s edges may be past a `Whole`'s range.
+            let edge = if huge {
+                let Some(value) = self.plain_huge(value) else { return ERROR };
+                self.program.types.huge_edge(&value, clamp)
+            } else {
+                let Some(bits) = self.plain_number(value, float) else { return ERROR };
+                types::Edge { bits, clamp, big: false }
+            };
             let slot = if is_min { &mut limits.min } else { &mut limits.max };
             if slot.is_some() {
                 let edge = if is_min { "lowest" } else { "highest" };
@@ -684,10 +691,13 @@ impl<'a> Checker<'a> {
                 );
                 return ERROR;
             }
-            *slot = Some(types::Edge { bits, clamp });
+            *slot = Some(edge);
         }
         if let (Some(min), Some(max)) = (limits.min, limits.max) {
-            let crossed = if float {
+            let crossed = if huge {
+                let types = &self.program.types;
+                types.edge_value(min).compare(&types.edge_value(max)) == std::cmp::Ordering::Greater
+            } else if float {
                 f64::from_bits(min.bits) > f64::from_bits(max.bits)
             } else {
                 min.bits.cast_signed() > max.bits.cast_signed()
@@ -702,6 +712,42 @@ impl<'a> Checker<'a> {
             }
         }
         self.program.types.intern(Type::Ranged { base, limits })
+    }
+
+    /// A `HugeWhole`'s edge: a whole number of any size written there, `-` allowed, or a top-level name made from one
+    /// with no `mut` (D107, D115).
+    fn plain_huge(&mut self, expression: &syntax::Expression<'a>) -> Option<crate::big::Big> {
+        let written = match &expression.kind {
+            syntax::ExpressionKind::Name(name) => {
+                if let Some(&global) = self.globals.get(name) {
+                    self.mark_read(global);
+                }
+                let Some(value) = self.plain_names.get(name).copied() else {
+                    self.refuse_why(
+                        expression.place,
+                        format!("`{name}` isn't a top-level name made from a number written out, with no `mut`"),
+                        "a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.",
+                    );
+                    return None;
+                };
+                value
+            }
+            _ => expression,
+        };
+        let checked = self.expression(written, Some(types::HUGE_WHOLE));
+        match &checked.kind {
+            ExpressionKind::Number(crate::decimal::Number::Huge(value)) => Some(value.clone()),
+            ExpressionKind::Whole(value) => Some(crate::big::Big::from_i64(*value)),
+            ExpressionKind::Error => None,
+            _ => {
+                self.refuse_why(
+                    expression.place,
+                    "this number's limit is a `HugeWhole` written out",
+                    "a number's limits are known while loading, and are of its own type.",
+                );
+                None
+            }
+        }
     }
 
     /// A ranged number's edge: a number written there, `-` allowed, or a top-level name made from one with no `mut`,
@@ -746,43 +792,23 @@ impl<'a> Checker<'a> {
     /// with `.clamp`, as it lands.
     pub(super) fn land(&mut self, value: Expression, target: TypeId) -> Expression {
         let Some(limits) = self.program.types.limits(target) else { return value };
-        let past = |edge: Option<types::Edge>, below: bool| {
-            let edge = edge.filter(|edge| !edge.clamp)?;
-            let outside = match value.kind {
-                ExpressionKind::Whole(number) => {
-                    let limit = edge.bits.cast_signed();
-                    if below { number < limit } else { number > limit }
-                }
-                ExpressionKind::Float(number) => {
-                    let limit = f64::from_bits(edge.bits);
-                    if below { number < limit } else { number > limit }
-                }
-                // trace: D115. A `HugeWhole` written out is seen too.
-                ExpressionKind::Number(crate::decimal::Number::Huge(ref number)) => {
-                    let order = number.compare(&crate::big::Big::from_i64(edge.bits.cast_signed()));
-                    if below { order == std::cmp::Ordering::Less } else { order == std::cmp::Ordering::Greater }
-                }
-                _ => false,
-            };
-            outside.then_some(edge)
-        };
-        let shown = |limits: &types::Limits, edge: types::Edge| {
-            if limits.float {
+        for (edge, below) in [(limits.min, true), (limits.max, false)] {
+            let Some(edge) = edge.filter(|edge| !edge.clamp) else { continue };
+            if !edge_passed(&self.program.types, &value.kind, edge, below) {
+                continue;
+            }
+            let shown = if limits.float {
                 crate::number::float_to_text(f64::from_bits(edge.bits))
             } else {
-                edge.bits.cast_signed().to_string()
-            }
-        };
-        for (edge, below) in [(limits.min, true), (limits.max, false)] {
-            if let Some(edge) = past(edge, below) {
-                let (word, side) = if below { ("min", "below") } else { ("max", "above") };
-                self.refuse_why(
-                    value.place,
-                    format!("this is {side} its type's `{word}: {}`", shown(&limits, edge)),
-                    "a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.",
-                );
-                return Self::error(value.place);
-            }
+                self.program.types.edge_value(edge).to_decimal()
+            };
+            let (word, side) = if below { ("min", "below") } else { ("max", "above") };
+            self.refuse_why(
+                value.place,
+                format!("this is {side} its type's `{word}: {shown}`"),
+                "a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.",
+            );
+            return Self::error(value.place);
         }
         let (type_id, place) = (value.type_id, value.place);
         Expression { kind: ExpressionKind::Land { value: Box::new(value), target }, type_id, place }
@@ -3021,6 +3047,22 @@ fn statement_can_fail(statement: &syntax::Statement) -> bool {
         syntax::StatementKind::Return(value) => value.as_ref().is_some_and(expression_can_fail),
         syntax::StatementKind::Break => false,
     }
+}
+
+/// Whether a value written out is past a hard edge of a ranged number, Seal seeing it while loading (D128).
+fn edge_passed(types: &types::TypeTable, value: &ExpressionKind, edge: types::Edge, below: bool) -> bool {
+    let order = match value {
+        ExpressionKind::Whole(number) if !edge.big => number.cmp(&edge.bits.cast_signed()),
+        ExpressionKind::Whole(number) => crate::big::Big::from_i64(*number).compare(&types.edge_value(edge)),
+        ExpressionKind::Float(number) => match number.partial_cmp(&f64::from_bits(edge.bits)) {
+            Some(order) => order,
+            None => return false,
+        },
+        // trace: D115. A `HugeWhole` written out is seen too.
+        ExpressionKind::Number(crate::decimal::Number::Huge(number)) => number.compare(&types.edge_value(edge)),
+        _ => return false,
+    };
+    if below { order == std::cmp::Ordering::Less } else { order == std::cmp::Ordering::Greater }
 }
 
 /// Whether a value uses `_` anywhere in it (D147).
