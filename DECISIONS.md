@@ -3952,3 +3952,42 @@ another; a case written for one call has no such reason.
 
 **Tankun's words.** "what", "What about `otherwise`?", "Is it `include` or `incl`", then, asked "allow a handler's
 extra cases to go unused, and keep `otherwise`'s own cases strict?", the owner chose: "Yes, and don't change `incl`"
+
+## D132. `**` follows maths order: chains from the right, and `-2 ** 2` is `-(2 ** 2)`
+
+2026-11-25.
+
+**Chosen.** `**` takes its order from maths, as D108 already said of `*` and `/`, so nothing about it needs brackets:
+
+```
+a = 2 ** 3 ** 2        // 2 ** (3 ** 2), 512
+b = -2 ** 2            // -(2 ** 2), -4
+c = (-2) ** 2          // 4
+d = 2 ** -1            // the - negates the 1 (refused for a Whole, D108)
+```
+
+- **A chain of `**` groups from the right,** as maths writes powers.
+- **`**` comes before a negating `-`,** so `-x ** 2` is `-(x ** 2)`, as maths reads −x². Seal's order, from first to
+  last, is `**`, then a negating `-`, then `*` and `/`, as Unio D72 lists the rest.
+- A `-` after `**` negates what follows it.
+
+**Weighed.**
+- Refusing a negating `-` right before `**`, with `(-2) ** 2` and `-(2 ** 2)` as fixes, as JavaScript refuses it and
+  as the design session recommended, since tools disagree: Python, Lua, Luau and Ruby give -4, while the Mac's `bc`
+  gives 4. Tankun: powers are maths' domain, so maths' reading is the one a formula means.
+- A rule that brackets are required wherever a fixed list of languages and a calculator disagree, as the design
+  session proposed on the way. Tankun asked how the design session knew where Seal's users come from; it didn't.
+- In passing: Unio D72's "Why" said that where maths has an order "everyone already knows it". That was the design
+  session's wording, not Tankun's, and it overclaims, as Tankun pointed out. The order holds because a formula copied
+  from maths, a tutorial, Python or Lua then means the same in Seal.
+
+**Why this won.** `**` only appears in maths formulas, and a formula is written by maths' rules, which the languages
+Seal's scripts are most often copied from already follow.
+
+**Tankun's words.** "Well, what's the rule", "Wait, `-2 ** 2` doesn't mean negative 2 pow 2?", "Wait, what? Who the
+fuck said "everyone already knows it". That's like saying "When C++ has a feature, every programmer knows it"", "What
+the fuck? JS refuses that? That's so fucking illegal", "That's insane, is it the same JS?", "So, should we use a new
+rule for precedence?", "How do you know?", "No, I meant the people", "Or just fuck it, and use math's?", "`-2 ** 2`
+gives -2 x 2 x 2. So -4?", "No, it's just that I don't fucking know power", "Like, it's math's domain", then, asked
+"Should Seal follow maths order for `**`: chains from the right, and `-2 ** 2` as `-(2 ** 2)`, with no brackets
+required?", the owner chose: "yea"
