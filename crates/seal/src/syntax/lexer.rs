@@ -399,6 +399,9 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
         Message::refused(place, "this `///` has no declaration after it")
             .with_why("a `///` comment describes the declaration on the line after it.")
     };
+    // A `\r` anywhere but before a line break is refused; most scripts have none at all, so each line is looked at
+    // for one only when the script has one.
+    let has_carriage_return = source.as_bytes().contains(&b'\r');
     // One line's characters, and where each starts in the line's text, in room that every line reuses.
     for (index, text) in physical_lines(source).enumerate() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
@@ -445,9 +448,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             continue;
         }
         let width = u32::try_from(characters.len()).unwrap_or(u32::MAX);
-        if text.as_bytes().contains(&b'\r')
-            && let Some(position) = characters.iter().position(|&character| character == '\r')
-        {
+        if has_carriage_return && let Some(position) = characters.iter().position(|&character| character == '\r') {
             return Err(Message::not_designed_yet(
                 Place::new(number, column_of(position), 1),
                 "a `\\r` that isn't right before a line break",

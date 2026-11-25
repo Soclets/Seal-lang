@@ -1,8 +1,6 @@
 //! Handlers: named sets of `case`s, kept in handler groups, and used at a call as if their cases were written there
 //! (D97, D98, D110, Unio D40 to D44).
 
-use std::collections::HashMap;
-
 use super::Checker;
 use super::tree::{Block, Expression, ExpressionKind, FailureId, Statement, StatementKind, Variable, VariableKind};
 use super::types::{ERROR, TypeId};
@@ -306,7 +304,7 @@ impl<'a> Checker<'a> {
         // The cases see the handler's own parameters, and the top level's names as a procedure's body does.
         self.handlers_in_use.push(key);
         let saved = std::mem::take(&mut self.context.scopes);
-        let around: Vec<HashMap<&'a str, super::tree::VariableId>> =
+        let around: Vec<super::names::Names<'a, super::tree::VariableId>> =
             if self.context.procedure.is_none() { saved.first().cloned().into_iter().collect() } else { Vec::new() };
         let mut read = vec![false; handler.parameters.len()];
         let mut cases: Vec<(FailureId, Block)> = Vec::new();
@@ -319,7 +317,7 @@ impl<'a> Checker<'a> {
                     "a handler has one `case` for each failure.",
                 );
             }
-            let mut scope = HashMap::new();
+            let mut scope = super::names::Names::default();
             let mut before = Vec::new();
             let mut made = Vec::new();
             for ((parameter, &parameter_type), value) in handler.parameters.iter().zip(&parameter_types).zip(&values) {

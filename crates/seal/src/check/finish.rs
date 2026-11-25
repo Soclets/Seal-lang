@@ -47,6 +47,38 @@ impl Visitor for Dependence {
     }
 }
 
+/// What a body holds that the last passes look at: something that can fail, or deals with a failure, and a
+/// `for_each`. A body with neither needs neither pass (D140).
+struct Concerns<'p> {
+    doors: &'p [DoorSignature],
+    may_fail: bool,
+    loops: bool,
+}
+
+impl Visitor for Concerns<'_> {
+    fn statement(&mut self, statement: &Statement) {
+        self.loops |= matches!(statement.kind, StatementKind::ForEach { .. });
+    }
+
+    fn expression(&mut self, expression: &Expression, _handled: bool) {
+        self.may_fail |= match &expression.kind {
+            ExpressionKind::DoorCall { door, .. } => {
+                self.doors.get(*door as usize).is_none_or(|door| !door.failures.is_empty())
+            }
+            ExpressionKind::Call { .. }
+            | ExpressionKind::Lookup { .. }
+            | ExpressionKind::DictRemove { .. }
+            | ExpressionKind::Convert { .. }
+            | ExpressionKind::ListAdd { .. }
+            | ExpressionKind::Inside { .. }
+            | ExpressionKind::Try(_)
+            | ExpressionKind::Handle { .. }
+            | ExpressionKind::Otherwise { .. } => true,
+            _ => false,
+        };
+    }
+}
+
 /// Looks at what a way into a part works out: its hidden names' values and its steps' places (D62).
 fn walk_inside(path: &Inside, visitor: &mut dyn Visitor) {
     for (_, value) in &path.lets {
@@ -808,6 +840,7 @@ impl Checker<'_> {
         let mut calls: Vec<BTreeSet<ProcedureId>> = Vec::with_capacity(count);
         let mut settled = vec![false; count];
         let mut first = true;
+        let mut concerns = Concerns { doors: self.doors, may_fail: false, loops: false };
         loop {
             let mut changed = false;
             for index in 0..count {
@@ -823,7 +856,8 @@ impl Checker<'_> {
                     let mut writes = WriteCollector::default();
                     let mut pauses_and_dependence = Both(&mut finder, &mut dependence);
                     let mut found = Both(&mut collector, &mut pauses_and_dependence);
-                    walk_block(&procedure.body, &mut Both(&mut found, &mut writes));
+                    let mut writes_and_concerns = Both(&mut writes, &mut concerns);
+                    walk_block(&procedure.body, &mut Both(&mut found, &mut writes_and_concerns));
                     may_write.push(writes.writes);
                     calls.push(writes.calls);
                 } else {
@@ -878,7 +912,9 @@ impl Checker<'_> {
         let mut messages = Vec::new();
         let mut handling = HandlingChecker { facts: &facts, messages: Vec::new() };
         let mut loops = LoopChecker { facts: &facts, may_write: &may_write, messages: Vec::new() };
-        for block in self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level]) {
+        // The procedures' bodies are looked at only for what one of them holds; the top level always is.
+        let bodies = self.program.procedures.iter().map(|procedure| &procedure.body);
+        for block in bodies.filter(|_| concerns.may_fail || concerns.loops).chain([&self.program.top_level]) {
             walk_block(block, &mut Both(&mut handling, &mut loops));
         }
         messages.append(&mut handling.messages);

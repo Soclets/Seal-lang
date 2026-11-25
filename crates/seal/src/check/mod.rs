@@ -5,11 +5,13 @@ mod calls;
 mod expressions;
 mod finish;
 mod handlers;
+mod names;
 mod numbers;
 pub mod tree;
 pub mod types;
 mod units;
 
+use names::Names;
 use std::collections::{HashMap, HashSet};
 
 use crate::message::{Message, MessageKind, Place};
@@ -96,9 +98,9 @@ struct DeferredArgument {
 #[derive(Default)]
 struct Context<'a> {
     procedure: Option<ProcedureId>,
-    scopes: Vec<HashMap<&'a str, VariableId>>,
+    scopes: Vec<Names<'a, VariableId>>,
     /// Emptied scope tables, for the next scope to use (D140).
-    spare_scopes: Vec<HashMap<&'a str, VariableId>>,
+    spare_scopes: Vec<Names<'a, VariableId>>,
     loop_depth: u32,
     /// The names being gone through by a `for_each`, which can't change inside it (Unio D173).
     iterating: Vec<VariableId>,
@@ -121,7 +123,7 @@ impl<'a> Context<'a> {
     }
 
     /// An empty table for a new scope, one kept from an earlier scope when there is one.
-    fn spare_scope(&mut self) -> HashMap<&'a str, VariableId> {
+    fn spare_scope(&mut self) -> Names<'a, VariableId> {
         self.spare_scopes.pop().unwrap_or_default()
     }
 
@@ -132,9 +134,9 @@ impl<'a> Context<'a> {
     }
 
     /// A scope's table, emptied and kept for the next scope.
-    fn keep_scope(&mut self, scope: HashMap<&'a str, VariableId>) {
+    fn keep_scope(&mut self, scope: Names<'a, VariableId>) {
         if self.spare_scopes.len() < SPARE_LIMIT {
-            self.spare_scopes.push(keep(scope));
+            self.spare_scopes.push(keep_names(scope));
         }
     }
 }
@@ -148,14 +150,14 @@ pub(crate) struct Checker<'a> {
     /// Top-level names made with no `mut` from a value written out plainly, which are known while loading (D103,
     /// D104), and the top-level names made with `mut`, which aren't.
     // Names are the script's own, borrowed, as keys too (D140).
-    plain_names: HashMap<&'a str, &'a syntax::Expression<'a>>,
-    changing_names: HashSet<&'a str>,
+    plain_names: Names<'a, &'a syntax::Expression<'a>>,
+    changing_names: Names<'a, ()>,
     /// The handler groups, by name (D110).
-    handler_groups: HashMap<&'a str, &'a syntax::HandlerGroup<'a>>,
+    handler_groups: Names<'a, &'a syntax::HandlerGroup<'a>>,
     /// The handlers whose cases are being checked where they're used, so that one can't use itself.
     handlers_in_use: Vec<String>,
     /// Their names.
-    host_type_names: HashSet<&'a str>,
+    host_type_names: Names<'a, ()>,
     /// Whether a type being read may leave out the parts its value shows: a name's written type (D82).
     partial_types: bool,
     /// The script as it's written, for fixes that show a whole line put right.
@@ -167,12 +169,12 @@ pub(crate) struct Checker<'a> {
     procedure_state: Vec<ProcedureState>,
     procedure_names: HashMap<std::borrow::Cow<'a, str>, ProcedureId>,
     /// The first word of every procedure and door, for telling an unknown narrowing from an unknown word.
-    words: HashSet<&'a str>,
-    record_names: HashMap<&'a str, u32>,
-    one_of_names: HashMap<&'a str, u32>,
+    words: Names<'a, ()>,
+    record_names: Names<'a, u32>,
+    one_of_names: Names<'a, u32>,
     failure_ids: HashMap<std::borrow::Cow<'static, str>, FailureId>,
     /// The top level's own names, known before they're made so that procedures can use them (D4).
-    globals: HashMap<&'a str, VariableId>,
+    globals: Names<'a, VariableId>,
     made: HashSet<VariableId>,
     context: Context<'a>,
     pending: Vec<Pending>,
@@ -215,11 +217,11 @@ pub fn check(
         doors,
         host_types,
         host_units,
-        host_type_names: HashSet::new(),
+        host_type_names: Names::default(),
         partial_types: false,
-        plain_names: HashMap::new(),
-        changing_names: HashSet::new(),
-        handler_groups: HashMap::new(),
+        plain_names: Names::default(),
+        changing_names: Names::default(),
+        handler_groups: Names::default(),
         handlers_in_use: Vec::new(),
         script,
         messages: Vec::new(),
@@ -231,12 +233,12 @@ pub fn check(
         procedure_syntax: Vec::new(),
         procedure_state: Vec::new(),
         procedure_names: HashMap::new(),
-        words: HashSet::new(),
-        record_names: HashMap::new(),
-        one_of_names: HashMap::new(),
+        words: Names::default(),
+        record_names: Names::default(),
+        one_of_names: Names::default(),
         // Room for Seal's own failures and a few of the script's, so they don't grow one at a time.
         failure_ids: HashMap::new(),
-        globals: HashMap::new(),
+        globals: Names::default(),
         made: std::mem::take(&mut spare.made),
         context: Context::default(),
         pending: Vec::new(),
@@ -302,13 +304,13 @@ thread_local! {
     static SPARE_TABLES: std::cell::RefCell<SpareTables> = std::cell::RefCell::default();
 }
 
-/// A table emptied for keeping, or a new one in its place when it grew too big to keep.
-fn keep<K, V>(mut table: HashMap<K, V>) -> HashMap<K, V> {
-    if table.capacity() > SPARE_LIMIT {
-        return HashMap::new();
+/// A table of names emptied for keeping, or a new one in its place when it grew too big to keep.
+fn keep_names<V>(mut names: Names<'_, V>) -> Names<'_, V> {
+    if names.capacity() > SPARE_LIMIT {
+        return Names::default();
     }
-    table.clear();
-    table
+    names.clear();
+    names
 }
 
 fn keep_set<K>(mut set: HashSet<K>) -> HashSet<K> {
@@ -410,7 +412,7 @@ impl<'a> Checker<'a> {
                 _ => continue,
             }
             if let HostType::Record { name, .. } | HostType::OneOf { name, .. } = host {
-                self.host_type_names.insert(name.as_str());
+                self.host_type_names.add(name.as_str());
             }
         }
         for host in self.host_types {
@@ -707,10 +709,10 @@ impl<'a> Checker<'a> {
     fn plain_number(&mut self, expression: &syntax::Expression<'a>, float: bool) -> Option<u64> {
         let written = match &expression.kind {
             syntax::ExpressionKind::Name(name) => {
-                if let Some(&global) = self.globals.get(*name) {
+                if let Some(&global) = self.globals.get(name) {
                     self.mark_read(global);
                 }
-                let Some(value) = self.plain_names.get(*name).copied() else {
+                let Some(value) = self.plain_names.get(name).copied() else {
                     self.refuse_why(
                         expression.place,
                         format!("`{name}` isn't a top-level name made from a number written out, with no `mut`"),
@@ -790,18 +792,18 @@ impl<'a> Checker<'a> {
     fn plain_whole(&mut self, expression: &syntax::Expression<'a>) -> Option<i64> {
         let written = match &expression.kind {
             syntax::ExpressionKind::Name(name) => {
-                let value = self.plain_names.get(*name).copied();
+                let value = self.plain_names.get(name).copied();
                 if let Some(value) = value.filter(|value| matches!(value.kind, syntax::ExpressionKind::Whole(_))) {
-                    if let Some(&global) = self.globals.get(*name) {
+                    if let Some(&global) = self.globals.get(name) {
                         self.mark_read(global);
                     }
                     value
                 } else {
-                    if let Some(&global) = self.globals.get(*name) {
+                    if let Some(&global) = self.globals.get(name) {
                         self.mark_read(global);
                     }
                     // trace: D103
-                    let what = if self.changing_names.contains(*name) {
+                    let what = if self.changing_names.contains(name) {
                         format!("`{name}` is made with `mut`, so its value isn't known while loading")
                     } else {
                         format!("`{name}` isn't a top-level name made from a whole number written out")
@@ -1048,7 +1050,7 @@ impl<'a> Checker<'a> {
 
     fn declare_procedures(&mut self, script: &'a syntax::Script<'a>) {
         for door in self.doors {
-            self.words.insert(door.name.split('.').next().unwrap_or(""));
+            self.words.add(door.name.split('.').next().unwrap_or(""));
         }
         let mut list: Vec<&'a syntax::Procedure<'a>> = Vec::new();
         for item in &script.items {
@@ -1235,7 +1237,7 @@ impl<'a> Checker<'a> {
         self.procedure_state.push(ProcedureState::Unchecked);
         self.written_failures.push(procedure.failures.clone());
         self.procedure_names.insert(name, id);
-        self.words.insert(word);
+        self.words.add(word);
     }
 
     /// A default: a value written out plainly, or a top-level name made from one with no `mut`, of the parameter's
@@ -1261,9 +1263,9 @@ impl<'a> Checker<'a> {
         let mut waiting = vec![&mut copy];
         while let Some(current) = waiting.pop() {
             if let syntax::ExpressionKind::Name(name) = &current.kind
-                && let Some(&value) = self.plain_names.get(*name)
+                && let Some(&value) = self.plain_names.get(name)
             {
-                if let Some(&global) = self.globals.get(*name) {
+                if let Some(&global) = self.globals.get(name) {
                     self.mark_read(global);
                 }
                 let place = current.place;
@@ -1302,7 +1304,7 @@ impl<'a> Checker<'a> {
                 continue;
             }
             if *marker == syntax::Marker::Mut {
-                self.changing_names.insert(name.text);
+                self.changing_names.add(name.text);
             } else if *marker == syntax::Marker::None && is_plain(value, &self.plain_names) {
                 self.plain_names.insert(name.text, value);
             }
@@ -1501,7 +1503,7 @@ impl<'a> Checker<'a> {
     }
 
     /// trace: D2, D61, D135
-    fn check_unused(&mut self, scope: &HashMap<&'a str, VariableId>) {
+    fn check_unused(&mut self, scope: &Names<'a, VariableId>) {
         let mut unchanged: Vec<(Place, String)> = scope
             .values()
             .filter_map(|&id| self.variable(id))
@@ -1928,10 +1930,9 @@ impl<'a> Checker<'a> {
                 self.peek_type(operand)
             }
             syntax::ExpressionKind::Name(name) => {
-                let id =
-                    self.context.scopes.iter().rev().find_map(|scope| scope.get(*name).copied()).or_else(|| {
-                        if self.context.procedure.is_some() { self.globals.get(*name).copied() } else { None }
-                    })?;
+                let id = self.context.scopes.iter().rev().find_map(|scope| scope.get(name).copied()).or_else(|| {
+                    if self.context.procedure.is_some() { self.globals.get(name).copied() } else { None }
+                })?;
                 Some(self.program.types.resolve(self.variable_type(id)))
             }
             syntax::ExpressionKind::Binary { operator, left, .. } if operator.is_maths() => self.peek_type(left),
@@ -2953,7 +2954,7 @@ impl<'a> Checker<'a> {
 /// Whether an expression is a value written out plainly, which is the same every time (D104): a number, text with
 /// nothing filled in, a `Bool`, a list, an array's `[all: …]`, a `Dict`, a record or a case built from plain values,
 /// or a top-level name made from one with no `mut`.
-fn is_plain(expression: &syntax::Expression, names: &HashMap<&str, &syntax::Expression>) -> bool {
+fn is_plain(expression: &syntax::Expression, names: &Names<'_, &syntax::Expression>) -> bool {
     use syntax::ExpressionKind as Kind;
     match &expression.kind {
         Kind::Whole(_) | Kind::Float { .. } | Kind::Bool(_) | Kind::EmptyDict => true,
@@ -2961,7 +2962,7 @@ fn is_plain(expression: &syntax::Expression, names: &HashMap<&str, &syntax::Expr
         Kind::Unary { operator: syntax::UnaryOperator::Negate, operand } => {
             matches!(operand.kind, Kind::Whole(_) | Kind::Float { .. })
         }
-        Kind::Name(name) => names.contains_key(*name),
+        Kind::Name(name) => names.contains_key(name),
         Kind::List(items) => items.iter().all(|item| is_plain(item, names)),
         Kind::Pairs(pairs) => pairs.iter().all(|(key, value)| {
             (matches!(&key.kind, Kind::Name(name) if *name == "all") || is_plain(key, names)) && is_plain(value, names)

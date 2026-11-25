@@ -104,7 +104,7 @@ impl<'a> Checker<'a> {
             }
             Kind::TypeName(word) => {
                 let name = &word.text;
-                if self.record_names.contains_key(*name) {
+                if self.record_names.contains_key(name) {
                     // trace: D27
                     self.refuse_why(
                         place,
