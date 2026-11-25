@@ -5,7 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D149, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
+- D130 to D152, in DECISIONS.md. D151 and D152 answer its C API proposal's two questions. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
@@ -25,6 +25,10 @@ message once the open questions are settled. Removed once sent.
     `counts[key: w] = (_ ?? 0) + 1`; a bare `_ + 1` there is refused (D32). Positions and keys are worked out once,
     before the value, as D147 says.
   - Its two draft wordings, for `_` where nothing is changed and for D149, read well; they go with the wording review.
+- C API proposal, the design session's own notes: the value readers (`seal_value_get_whole` and the rest) have no
+  way to report a wrong kind; `seal_load_message()` keeps one shared last message, which breaks with scripts loading
+  on several threads at once (D49). An idea, its call (D57 lets it add benchmarks): a door-call row through the C API
+  against Luau's C API.
 - Its refusal for D131's case says "this `otherwise`" even after `??`.
 - D135: check the benchmark programs in `bench/programs/` for `mut` names that are never changed.
 - An idea, its own call (D57): Unio's fib trick from `Beta++`, inlining a procedure with no side effects into itself
