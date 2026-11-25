@@ -3214,3 +3214,34 @@ Its wordings come with a later batch.
 
 **Tankun's words.** "Why not just `**`? We're not gonna allow `x**`, so it wouldn't look like a stroke", "It's self
 explainatory, though?", then, asked "Should Seal write powers with `^`?", the owner chose: "No, use `**`"
+
+## D109. `sin`, `cos`, `tan`, `asin`, `acos` and `atan2`, in radians, with `.degrees` versions, and `pi`
+
+2026-11-25.
+
+**Chosen.**
+- **`sin`, `cos` and `tan` take a `Float` angle in radians;** `asin` and `acos` give one for a value from -1 to 1,
+  stopping with a failed check outside it; `atan2(y:, x:)` gives the angle of the point `x`, `y`.
+- **Each has a `.degrees` version,** a narrowing, taking or giving degrees, a full turn being 360:
+  `sin.degrees(90.0)` is `1.0`, and `atan2.degrees(y: 1.0, x: 0.0)` is `90.0`.
+- **`pi` is a built-in `Float`,** the one nearest π.
+- **Each is correctly rounded and the same on every machine** (D50), checked against Ralph's floats.
+
+```
+dx = cos(angle) * speed
+aim = atan2.degrees(y: target_y - y, x: target_x - x)
+```
+
+The wordings come with a later batch.
+
+**Weighed.**
+- Degrees as the plain form, with `.radians` versions. Friendlier at first, but every formula copied from a tutorial
+  or another engine assumes radians and would quietly break.
+- A label for the unit, as `sin(radians: a)` (D55). The first argument has no label by convention.
+
+**Why this won.** Radians are what the maths and every other library use, and degrees, the human convention, are a
+kind of the same operation.
+
+**Tankun's words.** "So, default is radians?", "Wait a fucking minute, don't you have a script for that? Quote", then,
+asked "Should Seal have `sin`, `cos`, `tan`, `asin`, `acos` and `atan2` in radians, `.degrees` versions of each, and
+`pi`?", the owner chose: "yea"
