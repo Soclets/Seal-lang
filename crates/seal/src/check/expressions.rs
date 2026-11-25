@@ -703,7 +703,7 @@ impl Checker<'_> {
         }
     }
 
-    /// Collects the pieces `&` joins, left to right (D29).
+    /// Collects the pieces of a join, left to right. The reader refuses `&` (D77), so only Seal's own joins get here.
     fn join_parts(&mut self, expression: &syntax::Expression, parts: &mut Vec<Expression>) {
         if let syntax::ExpressionKind::Binary { operator: BinaryOperator::Join, left, right, .. } = &expression.kind {
             self.join_parts(left, parts);
@@ -711,7 +711,6 @@ impl Checker<'_> {
             return;
         }
         let checked = self.expression(expression, None);
-        self.require(checked.type_id, Requirement::Joinable, checked.place, "`&` joins text");
         parts.push(checked);
     }
 

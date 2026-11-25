@@ -65,8 +65,6 @@ enum Requirement {
     Ordered,
     /// `Whole`, `Float`, `Bool` or `Text`: `==` and `!=` (D64).
     Comparable,
-    /// What `&` joins: `Text`, `Whole` or `Bool` (D29).
-    Joinable,
     /// What `be.Text` converts: `Whole`, `Float` or `Bool`.
     Textable,
     /// Has the field or fact `name`, of type `result` (D27, Unio D79).

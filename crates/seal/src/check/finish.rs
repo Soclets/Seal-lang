@@ -7,7 +7,7 @@ use super::tree::{
     Conversion, Expression, ExpressionKind, FailureId, HandleFallback, Inside, PathStep, ProcedureId, Program,
     Statement, StatementKind, VariableId,
 };
-use super::types::{BOOL, ERROR, FLOAT, TEXT, Type, TypeId, WHOLE};
+use super::types::{ERROR, FLOAT, TEXT, Type, TypeId, WHOLE};
 use super::{Checker, Pending, Requirement};
 use crate::message::{Message, Place};
 use crate::signature::DoorSignature;
@@ -483,25 +483,6 @@ impl Checker<'_> {
             },
             // trace: D64, D95. Two values are equal when their contents are.
             Requirement::Comparable => {}
-            Requirement::Joinable => match kind {
-                Type::Text | Type::Whole | Type::Bool => {}
-                Type::Float => {
-                    // trace: D29
-                    self.refuse_why(
-                        place,
-                        "a `Float` isn't joined with `&` by itself; `be.Text(…)` turns it into text first",
-                        "a `Float`'s text carries its `~` and every digit, which shouldn't appear by accident.",
-                    );
-                }
-                _ => {
-                    // trace: D29
-                    self.refuse_why(
-                        place,
-                        format!("{purpose}, but this is {found}"),
-                        "only text, a `Whole` or a `Bool` is joined with `&`.",
-                    );
-                }
-            },
             Requirement::Textable => {
                 if matches!(kind, Type::Text) {
                     self.refuse_why(
@@ -610,7 +591,6 @@ impl Checker<'_> {
     fn candidates(&mut self, requirement: &Requirement) -> Option<Vec<TypeId>> {
         match requirement {
             Requirement::Number | Requirement::Ordered => Some(vec![WHOLE, FLOAT]),
-            Requirement::Joinable => Some(vec![TEXT, WHOLE, BOOL]),
             Requirement::Member { name, .. } => {
                 if name == "len" {
                     return None;
