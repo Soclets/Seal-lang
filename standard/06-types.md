@@ -6,6 +6,7 @@ examples in Seal's syntax (README).
 | Type | What it holds | At the doors, in Rust |
 |---|---|---|
 | `Whole` | a 64-bit signed whole number, stopping with a failed check on overflow (Unio D15, D46) | `i64` |
+| `HugeWhole` | a whole number of any size, limited only by the script's memory cap (D14, D115) | a big integer, the building session's choice |
 | `Float` | an IEEE 754 binary64 number, with `~` on inexact literals and Unio's rules for showing, rounding and comparing (Unio D155, D157, D175 to D184) | `f64` |
 | `Bool` | `true` or `false` | `bool` |
 | `Text` | text | `String` |
@@ -16,6 +17,10 @@ examples in Seal's syntax (README).
 - **A number with a point is a `Float`, and one without is a `Whole`** (Unio D180), so a worked-out type is never in
   doubt for a literal: `speed = 2.0` makes a `Float`.
 - **`Whole` and `Float` don't mix quietly:** `be.Float(lives) * speed` (Unio D162).
+- **A `Whole` becomes a `HugeWhole` by itself,** since it always fits exactly, as in `cookies + clicks`; a `HugeWhole`
+  becomes a `Whole` only through `be.Whole`, failing with `too_big` when it doesn't fit, and a `HugeWhole` and a
+  `Float` don't mix quietly (D115). A number written too big for a `Whole` is a `HugeWhole` where one is wanted, and
+  refused elsewhere (D115).
 - **Text counts graphemes by default,** what a person sees as one character: `.len` counts them, and `[pos:]`,
   `[offset:]` and `for each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
   UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).

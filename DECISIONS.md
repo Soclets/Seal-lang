@@ -3452,3 +3452,39 @@ x = lerp(x, to: target_x, by: ~0.1)       // 10% closer each frame
 
 **Tankun's words.** "`0.1` what" (the design session's first example wrote `0.1` without its `~`), then, asked "Should
 Seal have `lerp(a, to: b, by: t)`?", the owner chose: "yea"
+
+## D115. `HugeWhole`, a whole number of any size
+
+2026-11-25.
+
+**Chosen.** `HugeWhole` holds a whole number of any size, exactly, limited only by the script's memory cap (D14):
+
+```
+mut cookies: HugeWhole = 0
+cookies = cookies + clicks          // clicks: a Whole
+best = be.Whole(cookies) ?? 0
+```
+
+- **It works as `Whole` does:** `+`, `-`, `*`, `**`, `div`, `rem`, comparisons, braces, units and ranged types. It
+  never overflows.
+- **A `Whole` becomes a `HugeWhole` by itself,** since every `Whole` fits exactly, under the rule Seal already follows
+  where nothing can be lost (D73, D75, D111).
+- **A `HugeWhole` becomes a `Whole` only through `be.Whole`,** failing with `too_big` when it doesn't fit.
+- **A `HugeWhole` and a `Float` don't mix quietly,** as `Whole` and `Float` don't (Unio D162).
+- **A number written too big for a `Whole`** is a `HugeWhole` where one is wanted, and refused elsewhere.
+- It's slower than `Whole`, as every number with no size limit is, so `Whole` stays the default.
+
+**Weighed.**
+- `InfWhole`, Tankun's first name. It can't hold infinity, and "inf" means infinity for floats, which Seal refuses
+  (Unio D177).
+- `BigWhole`, as JavaScript's `BigInt`. Tankun: "Though, Whole is already big".
+- `Whole.unlimited` or `Whole.big`, a narrowing. Long, or reading like another rounding of `be.Whole`, as
+  `be.Whole.floor` is, once converting is written.
+- Converting `Whole` to `HugeWhole` by hand, as the design session first wrote it.
+
+**Why this won.** Idle and clicker games outgrow a `Whole`'s nine quintillion, and `HugeWhole` says it's the same kind
+of number, only far larger.
+
+**Tankun's words.** "Though, Whole is already big", "That's long as fuck", "`HugeWhole`?", "Converting clicks?",
+"Doesn't Seal already auto convert for obv?", then, asked "Should Seal have `HugeWhole`, a whole number with no size
+limit, with a `Whole` turning into one by itself and the other way written out?", the owner chose: "yea"
