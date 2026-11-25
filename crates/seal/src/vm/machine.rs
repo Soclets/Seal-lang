@@ -737,7 +737,12 @@ fn append_whole(text: &mut String, value: i64) {
 fn grow_stack(stack: &mut Vec<u64>, heap: &mut Heap, needed: usize) -> Result<(), HeapError> {
     let new_length = needed.max(stack.len().saturating_mul(2)).max(32);
     heap.charge((new_length - stack.len()).saturating_mul(STACK_SLOT_COST))?;
-    stack.resize(new_length, 0);
+    if stack.capacity() == 0 {
+        // A new stack comes from the system already zeroed, instead of being written over.
+        *stack = vec![0; new_length];
+    } else {
+        stack.resize(new_length, 0);
+    }
     Ok(())
 }
 

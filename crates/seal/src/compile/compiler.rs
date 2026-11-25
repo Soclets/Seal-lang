@@ -141,6 +141,9 @@ pub fn compile_as(program: &Program, doors: &[DoorSignature], plain: bool) -> Re
         doors,
         out: Compiled {
             failure_names: program.failure_names.clone(),
+            built_in_failures: ["missing", "not_a_whole", "full"].map(|wanted| {
+                (1u32..).zip(&program.failure_names).find(|(_, known)| *known == wanted).map_or(0, |(number, _)| number)
+            }),
             types: program.types.clone(),
             ..Compiled::default()
         },
@@ -654,6 +657,8 @@ impl<'p> Compiler<'p> {
         let failures =
             procedure.failures.iter().map(|&failure| self.program.failure_name(failure).to_owned()).collect();
         let result = self.crossing(procedure.result);
+        let holds_itself = result.holds_itself()
+            || parameters.iter().any(|parameter: &CompiledParameter| parameter.crossing.holds_itself());
         self.out.entries.push(ProcedureEntry { entry, frame_size: self.function.high_water + 1 });
         self.out.procedures.push(CompiledProcedure {
             name: procedure.name.clone(),
@@ -664,6 +669,7 @@ impl<'p> Compiler<'p> {
             result_written: self.program.types.written(procedure.result),
             failures,
             can_pause: procedure.can_pause,
+            holds_itself,
         });
     }
 

@@ -521,11 +521,14 @@ impl Doors {
     /// What a source compiled to the last time it was loaded with these doors, when that's still kept.
     pub(crate) fn kept(&self, source: &str) -> Option<Loaded> {
         let mut kept = self.inner.kept.lock().ok()?;
-        let position = kept.iter().position(|loaded| *loaded.source == *source)?;
-        // Moved to the end, as the most recently used.
-        let loaded = kept.remove(position);
-        kept.push(loaded.clone());
-        Some(loaded)
+        // Looked for from the most recently used, which is the likeliest to be loaded again.
+        let position = kept.iter().rposition(|loaded| *loaded.source == *source)?;
+        // Moved to the end, as the most recently used, unless it's there already.
+        if position + 1 != kept.len() {
+            let loaded = kept.remove(position);
+            kept.push(loaded);
+        }
+        kept.last().cloned()
     }
 
     /// Keeps what a source compiled to, for the next time it's loaded with these doors.

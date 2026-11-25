@@ -207,10 +207,7 @@ impl Script {
                 return Err(Error::Stopped(message));
             }
         };
-        let missing_failure = |wanted: &str| {
-            (1u32..).zip(&compiled.failure_names).find(|(_, known)| *known == wanted).map_or(0, |(number, _)| number)
-        };
-        let failures = [missing_failure("missing"), missing_failure("not_a_whole"), missing_failure("full")];
+        let failures = compiled.built_in_failures;
         let mut script = Script {
             name: name.to_owned(),
             source: shared_source,
@@ -282,6 +279,8 @@ impl Script {
         match outcome {
             Ok(Outcome::Finished) => {
                 task.finish(&mut self.machine.heap);
+                // The top level's room is where the first call runs.
+                self.spare_task = Some(task);
                 Ok(())
             }
             Ok(Outcome::Paused | Outcome::Failed(_)) => Err(self
@@ -421,13 +420,15 @@ impl Script {
             return Err(refusal(&self.name, format!("`{}` has no procedure named `{procedure}`", self.name)));
         };
         // trace: D72. A type that holds itself can't cross between a host and a script yet.
-        if let Some(parameter) = found.parameters.iter().find(|parameter| parameter.crossing.holds_itself()) {
+        if found.holds_itself
+            && let Some(parameter) = found.parameters.iter().find(|parameter| parameter.crossing.holds_itself())
+        {
             return Err(self.not_built(format!(
                 "passing a `{}`, a type that holds itself, from a host to a script (D72), which calling `{procedure}` needs, isn't",
                 parameter.written
             )));
         }
-        if found.result.holds_itself() {
+        if found.holds_itself && found.result.holds_itself() {
             return Err(self.not_built(format!(
                 "passing {}, a type that holds itself, from a script to its host (D72), which calling `{procedure}` needs, isn't",
                 describe(&found.result)
@@ -520,6 +521,10 @@ impl Script {
                     let free = self.tasks.iter().position(|slot| slot.running.is_none());
                     let index = free.unwrap_or(self.tasks.len());
                     if free.is_none() {
+                        // Most scripts have one task paused at a time, so the first gets room for one.
+                        if self.tasks.is_empty() {
+                            self.tasks.reserve_exact(1);
+                        }
                         self.tasks.push(TaskSlot::default());
                     }
                     let generation = self.tasks.get(index).map_or(0, |slot| slot.generation);

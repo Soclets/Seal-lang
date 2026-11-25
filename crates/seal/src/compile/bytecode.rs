@@ -957,6 +957,8 @@ pub struct CompiledProcedure {
     pub result_written: String,
     pub failures: Vec<String>,
     pub can_pause: bool,
+    /// Whether a parameter's type or the result's holds itself, which can't cross yet (D72).
+    pub holds_itself: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1015,6 +1017,8 @@ pub struct Compiled {
     /// owns there, to be freed if the task is cancelled (D54).
     pub pause_maps: HashMap<u32, Vec<Register>>,
     pub failure_names: Vec<String>,
+    /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`, 0 for one the script never meets.
+    pub built_in_failures: [u32; 3],
     /// Each procedure's name, by the place its instructions start, for messages.
     pub types: TypeTable,
 }
