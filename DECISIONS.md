@@ -3088,3 +3088,30 @@ and one name for a limit changes in one place.
 
 **Tankun's words.** Asked "should a type's setting accept a top-level, non-`mut` name made from a plain number, as in
 `len.max: max_items`?", the owner chose: "yea"
+
+## D104. A default is any value written out plainly, never a calculation or a call
+
+2026-11-25.
+
+**Chosen.** A `defaults` line (D42) can give any type of value, written out plainly, or a name made from one at the top
+level with no `mut`, as D103 has it for a type's setting:
+
+```
+proc spawn[kind: Text, color: Color, loot: List<Text>]
+    labels [color as color, loot as loot]
+    defaults [color: Color.red, loot: []]
+end
+```
+
+A calculation or a call, as `defaults [loot: make_loot()]`, is refused, with its wording in a later batch.
+
+**Weighed.**
+- Only numbers, `Bool`s and text, as the building session stops on now. A `one_of` case or an empty list is as plain a
+  value as a number.
+- Calculations and calls too. When they'd run, and whether a default could differ between calls, would need rules of
+  their own.
+
+**Why this won.** A default is the same every time, and anything that can be written out plainly is.
+
+**Tankun's words.** Asked "Should a default be any value written out plainly, but never a calculation or a call?",
+the owner chose: "yea"

@@ -113,6 +113,8 @@ hp = heal(hp, by: 10)
 ```
 
 - **Only labelled parameters can have a default** (D42).
+- **A default is a value written out plainly,** of any type, as `5`, `"red"`, `Color.red`, `[]` or a record written out,
+  or a top-level name with no `mut` made from one; a calculation or a call is refused (D104).
 - **A call writes its arguments in the declared order,** skipping any with a default; another order is refused, with
   the reordered call as the fix. A procedure whose maker writes `labels.any_order [ … ]` lets its labelled arguments go
   in any order (D87, from Cyborg's standard, 5.4).
