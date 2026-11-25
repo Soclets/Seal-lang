@@ -6,9 +6,9 @@
 use super::lexer::{Gap, Keyword, Line, Symbol, Token, TokenKind, lex};
 use super::tree::{
     BinaryOperator, Block, CaseDeclaration, DefaultDeclaration, Entry, Expression, ExpressionKind, Fallback, Family,
-    FieldDeclaration, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration, OtherwiseCase, Parameter,
-    PositionKind, Procedure, RecordDeclaration, Script, SlideStep, Statement, StatementKind, TypeExpression,
-    UnaryOperator, Word,
+    FieldDeclaration, Handler, HandlerGroup, HandlerUse, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration,
+    OtherwiseCase, Parameter, PositionKind, Procedure, RecordDeclaration, Script, SlideStep, Statement, StatementKind,
+    TypeExpression, UnaryOperator, Word,
 };
 use crate::message::{Message, Place};
 
@@ -322,6 +322,13 @@ impl Parser<'_> {
             Some(Keyword::Fam) => Ok(Item::Family(self.family()?)),
             Some(Keyword::Record) => Ok(Item::Record(self.record()?)),
             Some(Keyword::OneOf) => Ok(Item::OneOf(self.one_of()?)),
+            // trace: D110. `group.handler name` declares a handler group; `group` is read as such only here.
+            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "group")
+                && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
+                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "handler") =>
+            {
+                Ok(Item::HandlerGroup(self.handler_group()?))
+            }
             _ => {
                 let documented = self.line().and_then(|line| line.documented);
                 let statement = self.statement()?;
@@ -362,12 +369,57 @@ impl Parser<'_> {
             return Err(Message::refused(self.here(), "a procedure's parameters go in `[ ]`, not `( )`")
                 .with_why("`( )` calls a procedure; `[ ]` describes one."));
         }
+        let parameters = self.parameters(if member { &name } else { "" }, &name)?;
+        let result = if self.at_symbol(Symbol::Arrow) {
+            self.advance();
+            Some(self.type_expression()?)
+        } else {
+            None
+        };
+        let failures = if self.at_symbol(Symbol::Bang) {
+            self.advance();
+            self.expect_symbol(Symbol::OpenSquare)?;
+            let mut names = Vec::new();
+            loop {
+                names.push(self.expect_name("a failure's name")?);
+                if self.at_symbol(Symbol::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect_symbol(Symbol::CloseSquare)?;
+            Some(names)
+        } else {
+            None
+        };
+        self.end_line()?;
+        let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
+        let body = self.body(&opener)?;
+        let end_place = self.end_of(&opener)?;
+        Ok(Procedure {
+            path,
+            parameters,
+            result,
+            failures,
+            labels,
+            labels_any_order,
+            defaults,
+            body,
+            place: opener.place,
+            end_place,
+        })
+    }
+
+    /// A procedure's or a handler's parameters in `[ ]`, each with its type or in a group sharing one (D21, D60, D81,
+    /// D88). `written` is how it's written with no parameters, for the message when `[ ]` is empty.
+    fn parameters(&mut self, written: &str, name: &str) -> Result<Vec<Parameter>, Message> {
         let mut parameters = Vec::new();
         // trace: D60. A procedure that takes nothing has no brackets.
         if self.at_symbol(Symbol::OpenSquare) {
             self.advance();
             if self.at_symbol(Symbol::CloseSquare) {
-                let written = if member { name.clone() } else { format!("proc {name}") };
+                let written = if written.is_empty() { format!("proc {name}") } else { written.to_owned() };
                 return Err(Message::refused(
                     self.here(),
                     format!("a procedure that takes nothing has no `[ ]`: it's written `{written}`"),
@@ -427,34 +479,19 @@ impl Parser<'_> {
             }
             self.expect_symbol(Symbol::CloseSquare)?;
         }
-        let result = if self.at_symbol(Symbol::Arrow) {
-            self.advance();
-            Some(self.type_expression()?)
-        } else {
-            None
-        };
-        let failures = if self.at_symbol(Symbol::Bang) {
-            self.advance();
-            self.expect_symbol(Symbol::OpenSquare)?;
-            let mut names = Vec::new();
-            loop {
-                names.push(self.expect_name("a failure's name")?);
-                if self.at_symbol(Symbol::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-            self.expect_symbol(Symbol::CloseSquare)?;
-            Some(names)
-        } else {
-            None
-        };
-        self.end_line()?;
+        Ok(parameters)
+    }
+
+    /// The `labels` and `defaults` lines at the top of a procedure's or a handler's body (D41, D42, D87, D104).
+    #[allow(clippy::type_complexity)] // the three things the two lines say, in the order they're written
+    fn labels_and_defaults(
+        &mut self,
+        opener: &Opener,
+    ) -> Result<(Vec<LabelDeclaration>, bool, Vec<DefaultDeclaration>), Message> {
         let mut labels = Vec::new();
         let mut defaults = Vec::new();
         let mut labels_any_order = false;
-        if self.in_body(&opener)? && self.first_keyword() == Some(Keyword::Labels) {
+        if self.in_body(opener)? && self.first_keyword() == Some(Keyword::Labels) {
             self.advance();
             // trace: D87. `labels.any_order` lets the labelled arguments go in any order.
             if self.at_symbol(Symbol::Dot) {
@@ -487,7 +524,7 @@ impl Parser<'_> {
             }
             self.expect_symbol(Symbol::CloseSquare)?;
             self.end_line()?;
-            if self.in_body(&opener)? && self.first_keyword() == Some(Keyword::Defaults) {
+            if self.in_body(opener)? && self.first_keyword() == Some(Keyword::Defaults) {
                 self.advance();
                 self.expect_symbol(Symbol::OpenSquare)?;
                 loop {
@@ -505,20 +542,111 @@ impl Parser<'_> {
                 self.end_line()?;
             }
         }
-        let body = self.body(&opener)?;
-        let end_place = self.end_of(&opener)?;
-        Ok(Procedure {
-            path,
-            parameters,
-            result,
-            failures,
-            labels,
-            labels_any_order,
-            defaults,
-            body,
-            place: opener.place,
-            end_place,
-        })
+        Ok((labels, labels_any_order, defaults))
+    }
+
+    /// `group.handler name`: an optional `handles [ … ]` line, then its members, each `::name` with its parameters
+    /// and its cases (D97, D110, Unio D42, D44).
+    fn handler_group(&mut self) -> Result<HandlerGroup, Message> {
+        let mut opener = self.opener("group.handler");
+        self.advance();
+        self.expect_symbol(Symbol::Dot)?;
+        match self.peek_kind() {
+            Some(TokenKind::Name(kind)) if kind == "handler" => {
+                self.advance();
+            }
+            _ => {
+                return Err(Message::refused(self.here(), "a group is `group.handler`, a named set of handlers")
+                    .with_why("`group.handler name` declares a handler group; Seal has no other kind of group yet."));
+            }
+        }
+        let name = self.expect_name("the group's name")?;
+        opener.note = format!("group.handler {}", name.text);
+        self.end_line()?;
+        let mut handles = Vec::new();
+        if self.in_body(&opener)? && matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "handles") {
+            self.advance();
+            self.expect_symbol(Symbol::OpenSquare)?;
+            loop {
+                handles.push(self.path()?);
+                if self.at_symbol(Symbol::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect_symbol(Symbol::CloseSquare)?;
+            self.end_line()?;
+        }
+        let mut members = Vec::new();
+        while self.in_body(&opener)? {
+            if !self.at_symbol(Symbol::Path) {
+                return Err(Message::refused(self.line_place(), "a handler group holds only handlers, each `::name`")
+                    .with_why(
+                        "a handler group's members are written with the `::` they're reached with, as `::start_over`.",
+                    ));
+            }
+            self.block_depth += 1;
+            members.push(self.handler()?);
+            self.block_depth -= 1;
+        }
+        self.end_of(&opener)?;
+        Ok(HandlerGroup { name, handles, members, place: opener.place })
+    }
+
+    /// One handler: `::name[parameters]`, its `labels` and `defaults`, and its cases (D110, Unio D42, D44).
+    fn handler(&mut self) -> Result<Handler, Message> {
+        let mut opener = self.opener("::");
+        self.expect_symbol(Symbol::Path)?;
+        let name = self.expect_name("the handler's name")?;
+        opener.note = format!("::{}", name.text);
+        let parameters = self.parameters(&format!("::{}", name.text), &name.text)?;
+        self.end_line()?;
+        let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
+        let mut cases = Vec::new();
+        while self.in_body(&opener)? {
+            let case_opener = self.opener("case");
+            self.expect_keyword(Keyword::Case)?;
+            let failure = self.expect_name("a failure's name")?;
+            self.end_line()?;
+            let body = self.case_body(&case_opener, &opener)?;
+            cases.push(OtherwiseCase { failure, body });
+        }
+        self.end_of(&opener)?;
+        Ok(Handler { name, parameters, labels, labels_any_order, defaults, cases, place: opener.place })
+    }
+
+    /// A handler where it's used, after `??` or `include`: `::name`, `group::name`, `*` before a name that can jump,
+    /// and the arguments in `( )` (D98, D110, Unio D42, D44).
+    fn handler_use(&mut self) -> Result<HandlerUse, Message> {
+        let place = self.here();
+        let group = if matches!(self.peek_kind(), Some(TokenKind::Name(_))) {
+            Some(self.expect_name("a handler group's name")?)
+        } else {
+            None
+        };
+        self.expect_symbol(Symbol::Path)?;
+        let jumps = self.at_symbol(Symbol::Star);
+        if jumps {
+            self.advance();
+        }
+        let name = self.expect_name("a handler's name")?;
+        let arguments = if self.at_symbol(Symbol::OpenRound)
+            && matches!(self.peek().map(|token| token.gap), Some(Gap::Spaces(0)))
+        {
+            self.advance();
+            self.entries(Symbol::CloseRound)?
+        } else {
+            Vec::new()
+        };
+        Ok(HandlerUse { group, name, jumps, arguments, place: place.to(self.previous_place()) })
+    }
+
+    /// Whether a handler is written here: `::name`, or a group's name and `::`.
+    fn at_handler(&self) -> bool {
+        self.at_symbol(Symbol::Path)
+            || (matches!(self.peek_kind(), Some(TokenKind::Name(_)))
+                && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path))))
     }
 
     /// trace: D43, D97
@@ -815,16 +943,33 @@ impl Parser<'_> {
     fn otherwise(&mut self, call: Expression) -> Result<Expression, Message> {
         let opener = self.opener("otherwise");
         let place = call.place;
-        self.expect_keyword(Keyword::Otherwise)?;
+        let at = self.expect_keyword(Keyword::Otherwise)?;
         if self.peek().is_some() {
-            return Err(Message::not_designed_yet(
-                self.here(),
-                "a handler after `otherwise`, which comes with handlers (D43),",
-            ));
+            // trace: D98. `otherwise` is only ever a block; on one line a handler follows `??`.
+            let line = self.physical_line(at.line);
+            let start = at.column.saturating_sub(1) as usize;
+            let fixed: String =
+                line.chars().take(start).chain("??".chars()).chain(line.chars().skip(start + 9)).collect();
+            return Err(Message::refused(at, "`otherwise` opens a block of cases; on one line, a handler follows `??`")
+                .with_fix(fixed)
+                .with_why("`??` deals with a failure on one line, with a value, `ignore`, `crash` or a handler; `otherwise` is only ever a block."));
         }
         self.end_line()?;
         let mut cases = Vec::new();
+        let mut includes = Vec::new();
         while self.in_body(&opener)? {
+            // trace: Unio D43. `include` brings a handler's cases in beside the block's own.
+            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "include")
+                && matches!(
+                    self.peek_at(1).map(|token| &token.kind),
+                    Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_))
+                )
+            {
+                self.advance();
+                includes.push(self.handler_use()?);
+                self.end_line()?;
+                continue;
+            }
             let case_opener = self.opener("case");
             self.expect_keyword(Keyword::Case)?;
             let failure = self.expect_name("a failure's name")?;
@@ -833,7 +978,7 @@ impl Parser<'_> {
             cases.push(OtherwiseCase { failure, body });
         }
         self.end_of(&opener)?;
-        Ok(self.expression(ExpressionKind::Otherwise { call: Box::new(call), cases }, place))
+        Ok(self.expression(ExpressionKind::Otherwise { call: Box::new(call), cases, includes }, place))
     }
 
     /// A case's body: it runs until the next `case` or the block's `end` (D37).
@@ -1303,6 +1448,9 @@ impl Parser<'_> {
                     } else if self.at_keyword(Keyword::Crash) {
                         self.advance();
                         Fallback::Crash
+                    } else if self.at_handler() {
+                        // trace: D98. On one line, a handler follows `??`.
+                        Fallback::Handler(self.handler_use()?)
                     } else {
                         Fallback::Value(Box::new(self.unary()?))
                     };

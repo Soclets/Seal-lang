@@ -4,6 +4,7 @@
 mod calls;
 mod expressions;
 mod finish;
+mod handlers;
 pub mod tree;
 pub mod types;
 
@@ -110,6 +111,10 @@ pub(crate) struct Checker<'a> {
     /// D104), and the top-level names made with `mut`, which aren't.
     plain_names: HashMap<String, &'a syntax::Expression>,
     changing_names: HashSet<String>,
+    /// The handler groups, by name (D110).
+    handler_groups: HashMap<String, &'a syntax::HandlerGroup>,
+    /// The handlers whose cases are being checked where they're used, so that one can't use itself.
+    handlers_in_use: Vec<String>,
     /// Their names.
     host_type_names: HashSet<String>,
     /// Whether a type being read may leave out the parts its value shows: a name's written type (D82).
@@ -168,6 +173,8 @@ pub fn check(
         partial_types: false,
         plain_names: HashMap::new(),
         changing_names: HashSet::new(),
+        handler_groups: HashMap::new(),
+        handlers_in_use: Vec::new(),
         script,
         door_types: HashMap::new(),
         messages: Vec::new(),
@@ -243,6 +250,7 @@ impl<'a> Checker<'a> {
         self.declare_globals(script);
         self.declare_types(script);
         self.declare_procedures(script);
+        self.declare_handler_groups(script);
         self.context.scopes.push(HashMap::new());
         let mut top_level = Vec::new();
         let mut left: Option<(Place, Leaving)> = None;
@@ -1083,6 +1091,8 @@ impl<'a> Checker<'a> {
             "one of the host's doors"
         } else if self.words.contains(word) {
             "a procedure"
+        } else if self.handler_groups.contains_key(word) {
+            "a handler group"
         } else {
             return true;
         };
@@ -2564,7 +2574,7 @@ fn expression_can_fail(expression: &syntax::Expression) -> bool {
             expression_can_fail(call)
                 || matches!(fallback, syntax::Fallback::Value(value) if expression_can_fail(value))
         }
-        Kind::Otherwise { call, cases } => {
+        Kind::Otherwise { call, cases, .. } => {
             expression_can_fail(call) || cases.iter().any(|case| block_can_fail(&case.body))
         }
         Kind::Slide { start, steps } => {

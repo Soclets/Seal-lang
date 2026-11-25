@@ -177,6 +177,8 @@ pub enum Symbol {
     Comma,
     Colon,
     Dot,
+    /// `::`, reaching into a named set, as a handler group (D110).
+    Path,
 }
 
 impl Symbol {
@@ -205,6 +207,7 @@ impl Symbol {
             Symbol::Comma => ",",
             Symbol::Colon => ":",
             Symbol::Dot => ".",
+            Symbol::Path => "::",
         }
     }
 }
@@ -731,6 +734,7 @@ impl Lexer {
                         ('|', Some('>')) => (Symbol::Slide, 2),
                         ('?', Some('?')) => (Symbol::QuestionQuestion, 2),
                         ('-', Some('>')) => (Symbol::Arrow, 2),
+                        (':', Some(':')) => (Symbol::Path, 2),
                         ('=', _) => (Symbol::Equals, 1),
                         ('<', _) => {
                             // A `<` touching a type's name opens its blanks; any other `<` compares (Unio D17).
@@ -974,7 +978,21 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
         let after_labels = index == 2
             && after.kind == TokenKind::Symbol(Symbol::OpenSquare)
             && tokens.first().map(|token| &token.kind) == Some(&TokenKind::Keyword(Keyword::Labels));
-        let wanted = if after_operator || after_labels { 1 } else { wanted_spaces(&before.kind, &after.kind) };
+        // trace: D110. `handles [ … ]`, a handler group's first line, is spaced as `labels [ … ]` is.
+        let after_handles = index == 0
+            && after.kind == TokenKind::Symbol(Symbol::OpenSquare)
+            && matches!(&before.kind, TokenKind::Name(word) if word == "handles");
+        // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
+        let jump_mark = index >= 1
+            && before.kind == TokenKind::Symbol(Symbol::Star)
+            && tokens.get(index - 1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Path));
+        let wanted = if jump_mark {
+            0
+        } else if after_operator || after_labels || after_handles {
+            1
+        } else {
+            wanted_spaces(&before.kind, &after.kind)
+        };
         if actual != wanted {
             mistakes.push(SpacingMistake {
                 line: before.place.line,
@@ -1008,8 +1026,11 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
 /// Where a procedure's header line has its parameters' `[ ]`, by the tokens' places in the line: a line that's `proc`
 /// and a name, or a family member's name, followed by `[ … ]` and nothing but `->` or `!` after it (D21, D88, D97).
 fn header_brackets(tokens: &[Token]) -> Option<(usize, usize)> {
-    let mut index =
-        usize::from(matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::Proc))));
+    // A handler's header starts with `::` (D110).
+    let mut index = usize::from(matches!(
+        tokens.first().map(|token| &token.kind),
+        Some(TokenKind::Keyword(Keyword::Proc) | TokenKind::Symbol(Symbol::Path))
+    ));
     if !matches!(tokens.get(index).map(|token| &token.kind), Some(TokenKind::Name(_))) {
         return None;
     }
@@ -1056,8 +1077,12 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     if let TokenKind::Symbol(Comma | Colon | CloseRound | CloseSquare | Dot | Question | TypeOpen | TypeClose) = after {
         return 0;
     }
-    if let TokenKind::Symbol(OpenRound | OpenSquare | Dot | TypeOpen | Negate) = before {
+    if let TokenKind::Symbol(OpenRound | OpenSquare | Dot | TypeOpen | Negate | Symbol::Path) = before {
         return 0;
+    }
+    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
+    if *after == TokenKind::Symbol(Symbol::Path) {
+        return u32::from(!matches!(before, TokenKind::Name(name) if name != "include"));
     }
     let touches_brackets = matches!(
         before,

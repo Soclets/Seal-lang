@@ -222,7 +222,7 @@ impl Checker<'_> {
                 Expression { kind: ExpressionKind::Try(Box::new(checked)), type_id, place }
             }
             Kind::Handled { call, fallback } => self.handled(call, fallback, wanted, place),
-            Kind::Otherwise { call, cases } => self.otherwise(call, cases, wanted, place),
+            Kind::Otherwise { call, cases, includes } => self.otherwise(call, cases, includes, wanted, place),
             Kind::Slide { start, steps } => self.slide(start, steps, wanted, place),
         }
     }
@@ -1013,6 +1013,7 @@ impl Checker<'_> {
     }
 
     /// `call ?? fallback` (Unio D23, D81, D121), and `maybe ?? fallback` (D38).
+    #[allow(clippy::too_many_lines)] // a value, `ignore`, `crash` and a handler, on a call or a `Maybe`
     fn handled(
         &mut self,
         call: &syntax::Expression,
@@ -1062,6 +1063,18 @@ impl Checker<'_> {
                     HandleFallback::Ignore
                 }
                 syntax::Fallback::Crash => HandleFallback::Crash,
+                syntax::Fallback::Handler(using) => {
+                    // trace: D98, D110. A handler is used as if its cases were written at the call.
+                    let gives_nothing = self.program.types.resolve(type_id) == NOTHING;
+                    let Some(cases) = self.handler_cases(&checked, using, type_id, gives_nothing) else {
+                        return Self::error(place);
+                    };
+                    return Expression {
+                        kind: ExpressionKind::Otherwise { call: Box::new(checked), cases },
+                        type_id,
+                        place,
+                    };
+                }
             };
             return Expression { kind: ExpressionKind::Handle { call: Box::new(checked), fallback }, type_id, place };
         }
@@ -1072,6 +1085,14 @@ impl Checker<'_> {
             self.program.types.unify(checked.type_id, maybe);
         }
         match self.program.types.get(checked.type_id).clone() {
+            Type::Maybe(_) if matches!(fallback, syntax::Fallback::Handler(_)) => {
+                self.refuse_why(
+                    place,
+                    "a handler deals with a call's failures, and a `Maybe` isn't a failure",
+                    "a `Maybe` is given a value to use when it's `none`, as `?? 0`, or `?? crash` when it can't be `none`.",
+                );
+                Self::error(place)
+            }
             Type::Maybe(inner) => {
                 if let syntax::Fallback::Value(value) = fallback {
                     let value = self.expression(value, Some(inner));
@@ -1110,11 +1131,12 @@ impl Checker<'_> {
         }
     }
 
-    /// `call otherwise` and its cases (D37, Unio D40, D186).
+    /// `call otherwise` and its cases, with any handlers it brings in with `include` (D37, Unio D40, D43, D186).
     fn otherwise(
         &mut self,
         call: &syntax::Expression,
         cases: &[syntax::OtherwiseCase],
+        includes: &[syntax::HandlerUse],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
@@ -1130,6 +1152,21 @@ impl Checker<'_> {
         let type_id = checked.type_id;
         let gives_nothing = self.program.types.resolve(type_id) == NOTHING;
         let mut checked_cases: Vec<(super::tree::FailureId, super::tree::Block)> = Vec::new();
+        for using in includes {
+            let Some(brought_in) = self.handler_cases(&checked, using, type_id, gives_nothing) else { continue };
+            for (failure, body) in brought_in {
+                if checked_cases.iter().any(|(earlier, _)| *earlier == failure) {
+                    let name = self.program.failure_name(failure).to_owned();
+                    // trace: Unio D43. Together the cases cover every failure, none twice.
+                    self.refuse_why(
+                        using.place,
+                        format!("the failure `{name}` is handled twice"),
+                        "an `otherwise` handles each failure once, with its own `case` or an included handler's.",
+                    );
+                }
+                checked_cases.push((failure, body));
+            }
+        }
         for case in cases {
             let failure = self.failure(&case.failure.text);
             if checked_cases.iter().any(|(earlier, _)| *earlier == failure) {
@@ -1139,31 +1176,48 @@ impl Checker<'_> {
                     "an `otherwise` has one `case` for each failure.",
                 );
             }
-            self.context.instead_types.push(type_id);
-            let body = self.block(&case.body);
-            self.context.instead_types.pop();
-            let ends_with_instead =
-                matches!(body.last().map(|last| &last.kind), Some(super::tree::StatementKind::Instead(_)));
-            if gives_nothing && ends_with_instead {
-                self.refuse_why(
-                    body.last().map_or(place, |last| last.place),
-                    "this call gives nothing, so there's no value to give `instead`",
-                    "after a call that gives nothing, a case may just end.",
-                );
-            } else if !gives_nothing && !ends_with_instead && !Self::block_leaves(&body) && failable {
-                // trace: Unio D40
-                self.refuse_why(
-                    case.failure.place,
-                    format!("the case `{}` can reach its end without giving a value", case.failure.text),
-                    "each case ends with `instead` and a value, `return`, `break` or `fail`.",
-                );
-            }
+            let body = self.case_block(case, type_id, gives_nothing, failable, Vec::new());
             checked_cases.push((failure, body));
         }
         if !failable {
             return Self::error(place);
         }
         Expression { kind: ExpressionKind::Otherwise { call: Box::new(checked), cases: checked_cases }, type_id, place }
+    }
+
+    /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `instead`, `return`, `break` or
+    /// `fail`, or simply ends after a call that gives nothing (Unio D40, D186). `before` are the lines that make the
+    /// handler's parameters from its arguments, run before the case's own.
+    pub(super) fn case_block(
+        &mut self,
+        case: &syntax::OtherwiseCase,
+        type_id: TypeId,
+        gives_nothing: bool,
+        failable: bool,
+        before: Vec<super::tree::Statement>,
+    ) -> super::tree::Block {
+        self.context.instead_types.push(type_id);
+        let body = self.block(&case.body);
+        self.context.instead_types.pop();
+        let ends_with_instead =
+            matches!(body.last().map(|last| &last.kind), Some(super::tree::StatementKind::Instead(_)));
+        if gives_nothing && ends_with_instead {
+            self.refuse_why(
+                body.last().map_or(case.failure.place, |last| last.place),
+                "this call gives nothing, so there's no value to give `instead`",
+                "after a call that gives nothing, a case may just end.",
+            );
+        } else if !gives_nothing && !ends_with_instead && !Self::block_leaves(&body) && failable {
+            // trace: Unio D40
+            self.refuse_why(
+                case.failure.place,
+                format!("the case `{}` can reach its end without giving a value", case.failure.text),
+                "each case ends with `instead` and a value, `return`, `break` or `fail`.",
+            );
+        }
+        let mut whole = before;
+        whole.extend(body);
+        whole
     }
 
     /// A slide: `start |> step |> step |> step`, the same as the calls nested (Unio D5, D128).

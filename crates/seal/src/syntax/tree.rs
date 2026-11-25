@@ -19,6 +19,40 @@ pub enum Item {
     Family(Family),
     Record(RecordDeclaration),
     OneOf(OneOfDeclaration),
+    HandlerGroup(HandlerGroup),
+}
+
+/// `group.handler name`, with its `handles [ … ]` line and its members (D110).
+#[derive(Clone, Debug)]
+pub struct HandlerGroup {
+    pub name: Word,
+    /// The procedures and doors it's for, by their full names (D110).
+    pub handles: Vec<Vec<Word>>,
+    pub members: Vec<Handler>,
+    pub place: Place,
+}
+
+/// `::name[parameters]` in a handler group, and its cases (D97, D110, Unio D42, D44).
+#[derive(Clone, Debug)]
+pub struct Handler {
+    pub name: Word,
+    pub parameters: Vec<Parameter>,
+    pub labels: Vec<LabelDeclaration>,
+    pub labels_any_order: bool,
+    pub defaults: Vec<DefaultDeclaration>,
+    pub cases: Vec<OtherwiseCase>,
+    pub place: Place,
+}
+
+/// A handler where it's used: `::name`, `group::name`, with `*` when it can jump, and its arguments (D98, D110, Unio
+/// D42, D44).
+#[derive(Clone, Debug)]
+pub struct HandlerUse {
+    pub group: Option<Word>,
+    pub name: Word,
+    pub jumps: bool,
+    pub arguments: Vec<Entry>,
+    pub place: Place,
 }
 
 /// A name with the place it's written.
@@ -316,6 +350,8 @@ pub enum Fallback {
     Value(Box<Expression>),
     Ignore,
     Crash,
+    /// A handler, on one line (D98).
+    Handler(HandlerUse),
 }
 
 /// One step of a slide: a procedure, with any arguments beyond the value slid in (Unio D5).
@@ -384,6 +420,8 @@ pub enum ExpressionKind {
     Otherwise {
         call: Box<Expression>,
         cases: Vec<OtherwiseCase>,
+        /// The handlers brought in with `include` (Unio D43).
+        includes: Vec<HandlerUse>,
     },
     /// `start |> step |> step |> step` (Unio D5, D128).
     Slide {

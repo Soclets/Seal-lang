@@ -140,6 +140,8 @@ pub struct Generator {
     in_procedure: Option<ProcedureInfo>,
     in_loop: bool,
     budget: usize,
+    /// Whether the script has a handler group for its failing procedures (D110).
+    handlers: bool,
 }
 
 const WORDS: [&str; 12] =
@@ -160,6 +162,7 @@ impl Generator {
             in_procedure: None,
             in_loop: false,
             budget: 0,
+            handlers: false,
         }
     }
 
@@ -723,6 +726,13 @@ impl Generator {
         let inside_failing = self.in_procedure.as_ref().is_some_and(|inside| inside.fails);
         Some(if inside_failing && self.random.chance(1, 3) {
             format!("{call}?")
+        } else if self.handlers && kind == Kind::Whole && self.random.chance(1, 2) {
+            // trace: D98, D110. A handler on one line, short or with its group.
+            let handler = *self
+                .random
+                .pick(&["::zero", "low_failed::zero", "::with(3)", "low_failed::with(-1)"])
+                .unwrap_or(&"::zero");
+            format!("({call} ?? {handler})")
         } else {
             format!("({call} ?? {fallback})")
         })
@@ -1169,7 +1179,18 @@ impl Generator {
                     let arguments: Vec<String> =
                         procedure.parameters.iter().map(|&parameter| self.value(parameter, 1)).collect();
                     let call = format!("{}({})", procedure.name, arguments.join(", "));
-                    if procedure.fails {
+                    if procedure.fails && self.handlers && self.random.chance(1, 2) {
+                        // trace: D98, D110, Unio D43. A handler on one line, or brought into a block.
+                        if self.random.chance(1, 2) {
+                            self.line(&format!("{call} ?? ::note"));
+                        } else {
+                            self.line(&format!("{call} otherwise"));
+                            self.depth += 1;
+                            self.line("include low_failed::note");
+                            self.depth -= 1;
+                            self.end("otherwise");
+                        }
+                    } else if procedure.fails {
                         self.line(&format!("{call} otherwise"));
                         self.depth += 1;
                         self.line("case too_low");
@@ -1391,6 +1412,21 @@ impl Generator {
             self.budget = 12;
             self.procedure();
             self.out.push('\n');
+        }
+        // A handler group for the failing procedures, which their callers use from here on (D110).
+        let failing: Vec<String> = self
+            .procedures
+            .iter()
+            .filter(|procedure| procedure.fails)
+            .map(|procedure| procedure.name.clone())
+            .collect();
+        if self.seal() && !failing.is_empty() {
+            let _ = write!(
+                self.out,
+                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            instead 0\n    end\n    ::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
+                failing.join(", ")
+            );
+            self.handlers = true;
         }
         self.budget = 10 + self.random.below(30);
         while self.budget > 0 {

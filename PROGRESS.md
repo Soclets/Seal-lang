@@ -55,7 +55,7 @@ checker, compiler or VM.
   every value shown as written (D100), `places:` (D94), `be.Bool` (D101). Every D57 goal still met after it.
 - [x] **C9. The translator writes Unio's current spellings** (Unio D190 to D203) and the comparison with Ralph runs
   again: 404 the same, 0 different, from seed 1, with 4 of the 15 tests compared.
-- [ ] **C10. Handlers** (D97, D98, D110): `group.handler`, `::name`, `handles [ … ]`, `??` with a handler, `include`,
+- [x] **C10. Handlers** (D97, D98, D110): `group.handler`, `::name`, `handles [ … ]`, `??` with a handler, `include`,
   `*`, parameters.
 - [ ] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
   (D109), `lerp` (D114), each correctly rounded (D50).
@@ -142,6 +142,15 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D103, D104** A type's setting, and a default, can be a top-level name made with no `mut` from a value written
   out plainly; a default can be any plain value (lists, `Dict`s, records, cases), and reaches the host's calls too.
 - **D105** `at pos` and `at offset` on a `Dict` are refused, with `at key` as the fix.
+- **D97, D98, D110** Handlers, in `group.handler name` with an optional `handles [ … ]` line and members `::name`,
+  with parameters, `labels` and `defaults` as a procedure's. A use, `?? ::name`, `?? group::name(…)`, or
+  `include …` in an `otherwise` block, is checked where it's written, as if its cases were written there: the short
+  form reaches the groups whose `handles` names the procedure or door just called, refused when none or two have it;
+  `*` is required on a handler that can `return` or `break` and refused on one that can't; a failure covered twice
+  is refused. The arguments are worked out when the call fails, just before the cases run (Unio D44's "at the call,
+  before the cases run"), each case starting with lines that make the parameters. `group`, `handles` and `include`
+  are read as such only where they're written, not made keywords. `otherwise` with a handler on one line is refused
+  with `??` as the fix; `fam.handler` is refused.
 - An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
 
 ## How it's built (the building session's design)
@@ -244,7 +253,11 @@ Sent 2026-11-25 (batch 1 of this session, 21 questions). Answered so far: 11 (D1
 - 21: `newln` outside braces.
 - D58: whether n-body's Normal program is rightly the one written with D62's direct changes.
 
-New questions from C7 and C8, not sent yet:
+New questions from C7 to C10, not sent yet:
+- Unio D44: a handler's arguments are worked out when the call fails, right before its cases run (built that way);
+  or before the call?
+- A handler with a case for a failure the call can't give is refused at that use, as such a case written in an
+  `otherwise` is (Unio D40, "as if written at the call"); so a group's handler fits only calls that fail exactly so.
 - D91 lists the declarations `///` goes on; a name made inside a block isn't among them (stops).
 - A comment after code inside an open bracket, as `foo(a, // the first`: D91 allows a comment line there (stops).
 
@@ -263,6 +276,8 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - a `///` before a name made inside a block
 - `newln` or `tab` outside braces (question 21)
 - a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
+- `fail` in a handler's case (question 19), `handles` naming a built-in (question 20), a handler used inside its own
+  cases
 
 ## Not built yet
 

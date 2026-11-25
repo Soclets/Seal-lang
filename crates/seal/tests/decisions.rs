@@ -134,3 +134,38 @@ fn d103_d104_settings_and_defaults_from_plain_values() {
             .contains("made with `mut`")
     );
 }
+
+/// Two procedures that fail as the handler tests' handlers expect.
+const LOADERS: &str = "proc load_level[name: Text] -> Whole ! [not_found, broken]\n    if name == \"forest\"\n        fail not_found\n    elif name == \"swamp\"\n        fail broken\n    else\n        return 7\n    end\nend\n\nproc load_save[slot: Text] -> Whole ! [not_found, broken]\n    if slot == \"slot1\"\n        fail not_found\n    elif slot == \"slot2\"\n        fail broken\n    else\n        return 2\n    end\nend\n\n";
+
+const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_save]\n    ::start_over\n        case not_found\n            instead 1\n        case broken\n            instead 1\n    end \\\\ ::start_over\n    ::start_at[level: Whole]\n        labels [level as level]\n        case not_found\n            instead level\n        case broken\n            instead level\n    end\n    ::give_up\n        case not_found\n            return\n        case broken\n            return\n    end\nend \\\\ group.handler level_failed\n\n";
+
+// trace: D97, D98, D110, Unio D42, D43, D44
+#[test]
+fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
+    let script = format!(
+        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? ::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? ::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include ::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include ::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
+    );
+    assert_eq!(shows(&script), ["1 3 7 9", "after"]);
+}
+
+// trace: D98, D110, Unio D42
+#[test]
+fn d110_handler_refusals() {
+    let with = |line: &str| format!("{LOADERS}{GROUP}{line}\nshow_msg(\"{{a}}\")\n");
+    assert!(refusal(&with("a = load_level(\"x\") ?? ::give_up")).contains("::*give_up"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? ::*start_over")).contains("takes no `*`"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? ::begin_again")).contains("has `::begin_again`"));
+    assert!(
+        refusal(&with("a = load_level(\"x\") ?? level_failed::begin_again")).contains("has no handler `::begin_again`")
+    );
+    let one_line = refusal(&with("a = load_level(\"x\") otherwise level_failed::start_over"));
+    assert!(one_line.contains("a = load_level(\"x\") ?? level_failed::start_over"), "{one_line}");
+    let twice =
+        with("a = load_level(\"x\") otherwise\n    include ::start_over\n    case broken\n        instead 2\nend");
+    assert!(refusal(&twice).contains("handled twice"), "{}", refusal(&twice));
+    let second = GROUP.replace("group.handler level_failed", "group.handler save_failed");
+    let both = format!("{LOADERS}{GROUP}{second}a = load_level(\"x\") ?? ::start_over\nshow_msg(\"{{a}}\")\n");
+    assert!(refusal(&both).contains("could be"), "{}", refusal(&both));
+    assert!(refusal("fam.handler level_failed\nend\n").contains("`group.handler`"));
+}

@@ -184,7 +184,7 @@ impl Checker<'_> {
 
     /// Matches a call's arguments to parameters by position and label (D41, D42, Unio D24). Gives, for each
     /// parameter, which argument fills it, or nothing where a default does.
-    fn bind_arguments(
+    pub(super) fn bind_arguments(
         &mut self,
         name: &str,
         (labels, any_order): (&[Option<String>], bool),
