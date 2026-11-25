@@ -12,6 +12,8 @@ what the rules are today.
   examples are read in Seal's syntax, as the table below shows.
 - **Undecided means "Not decided".** Anything the decisions leave open is marked **Not decided** where it would go,
   never filled in here. A building session stops there with "not designed yet" (IMPLEMENTATION.md, rule 11).
+- **No compatibility promise.** Any new version of Seal may change any rule here, and scripts and hosts are updated to
+  match (D137).
 
 ## Reading Unio's rules in Seal's syntax
 

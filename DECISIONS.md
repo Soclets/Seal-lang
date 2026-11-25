@@ -4117,3 +4117,29 @@ the library's guarantees as they are.
 
 **Tankun's words.** "Let's design compatibility?", "embed", then, asked "Should Seal get a C API, in its own crate
 holding the only `unsafe` code, so non-Rust engines can embed it?", the owner chose: "yea"
+
+## D137. Seal makes no compatibility promise
+
+2026-11-25.
+
+**Chosen.** Any new version of Seal may change anything: what a script means, what's refused, and how a host's code,
+in Rust or through the C API (D136), calls Seal. Scripts and hosts are updated to match. Nothing is planned to change
+this later. Seal's versions need no dotted numbers; the `seal` crate's version has dots only because Cargo requires
+them.
+
+**Weighed.**
+- Never breaking a working script or host after the first public release, as Luau promises, which the design session
+  recommended, with editions added later if a fix needed one.
+- Editions, as Rust has: each script says which edition of the rules it's written in, and Seal keeps understanding
+  every one. Mistakes could be fixed without breaking anyone, but Seal would carry every edition forever.
+- Semantic versioning, breaking only in a major version, as Rust crates and C libraries promise.
+- No promise for now, looked at again before the first public release, as the design session then proposed.
+
+**Why this won.** Tankun's choice: Seal stays free to fix whatever turns out wrong, as it's done every day so far, at
+the cost Lua pays, where each breaking release has to be caught up with.
+
+**Tankun's words.** "So, we would break every time? I mean, I don't plan to have dots", "Editions?", "Fuck stability,
+actually", "Nope" (to looking at it again before the first public release), then, asked "do you mean Seal never makes
+a compatibility promise, so any version may break scripts and hosts, with no plan to look at it again?", the owner
+chose: "yea. Btw, when we do the Seal oracle (which is definitely not soon, if ever). It would proven, to match the
+spec, entirely (except the 3rd parties we rely on, like SPARK Platinum, or Rocq)"
