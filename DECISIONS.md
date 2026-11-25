@@ -3662,6 +3662,9 @@ started: Float[unit: secs.point] = now()
 **Tankun's words.** "yes, but no to 3" (quoted in D120), "Is it narrowing?", "Why `point` name?", then, asked "Should
 units be spans by default, with points marked `.point` and following those three rules?", the owner chose: "yea"
 
+(A slip in the example: `x: Float[unit: px.point] = 100.0` puts a plain number where a unit goes, which D111
+refuses. It should read `= 100.0 px.point`, as the building session pointed out.)
+
 ## D122. `in` measures a value in a unit, giving its plain number
 
 2026-11-25.
