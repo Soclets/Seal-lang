@@ -337,3 +337,52 @@ fn d115_a_huge_whole_takes_units_and_limits() {
     assert!(refusal("h: HugeWhole[min: 0] = -5\nshow_msg(\"{h}\")\n").contains("below its type's `min: 0`"));
     assert!(refusal("d: Decimal[min: 0] = 5\nshow_msg(\"{d}\")\n").contains("isn't decided yet"));
 }
+
+// trace: D145, D146
+#[test]
+fn d145_d146_ret_and_for_each_are_the_keywords() {
+    let script = "proc twice[n: Whole] -> Whole\n    ret n * 2\nend\nmut total = 0\nfor_each n in [1, 2]\n    total = total + twice(n)\nend\nshow_msg(\"{total}\")\n";
+    assert_eq!(shows(script), ["6"]);
+    // `for` and `each` alone are names, now that `for_each` is one keyword.
+    assert_eq!(shows("for = 1\neach = 2\nshow_msg(\"{for} {each}\")\n"), ["1 2"]);
+    let old = "proc one -> Whole\n    return 1\nend\n";
+    assert!(refusal(old).contains("comes after the end of this line's statement"), "{}", refusal(old));
+}
+
+// trace: D147
+#[test]
+fn d147_underscore_reads_what_the_change_changes() {
+    let name = "mut score = 5\nscore = _ * _ + 1\nshow_msg(\"{score}\")\n";
+    assert_eq!(shows(name), ["26"]);
+    // A position is worked out once, before the value, so `bump` growing the list doesn't move it.
+    let once = "mut g = [3]\nproc bump -> Whole\n    g.add(9)\n    ret 1\nend\ng[pos: g.len] = bump() + _\nshow_msg(\"{g}\")\n";
+    assert_eq!(shows(once), ["[4, 9]"]);
+    // A key's value is read as a lookup is, so it may be missing.
+    let counts = "mut d: Dict<key: Text, value: Whole> = [:]\nd[key: \"a\"] = (_ ?? 0) + 1\nd[key: \"a\"] = (_ ?? 0) + 1\nn = d[key: \"a\"] ?? 0\nshow_msg(\"{n}\")\n";
+    assert_eq!(shows(counts), ["2"]);
+    let bare = "mut d: Dict<key: Text, value: Whole> = [:]\nd[key: \"a\"] = _ + 1\n";
+    assert!(refusal(bare).contains("this can fail with `missing`"), "{}", refusal(bare));
+    // Through a way into a part of a part.
+    let deep = "record P\n    hp: Whole\nend\nmut ps = [[P[hp: 1]], [P[hp: 5]]]\nps[pos: 2][pos: 1].hp = _ * 10\nv = ps[pos: 2][pos: 1].hp\nshow_msg(\"{v}\")\n";
+    assert_eq!(shows(deep), ["50"]);
+    let making = "y = _ + 1\nshow_msg(\"{y}\")\n";
+    assert!(refusal(making).contains("`_` is the value of what an `=` changes"), "{}", refusal(making));
+}
+
+// trace: D148, D149
+#[test]
+fn d148_d149_measuring_is_written_to_and_maths_before_it_is_bracketed() {
+    assert_eq!(shows("total = 2 secs + 500 ms\nms = total to ms\nshow_msg(\"{ms} {total to secs}\")\n"), ["2500 2.5"]);
+    let bare = "a = 2 secs\nb = 500 ms\nc = a + b to ms\n";
+    let refused = refusal(bare);
+    assert!(refused.contains("c = (a + b) to ms"), "{refused}");
+}
+
+// trace: D17. A check failing in an instruction made of two points at its maths, as it did when they were two.
+#[test]
+fn d17_a_fused_instruction_points_at_its_maths() {
+    let call = "proc down[n: Whole] -> Whole\n    if n < -9223372036854775806\n        ret n\n    else\n        ret down(n - 3)\n    end\nend\na = down(-9223372036854775800)\nshow_msg(\"{a}\")\n";
+    assert!(refusal(call).contains("test.seal:5:18"), "{}", refusal(call));
+    let sum = "proc add[a: Whole, b: Whole] -> Whole\n    ret a + b\nend\nc = add(9223372036854775807, 1)\nshow_msg(\"{c}\")\n";
+    assert!(refusal(sum).contains("test.seal:2:9"), "{}", refusal(sum));
+}
