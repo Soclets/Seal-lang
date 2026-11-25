@@ -454,7 +454,12 @@ impl Checker<'_> {
             return Expression { kind: ExpressionKind::Variable(id), type_id: self.variable_type(id), place };
         }
         if matches!(name, "newln" | "tab") {
-            self.not_designed(place, format!("`{name}` outside braces"));
+            // trace: D129. `newln` and `tab` exist only inside braces.
+            self.refuse_why(
+                place,
+                format!("`{name}` fills in braces in text, so it's written `\"{{{name}}}\"`"),
+                "`{newln}` and `{tab}` give a line break and a tab inside text; the text holding just one is written `\"{newln}\"`.",
+            );
             return Self::error(place);
         }
         if self.words.contains(name) || super::BUILT_IN_WORDS.contains(&name) {

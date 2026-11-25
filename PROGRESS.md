@@ -150,7 +150,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   is refused. The arguments are worked out when the call fails, just before the cases run (Unio D44's "at the call,
   before the cases run"), each case starting with lines that make the parameters. `group`, `handles` and `include`
   are read as such only where they're written, not made keywords. `otherwise` with a handler on one line is refused
-  with `??` as the fix; `fam.handler` is refused.
+  with `??` as the fix; `fam.handler` is refused. A `fail` in a handler's case is a jump (D129); `handles` names
+  any procedure, door or built-in that can fail (`be.Whole`, `be.Bool`), and one that can't fail is refused.
+- **D129** `newln` and `tab` outside braces are refused, with `"{newln}"` as the way.
 - An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
 
 ## How it's built (the building session's design)
@@ -274,10 +276,8 @@ dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused`
 - a `\r` that isn't right before a line break
 - a comment after code inside an open bracket
 - a `///` before a name made inside a block
-- `newln` or `tab` outside braces (question 21)
 - a `Dict` key that isn't a `Text`, a `Whole` or a `Bool` (chapter 6: not decided)
-- `fail` in a handler's case (question 19), `handles` naming a built-in (question 20), a handler used inside its own
-  cases
+- a handler used inside its own cases
 
 ## Not built yet
 

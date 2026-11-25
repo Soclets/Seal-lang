@@ -9,14 +9,17 @@ use super::types::{ERROR, TypeId};
 use crate::message::Message;
 use crate::syntax::tree as syntax;
 
-/// Why a handler is marked `*` where it's used (Unio D42).
-const JUMP_MARK: &str = "a handler that can `return` or `break` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
+/// Why a handler is marked `*` where it's used (Unio D42, D129).
+const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
 
-/// Whether a block can leave the code around it by `return`, or by a `break` out of a loop around it. `loops`
-/// counts the loops entered inside it, whose `break`s stay inside.
+/// The built-ins that can fail, which `handles [ … ]` can name (D101, D129).
+const FAILING_BUILT_INS: [&str; 2] = ["be.Whole", "be.Bool"];
+
+/// Whether a block can leave the code around it by `return` or `fail`, or by a `break` out of a loop around it
+/// (D129). `loops` counts the loops entered inside it, whose `break`s stay inside.
 fn can_jump(block: &[syntax::Statement], loops: u32) -> bool {
     block.iter().any(|statement| match &statement.kind {
-        syntax::StatementKind::Return(_) => true,
+        syntax::StatementKind::Return(_) | syntax::StatementKind::Fail(_) => true,
         syntax::StatementKind::Break => loops == 0,
         syntax::StatementKind::If { branches, otherwise } => {
             branches.iter().any(|(_, body)| can_jump(body, loops))
@@ -30,7 +33,6 @@ fn can_jump(block: &[syntax::Statement], loops: u32) -> bool {
         | syntax::StatementKind::Expression(value)
         | syntax::StatementKind::Instead(value)
         | syntax::StatementKind::Change { value, .. } => expression_can_jump(value, loops),
-        syntax::StatementKind::Fail(_) => false,
     })
 }
 
@@ -45,19 +47,6 @@ fn expression_can_jump(expression: &syntax::Expression, loops: u32) -> bool {
         }
         _ => false,
     }
-}
-
-/// Whether a block fails on purpose anywhere inside it.
-fn has_fail(block: &[syntax::Statement]) -> bool {
-    block.iter().any(|statement| match &statement.kind {
-        syntax::StatementKind::Fail(_) => true,
-        syntax::StatementKind::If { branches, otherwise } => {
-            branches.iter().any(|(_, body)| has_fail(body)) || otherwise.as_ref().is_some_and(|body| has_fail(body))
-        }
-        syntax::StatementKind::While { body, .. } | syntax::StatementKind::ForEach { body, .. } => has_fail(body),
-        syntax::StatementKind::Match { cases, .. } => cases.iter().any(|case| has_fail(&case.body)),
-        _ => false,
-    })
 }
 
 impl<'a> Checker<'a> {
@@ -104,16 +93,26 @@ impl<'a> Checker<'a> {
             for path in &group.handles {
                 let full = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
                 let place = path.first().map_or(group.place, |word| word.place);
-                let known = self.procedure_names.contains_key(&full) || self.doors.iter().any(|door| door.name == full);
-                if known {
-                    continue;
-                }
-                if super::BUILT_IN_WORDS.contains(&path.first().map_or("", |word| word.text.as_str())) {
-                    self.not_designed(place, format!("`handles` naming a built-in, as `{full}`,"));
-                } else {
-                    self.refuse(
+                // trace: D129. `handles` names any procedure that can fail: the script's, a door, or a built-in.
+                let can_fail = match self.procedure_names.get(&full) {
+                    Some(&procedure) => self.program.procedure(procedure).is_some_and(|procedure| procedure.can_fail),
+                    None => match self.doors.iter().find(|door| door.name == full) {
+                        Some(door) => !door.failures.is_empty(),
+                        None if FAILING_BUILT_INS.contains(&full.as_str()) => true,
+                        None => {
+                            self.refuse(
+                                place,
+                                format!("there's no procedure or door named `{full}` for `{}` to handle", name.text),
+                            );
+                            continue;
+                        }
+                    },
+                };
+                if !can_fail {
+                    self.refuse_why(
                         place,
-                        format!("there's no procedure or door named `{full}` for `{}` to handle", name.text),
+                        format!("`{full}` can't fail, so `{}` has nothing to handle for it", name.text),
+                        "`handles [ … ]` names the procedures, doors and built-ins that can fail, whose failures the group's handlers deal with.",
                     );
                 }
             }
@@ -136,6 +135,12 @@ impl<'a> Checker<'a> {
                 self.program.procedure(*procedure).map(|found| found.name.clone())
             }
             ExpressionKind::DoorCall { door, .. } => self.doors.get(*door as usize).map(|door| door.name.clone()),
+            ExpressionKind::Convert { conversion: super::tree::Conversion::TextToWhole, .. } => {
+                Some("be.Whole".to_owned())
+            }
+            ExpressionKind::Convert { conversion: super::tree::Conversion::TextToBool, .. } => {
+                Some("be.Bool".to_owned())
+            }
             _ => None,
         };
         let member = using.name.text.as_str();
@@ -203,20 +208,13 @@ impl<'a> Checker<'a> {
             );
             return None;
         };
-        if handler.cases.iter().any(|case| has_fail(&case.body)) {
-            self.not_designed(
-                using.place,
-                "a handler whose case fails on purpose, which may or may not be a jump (Unio D42),",
-            );
-            return None;
-        }
         let jumps = handler.cases.iter().any(|case| can_jump(&case.body, 0));
         if jumps != using.jumps {
             // trace: Unio D42
             let what = if jumps {
-                format!("`::{member}` can `return` or `break`, so it's marked `::*{member}` where it's used")
+                format!("`::{member}` can `return`, `break` or `fail`, so it's marked `::*{member}` where it's used")
             } else {
-                format!("`::{member}` can't `return` or `break`, so it takes no `*`")
+                format!("`::{member}` can't `return`, `break` or `fail`, so it takes no `*`")
             };
             self.refuse_why(using.place, what, JUMP_MARK);
             return None;

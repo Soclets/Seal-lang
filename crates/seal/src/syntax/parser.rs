@@ -568,7 +568,18 @@ impl Parser<'_> {
             self.advance();
             self.expect_symbol(Symbol::OpenSquare)?;
             loop {
-                handles.push(self.path()?);
+                // trace: D129. A built-in, as `be.Whole`, can be named too.
+                if self.at_keyword(Keyword::Be) {
+                    let be = self.advance().map_or(Place::default(), |token| token.place);
+                    let mut path = vec![Word { text: "be".to_owned(), place: be }];
+                    while self.at_symbol(Symbol::Dot) {
+                        self.advance();
+                        path.push(self.member_name()?);
+                    }
+                    handles.push(path);
+                } else {
+                    handles.push(self.path()?);
+                }
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
