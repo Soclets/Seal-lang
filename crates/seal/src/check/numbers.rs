@@ -69,7 +69,7 @@ fn widened_constant(value: &ExpressionKind, to: NumberType) -> Option<Number> {
     })
 }
 
-impl Checker<'_> {
+impl<'a> Checker<'a> {
     /// The number type a value's type is, when it's one of them, or text.
     pub(super) fn number_type(&mut self, type_id: TypeId) -> Option<NumberType> {
         match self.program.types.resolve(type_id) {
@@ -116,16 +116,16 @@ impl Checker<'_> {
     /// one, exactly as written; nothing when none is wanted, or a `HugeWhole` is wanted and it has a point.
     pub(super) fn number_literal(
         &mut self,
-        literal: &syntax::ExpressionKind,
+        literal: &syntax::ExpressionKind<'a>,
         negative: bool,
         wanted: Option<TypeId>,
         place: Place,
     ) -> Option<Expression> {
         let to = self.big_number(wanted?)?;
         let (text, approximate) = match literal {
-            syntax::ExpressionKind::Whole(digits) => (digits.as_str(), false),
+            syntax::ExpressionKind::Whole(digits) => (*digits, false),
             syntax::ExpressionKind::Float { .. } if to == NumberType::Huge => return None,
-            syntax::ExpressionKind::Float { text, approximate } => (text.as_str(), *approximate),
+            syntax::ExpressionKind::Float { text, approximate } => (*text, *approximate),
             _ => return None,
         };
         let name = written(to);
@@ -202,7 +202,7 @@ impl Checker<'_> {
     pub(super) fn number_power(
         &mut self,
         left: Expression,
-        right: &syntax::Expression,
+        right: &syntax::Expression<'a>,
         operator_place: Place,
         place: Place,
     ) -> Expression {
@@ -245,7 +245,7 @@ impl Checker<'_> {
     pub(super) fn convert_to_number(
         &mut self,
         path: &[String],
-        arguments: &[syntax::Entry],
+        arguments: &[syntax::Entry<'a>],
         place: Place,
     ) -> Expression {
         let full = path.join(".");

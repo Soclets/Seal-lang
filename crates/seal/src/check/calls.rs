@@ -25,12 +25,12 @@ fn chain_length(expression: &syntax::Expression) -> usize {
     }
 }
 
-impl Checker<'_> {
+impl<'a> Checker<'a> {
     pub(super) fn call(
         &mut self,
-        expression: &syntax::Expression,
-        callee: &syntax::Expression,
-        arguments: &[syntax::Entry],
+        expression: &syntax::Expression<'a>,
+        callee: &syntax::Expression<'a>,
+        arguments: &[syntax::Entry<'a>],
         wanted: Option<TypeId>,
     ) -> Expression {
         let place = expression.place;
@@ -129,7 +129,7 @@ impl Checker<'_> {
     /// never mixed, with units or without; `sin`, `cos` and `tan` on an angle in `rads`, `degs` or `turns`, or a
     /// plain `Float` in radians; `asin`, `acos` and `atan2` giving `rads`; `lerp` on two values of one unit group.
     #[allow(clippy::too_many_lines)] // one case per kind of built-in, each with its units
-    fn maths_call(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
+    fn maths_call(&mut self, path: &[String], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
         use super::tree::MathsFunction as Function;
         let word = path.first().map(String::as_str).unwrap_or_default();
         let (function, labels): (Function, &[Option<&str>]) = match word {
@@ -359,9 +359,9 @@ impl Checker<'_> {
         name: &str,
         path: &[String],
         path_length: usize,
-        arguments: &'e [syntax::Entry],
+        arguments: &'e [syntax::Entry<'a>],
         place: Place,
-    ) -> Option<&'e syntax::Expression> {
+    ) -> Option<&'e syntax::Expression<'a>> {
         if path.len() != path_length {
             let narrowing = path.get(path_length..).unwrap_or(&[]).join(".");
             self.refuse_why(
@@ -387,7 +387,7 @@ impl Checker<'_> {
         name: &str,
         (labels, any_order): (&[Option<String>], bool),
         has_default: &[bool],
-        arguments: &[syntax::Entry],
+        arguments: &[syntax::Entry<'a>],
         place: Place,
     ) -> Option<Vec<Option<usize>>> {
         let mut out_of_order = false;
@@ -396,7 +396,7 @@ impl Checker<'_> {
         let mut failed = false;
         for (index, entry) in arguments.iter().enumerate() {
             let parameter = if let Some(label) = &entry.label {
-                let found = labels.iter().position(|known| known.as_deref() == Some(label.text.as_str()));
+                let found = labels.iter().position(|known| known.as_deref() == Some(label.text));
                 if found.is_none() {
                     self.refuse_why(
                         label.place,
@@ -482,7 +482,7 @@ impl Checker<'_> {
 
     /// trace: D87. Arguments in another order than declared are refused, with the call put in order as the fix when
     /// it's on one line.
-    fn refuse_order(&mut self, name: &str, bound: &[Option<usize>], arguments: &[syntax::Entry], place: Place) {
+    fn refuse_order(&mut self, name: &str, bound: &[Option<usize>], arguments: &[syntax::Entry<'a>], place: Place) {
         let start = |entry: &syntax::Entry| entry.label.as_ref().map_or(entry.value.place, |label| label.place);
         let mut message = crate::message::Message::refused(
             place,
@@ -515,7 +515,13 @@ impl Checker<'_> {
         self.messages.push(message);
     }
 
-    fn procedure_call(&mut self, id: ProcedureId, name: &str, arguments: &[syntax::Entry], place: Place) -> Expression {
+    fn procedure_call(
+        &mut self,
+        id: ProcedureId,
+        name: &str,
+        arguments: &[syntax::Entry<'a>],
+        place: Place,
+    ) -> Expression {
         self.ensure_checked(id);
         let Some(procedure) = self.program.procedure(id) else { return Self::error(place) };
         let labels = procedure.labels.clone();
@@ -572,7 +578,7 @@ impl Checker<'_> {
     fn door_call(
         &mut self,
         door: u32,
-        arguments: &[syntax::Entry],
+        arguments: &[syntax::Entry<'a>],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
@@ -626,7 +632,7 @@ impl Checker<'_> {
 
     /// `be.Text`, `be.Whole` and its narrowings, and `be.Float` (D22, Unio D22, D153, D178).
     #[allow(clippy::too_many_lines)] // one case per conversion, each with its own refusals
-    fn conversion(&mut self, path: &[String], arguments: &[syntax::Entry], place: Place) -> Expression {
+    fn conversion(&mut self, path: &[String], arguments: &[syntax::Entry<'a>], place: Place) -> Expression {
         let narrowing: Vec<&str> = path.iter().skip(1).map(String::as_str).collect();
         let full = path.join(".");
         let rounding = match narrowing.as_slice() {
@@ -795,12 +801,12 @@ impl Checker<'_> {
     #[allow(clippy::too_many_lines)] // each method's arguments are read here, one after another
     fn method(
         &mut self,
-        receiver: &syntax::Expression,
-        method: &syntax::Word,
-        arguments: &[syntax::Entry],
+        receiver: &syntax::Expression<'a>,
+        method: &syntax::Word<'a>,
+        arguments: &[syntax::Entry<'a>],
         place: Place,
     ) -> Expression {
-        let label_of = |entry: &syntax::Entry| entry.label.as_ref().map(|label| label.text.clone());
+        let label_of = |entry: &syntax::Entry| entry.label.as_ref().map(|label| label.text.to_owned());
         if method.text == "has" {
             let dict = self.expression(receiver, None);
             let key_type = self.program.types.fresh();
@@ -881,7 +887,7 @@ impl Checker<'_> {
                 place,
             };
         }
-        if !matches!(method.text.as_str(), "add" | "remove") {
+        if !matches!(method.text, "add" | "remove") {
             let checked = self.expression(receiver, None);
             if !self.program.types.is_error(checked.type_id) {
                 let found = self.describe(checked.type_id);
@@ -913,7 +919,7 @@ impl Checker<'_> {
             self.program.types.unify(open, shape);
         }
         let variable_type = self.program.types.resolve(self.variable_type(variable));
-        let result = match (self.program.types.get(variable_type).clone(), method.text.as_str()) {
+        let result = match (self.program.types.get(variable_type).clone(), method.text) {
             (Type::List { item, .. }, "add") => {
                 let mut value = None;
                 let mut position = None;

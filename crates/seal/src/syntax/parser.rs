@@ -22,7 +22,7 @@ const MAX_BLOCK_DEPTH: u32 = 48;
 const MAX_EXPRESSION_DEPTH: u32 = 160;
 
 struct Parser<'a> {
-    lines: Vec<Line>,
+    lines: Vec<Line<'a>>,
     /// The script as written, for fixes that show a whole line put right.
     source: &'a str,
     line_index: usize,
@@ -44,7 +44,7 @@ struct Opener {
 
 /// A line indented by anything but 4 spaces a level is refused, with the line indented right as the fix (D63, Unio
 /// D10).
-fn wrong_indentation(line: &Line, wanted: u32) -> Message {
+fn wrong_indentation(line: &Line<'_>, wanted: u32) -> Message {
     Message::refused(
         Place::new(line.place.line, 1, line.indentation.max(1)),
         format!("this line is indented {} spaces, where its block's body is indented {wanted}", line.indentation),
@@ -58,7 +58,7 @@ fn wrong_indentation(line: &Line, wanted: u32) -> Message {
 /// # Errors
 ///
 /// Returns the first thing that can't be read, as a message.
-pub fn parse(source: &str) -> Result<Script, Message> {
+pub fn parse(source: &str) -> Result<Script<'_>, Message> {
     let lines = lex(source)?;
     let mut parser =
         Parser { lines, source, line_index: 0, position: 0, next_id: 0, block_depth: 0, expression_depth: 0 };
@@ -71,13 +71,13 @@ pub fn parse(source: &str) -> Result<Script, Message> {
         }
         items.push(parser.item()?);
     }
-    Ok(Script { items, expression_count: parser.next_id, source: source.to_owned() })
+    Ok(Script { items, expression_count: parser.next_id, source })
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
     // ---- tokens ----
 
-    fn line(&self) -> Option<&Line> {
+    fn line(&self) -> Option<&Line<'a>> {
         self.lines.get(self.line_index)
     }
 
@@ -89,15 +89,15 @@ impl Parser<'_> {
         self.line().map_or(Place::default(), |line| line.place)
     }
 
-    fn peek(&self) -> Option<&Token> {
+    fn peek(&self) -> Option<&Token<'a>> {
         self.line().and_then(|line| line.tokens.get(self.position))
     }
 
-    fn peek_at(&self, offset: usize) -> Option<&Token> {
+    fn peek_at(&self, offset: usize) -> Option<&Token<'a>> {
         self.line().and_then(|line| line.tokens.get(self.position + offset))
     }
 
-    fn peek_kind(&self) -> Option<&TokenKind> {
+    fn peek_kind(&self) -> Option<&TokenKind<'a>> {
         self.peek().map(|token| &token.kind)
     }
 
@@ -131,7 +131,7 @@ impl Parser<'_> {
 
     /// Steps past the next token, taking what it holds instead of copying it: a name's or a value's text is read
     /// once. The token keeps its place, which is all that's looked back at.
-    fn take(&mut self) -> Option<Token> {
+    fn take(&mut self) -> Option<Token<'a>> {
         let token = self.lines.get_mut(self.line_index)?.tokens.get_mut(self.position)?;
         let kind = std::mem::replace(&mut token.kind, TokenKind::Symbol(Symbol::Comma));
         let whole = Token { kind, place: token.place, gap: token.gap };
@@ -140,7 +140,7 @@ impl Parser<'_> {
     }
 
     /// Puts a token just taken back, for reading it another way.
-    fn put_back(&mut self, token: Token) {
+    fn put_back(&mut self, token: Token<'a>) {
         self.position = self.position.saturating_sub(1);
         if let Some(slot) = self.lines.get_mut(self.line_index).and_then(|line| line.tokens.get_mut(self.position)) {
             *slot = token;
@@ -148,10 +148,10 @@ impl Parser<'_> {
     }
 
     /// The text of a name or type name about to be read, taken out of its token.
-    fn take_text(&mut self) -> String {
+    fn take_text(&mut self) -> &'a str {
         match self.take().map(|token| token.kind) {
             Some(TokenKind::Name(text) | TokenKind::TypeName(text)) => text,
-            _ => String::new(),
+            _ => "",
         }
     }
 
@@ -191,7 +191,7 @@ impl Parser<'_> {
         }
     }
 
-    fn expect_name(&mut self, what: &str) -> Result<Word, Message> {
+    fn expect_name(&mut self, what: &str) -> Result<Word<'a>, Message> {
         match self.peek() {
             Some(Token { kind: TokenKind::Name(_), place, .. }) => {
                 let place = *place;
@@ -206,7 +206,7 @@ impl Parser<'_> {
         }
     }
 
-    fn expect_type_name(&mut self) -> Result<Word, Message> {
+    fn expect_type_name(&mut self) -> Result<Word<'a>, Message> {
         match self.peek() {
             Some(Token { kind: TokenKind::TypeName(_), place, .. }) => {
                 let place = *place;
@@ -235,7 +235,7 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn expression(&mut self, kind: ExpressionKind, place: Place) -> Expression {
+    fn expression(&mut self, kind: ExpressionKind<'a>, place: Place) -> Expression<'a> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         Expression { id, kind, place }
@@ -244,7 +244,7 @@ impl Parser<'_> {
     // ---- blocks ----
 
     /// Reads a body: the lines one level deeper than `opener`, up to the line at the opener's own depth.
-    fn body(&mut self, opener: &Opener) -> Result<Block, Message> {
+    fn body(&mut self, opener: &Opener) -> Result<Block<'a>, Message> {
         self.block_depth += 1;
         if self.block_depth > MAX_BLOCK_DEPTH {
             return Err(Message::not_built_yet(
@@ -345,23 +345,23 @@ impl Parser<'_> {
 
     // ---- the top level ----
 
-    fn item(&mut self) -> Result<Item, Message> {
+    fn item(&mut self) -> Result<Item<'a>, Message> {
         match self.first_keyword() {
             Some(Keyword::Proc) => Ok(Item::Procedure(self.procedure(false)?)),
             Some(Keyword::Fam) => Ok(Item::Family(self.family()?)),
             Some(Keyword::Record) => Ok(Item::Record(self.record()?)),
             Some(Keyword::OneOf) => Ok(Item::OneOf(self.one_of()?)),
             // trace: D110. `group.handler name` declares a handler group; `group` is read as such only here.
-            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "group")
+            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "group")
                 && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
-                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "handler") =>
+                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if *word == "handler") =>
             {
                 Ok(Item::HandlerGroup(self.handler_group()?))
             }
             // trace: D123. `group.unit name` declares a script's own units.
-            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "group")
+            _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "group")
                 && self.peek_at(1).map(|token| &token.kind) == Some(&TokenKind::Symbol(Symbol::Dot))
-                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "unit") =>
+                && matches!(self.peek_at(2).map(|token| &token.kind), Some(TokenKind::Name(word)) if *word == "unit") =>
             {
                 Ok(Item::UnitGroup(self.unit_group()?))
             }
@@ -379,7 +379,7 @@ impl Parser<'_> {
         }
     }
 
-    fn path(&mut self) -> Result<Vec<Word>, Message> {
+    fn path(&mut self) -> Result<Vec<Word<'a>>, Message> {
         let mut path = vec![self.expect_name("a procedure's name")?];
         while self.at_symbol(Symbol::Dot) {
             self.advance();
@@ -391,13 +391,13 @@ impl Parser<'_> {
     /// A procedure: `proc name[parameters] -> Type ! [failures]` and its body, or a family's member, written the same
     /// way without `proc` (D21, D41, D42, D45, D81, D84, D88, D97).
     #[allow(clippy::too_many_lines)] // the first line, then the `labels` and `defaults` lines, read in order
-    fn procedure(&mut self, member: bool) -> Result<Procedure, Message> {
+    fn procedure(&mut self, member: bool) -> Result<Procedure<'a>, Message> {
         let mut opener = self.opener("proc");
         if !member {
             self.expect_keyword(Keyword::Proc)?;
         }
         let path = self.path()?;
-        let name = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+        let name = path.iter().map(|word| word.text).collect::<Vec<_>>().join(".");
         // trace: D102. A procedure's note is `proc` and its name; a member's is its own name.
         opener.note = if member { name.clone() } else { format!("proc {name}") };
         if self.at_symbol(Symbol::OpenRound) {
@@ -449,7 +449,7 @@ impl Parser<'_> {
 
     /// A procedure's or a handler's parameters in `[ ]`, each with its type or in a group sharing one (D21, D60, D81,
     /// D88). `written` is how it's written with no parameters, for the message when `[ ]` is empty.
-    fn parameters(&mut self, written: &str, name: &str) -> Result<Vec<Parameter>, Message> {
+    fn parameters(&mut self, written: &str, name: &str) -> Result<Vec<Parameter<'a>>, Message> {
         let mut parameters = Vec::new();
         // trace: D60. A procedure that takes nothing has no brackets.
         if self.at_symbol(Symbol::OpenSquare) {
@@ -463,7 +463,7 @@ impl Parser<'_> {
                 .with_why("`[ ]` describes the values a procedure takes, and this one takes none."));
             }
             // The names still waiting for the type of their group (D88).
-            let mut waiting: Vec<Parameter> = Vec::new();
+            let mut waiting: Vec<Parameter<'a>> = Vec::new();
             loop {
                 // trace: D61
                 let unused = self.at_keyword(Keyword::Unused);
@@ -523,7 +523,7 @@ impl Parser<'_> {
     fn labels_and_defaults(
         &mut self,
         opener: &Opener,
-    ) -> Result<(Vec<LabelDeclaration>, bool, Vec<DefaultDeclaration>), Message> {
+    ) -> Result<(Vec<LabelDeclaration<'a>>, bool, Vec<DefaultDeclaration<'a>>), Message> {
         let mut labels = Vec::new();
         let mut defaults = Vec::new();
         let mut labels_any_order = false;
@@ -533,7 +533,7 @@ impl Parser<'_> {
             if self.at_symbol(Symbol::Dot) {
                 self.advance();
                 match self.peek_kind() {
-                    Some(TokenKind::Name(narrowing)) if narrowing == "any_order" => {
+                    Some(TokenKind::Name(narrowing)) if *narrowing == "any_order" => {
                         self.advance();
                         labels_any_order = true;
                     }
@@ -583,12 +583,12 @@ impl Parser<'_> {
 
     /// `group.handler name`: an optional `handles [ … ]` line, then its members, each `::name` with its parameters
     /// and its cases (D97, D110, Unio D42, D44).
-    fn handler_group(&mut self) -> Result<HandlerGroup, Message> {
+    fn handler_group(&mut self) -> Result<HandlerGroup<'a>, Message> {
         let mut opener = self.opener("group.handler");
         self.advance();
         self.expect_symbol(Symbol::Dot)?;
         match self.peek_kind() {
-            Some(TokenKind::Name(kind)) if kind == "handler" => {
+            Some(TokenKind::Name(kind)) if *kind == "handler" => {
                 self.advance();
             }
             _ => {
@@ -600,14 +600,14 @@ impl Parser<'_> {
         opener.note = format!("group.handler {}", name.text);
         self.end_line()?;
         let mut handles = Vec::new();
-        if self.in_body(&opener)? && matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "handles") {
+        if self.in_body(&opener)? && matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "handles") {
             self.advance();
             self.expect_symbol(Symbol::OpenSquare)?;
             loop {
                 // trace: D129. A built-in, as `be.Whole`, can be named too.
                 if self.at_keyword(Keyword::Be) {
                     let be = self.advance_place();
-                    let mut path = vec![Word { text: "be".to_owned(), place: be }];
+                    let mut path = vec![Word { text: "be", place: be }];
                     while self.at_symbol(Symbol::Dot) {
                         self.advance();
                         path.push(self.member_name()?);
@@ -642,12 +642,12 @@ impl Parser<'_> {
     }
 
     /// One handler: `::name[parameters]`, its `labels` and `defaults`, and its cases (D110, Unio D42, D44).
-    fn handler(&mut self) -> Result<Handler, Message> {
+    fn handler(&mut self) -> Result<Handler<'a>, Message> {
         let mut opener = self.opener("::");
         self.expect_symbol(Symbol::Path)?;
         let name = self.expect_name("the handler's name")?;
         opener.note = format!("::{}", name.text);
-        let parameters = self.parameters(&format!("::{}", name.text), &name.text)?;
+        let parameters = self.parameters(&format!("::{}", name.text), name.text)?;
         self.end_line()?;
         let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
         let mut cases = Vec::new();
@@ -665,7 +665,7 @@ impl Parser<'_> {
 
     /// A handler where it's used, after `??` or `include`: `::name`, `group::name`, `*` before a name that can jump,
     /// and the arguments in `( )` (D98, D110, Unio D42, D44).
-    fn handler_use(&mut self) -> Result<HandlerUse, Message> {
+    fn handler_use(&mut self) -> Result<HandlerUse<'a>, Message> {
         let place = self.here();
         let group = if matches!(self.peek_kind(), Some(TokenKind::Name(_))) {
             Some(self.expect_name("a handler group's name")?)
@@ -690,7 +690,7 @@ impl Parser<'_> {
     }
 
     /// trace: D123. `group.unit name`, then each member: `::name base`, or `::name = amount unit`.
-    fn unit_group(&mut self) -> Result<UnitGroup, Message> {
+    fn unit_group(&mut self) -> Result<UnitGroup<'a>, Message> {
         let mut opener = self.opener("group.unit");
         self.advance();
         self.expect_symbol(Symbol::Dot)?;
@@ -708,7 +708,7 @@ impl Parser<'_> {
             }
             self.advance();
             let member = self.expect_name("a unit's name")?;
-            let size = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "base") {
+            let size = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "base") {
                 self.advance();
                 None
             } else {
@@ -733,7 +733,7 @@ impl Parser<'_> {
     }
 
     /// A unit's name, with its group before `::` when it's written (D112).
-    fn unit_name(&mut self) -> Result<UnitName, Message> {
+    fn unit_name(&mut self) -> Result<UnitName<'a>, Message> {
         let first = self.expect_name("a unit")?;
         if self.at_symbol(Symbol::Path) {
             self.advance();
@@ -745,18 +745,18 @@ impl Parser<'_> {
 
     /// A unit as written: its name, `.point` when it's a point, and `per` and another unit for a rate (D112, D120,
     /// D121).
-    fn unit_written(&mut self) -> Result<UnitWritten, Message> {
+    fn unit_written(&mut self) -> Result<UnitWritten<'a>, Message> {
         let start = self.here();
         let top = self.unit_name()?;
         let mut point = false;
         if self.at_symbol(Symbol::Dot)
-            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(word)) if word == "point")
+            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(word)) if *word == "point")
         {
             self.advance();
             self.advance();
             point = true;
         }
-        let per = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "per") {
+        let per = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "per") {
             self.advance();
             Some(self.unit_name()?)
         } else {
@@ -773,12 +773,12 @@ impl Parser<'_> {
     }
 
     /// trace: D43, D97
-    fn family(&mut self) -> Result<Family, Message> {
+    fn family(&mut self) -> Result<Family<'a>, Message> {
         let mut opener = self.opener("fam");
         self.expect_keyword(Keyword::Fam)?;
         self.expect_symbol(Symbol::Dot)?;
         if !self.at_keyword(Keyword::Proc) {
-            if matches!(self.peek_kind(), Some(TokenKind::Name(name)) if name == "handler") {
+            if matches!(self.peek_kind(), Some(TokenKind::Name(name)) if *name == "handler") {
                 // trace: D110. Handlers live in a `group.handler`, since they aren't kinds of a word.
                 return Err(Message::refused(self.here(), "handlers live in a `group.handler`, not a family")
                     .with_why("a family is a word and its kinds; a handler group is a named set, reached with `::`."));
@@ -812,7 +812,7 @@ impl Parser<'_> {
         Ok(Family { word, members, place: opener.place })
     }
 
-    fn field(&mut self) -> Result<FieldDeclaration, Message> {
+    fn field(&mut self) -> Result<FieldDeclaration<'a>, Message> {
         let name = self.expect_name("a field's name")?;
         self.expect_symbol(Symbol::Colon)?;
         let written_type = self.type_expression()?;
@@ -820,7 +820,7 @@ impl Parser<'_> {
     }
 
     /// trace: D27
-    fn record(&mut self) -> Result<RecordDeclaration, Message> {
+    fn record(&mut self) -> Result<RecordDeclaration<'a>, Message> {
         let mut opener = self.opener("record");
         self.expect_keyword(Keyword::Record)?;
         let name = self.expect_type_name()?;
@@ -836,7 +836,7 @@ impl Parser<'_> {
     }
 
     /// trace: D35, D36
-    fn one_of(&mut self) -> Result<OneOfDeclaration, Message> {
+    fn one_of(&mut self) -> Result<OneOfDeclaration<'a>, Message> {
         let mut opener = self.opener("one_of");
         self.expect_keyword(Keyword::OneOf)?;
         let name = self.expect_type_name()?;
@@ -866,7 +866,7 @@ impl Parser<'_> {
     }
 
     /// trace: D30, D31, Unio D167
-    fn type_expression(&mut self) -> Result<TypeExpression, Message> {
+    fn type_expression(&mut self) -> Result<TypeExpression<'a>, Message> {
         self.expression_depth += 1;
         if self.expression_depth > MAX_EXPRESSION_DEPTH {
             return Err(self.too_deep());
@@ -936,7 +936,7 @@ impl Parser<'_> {
     // ---- statements ----
 
     #[allow(clippy::too_many_lines)] // one case per kind of statement
-    fn statement(&mut self) -> Result<Statement, Message> {
+    fn statement(&mut self) -> Result<Statement<'a>, Message> {
         let place = self.line_place();
         if self.block_depth > 0
             && let Some(doc) = self.line().and_then(|line| line.documented)
@@ -1063,7 +1063,7 @@ impl Parser<'_> {
     }
 
     /// A statement's value, which may carry an `otherwise` block (Unio D40). Ends the line either way.
-    fn value_with_otherwise(&mut self) -> Result<Expression, Message> {
+    fn value_with_otherwise(&mut self) -> Result<Expression<'a>, Message> {
         let value = self.full_expression()?;
         if self.at_keyword(Keyword::Otherwise) {
             self.otherwise(value)
@@ -1074,7 +1074,7 @@ impl Parser<'_> {
     }
 
     /// trace: D37, Unio D40
-    fn otherwise(&mut self, call: Expression) -> Result<Expression, Message> {
+    fn otherwise(&mut self, call: Expression<'a>) -> Result<Expression<'a>, Message> {
         let opener = self.opener("otherwise");
         let place = call.place;
         let at = self.expect_keyword(Keyword::Otherwise)?;
@@ -1093,7 +1093,7 @@ impl Parser<'_> {
         let mut includes = Vec::new();
         while self.in_body(&opener)? {
             // trace: Unio D43. `include` brings a handler's cases in beside the block's own.
-            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if word == "include")
+            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "include")
                 && matches!(
                     self.peek_at(1).map(|token| &token.kind),
                     Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_))
@@ -1116,7 +1116,7 @@ impl Parser<'_> {
     }
 
     /// A case's body: it runs until the next `case` or the block's `end` (D37).
-    fn case_body(&mut self, case: &Opener, block: &Opener) -> Result<Block, Message> {
+    fn case_body(&mut self, case: &Opener, block: &Opener) -> Result<Block<'a>, Message> {
         self.block_depth += 1;
         if self.block_depth > MAX_BLOCK_DEPTH {
             return Err(Message::not_built_yet(
@@ -1142,7 +1142,7 @@ impl Parser<'_> {
     }
 
     /// trace: D9, D10, D20
-    fn if_statement(&mut self) -> Result<Statement, Message> {
+    fn if_statement(&mut self) -> Result<Statement<'a>, Message> {
         let opener = self.opener("if");
         self.expect_keyword(Keyword::If)?;
         let mut branches = Vec::new();
@@ -1180,7 +1180,7 @@ impl Parser<'_> {
     }
 
     /// trace: D22, D33, Unio D171, D174
-    fn for_each(&mut self) -> Result<Statement, Message> {
+    fn for_each(&mut self) -> Result<Statement<'a>, Message> {
         let opener = self.opener("for");
         self.expect_keyword(Keyword::For)?;
         self.expect_keyword(Keyword::Each)?;
@@ -1194,9 +1194,9 @@ impl Parser<'_> {
         let position = if self.at_keyword(Keyword::At) {
             self.advance();
             let kind = match self.peek_kind() {
-                Some(TokenKind::Name(name)) if name == "pos" => PositionKind::Pos,
-                Some(TokenKind::Name(name)) if name == "offset" => PositionKind::Offset,
-                Some(TokenKind::Name(name)) if name == "key" => PositionKind::Key,
+                Some(TokenKind::Name(name)) if *name == "pos" => PositionKind::Pos,
+                Some(TokenKind::Name(name)) if *name == "offset" => PositionKind::Offset,
+                Some(TokenKind::Name(name)) if *name == "key" => PositionKind::Key,
                 _ => return Err(self.unexpected("`pos`, `offset` or `key`")),
             };
             self.advance();
@@ -1221,7 +1221,7 @@ impl Parser<'_> {
     }
 
     /// trace: D37
-    fn match_statement(&mut self) -> Result<Statement, Message> {
+    fn match_statement(&mut self) -> Result<Statement<'a>, Message> {
         let opener = self.opener("match");
         self.expect_keyword(Keyword::Match)?;
         let subject = self.full_expression()?;
@@ -1267,7 +1267,7 @@ impl Parser<'_> {
     }
 
     /// A whole expression: slides come last, taking everything on their left (Unio D73).
-    fn full_expression(&mut self) -> Result<Expression, Message> {
+    fn full_expression(&mut self) -> Result<Expression<'a>, Message> {
         let saved = self.expression_depth;
         let start = self.or_expression()?;
         let result = if self.at_symbol(Symbol::Slide) { self.slide(start) } else { Ok(start) };
@@ -1276,7 +1276,7 @@ impl Parser<'_> {
     }
 
     /// trace: Unio D5, D73, D81
-    fn slide(&mut self, start: Expression) -> Result<Expression, Message> {
+    fn slide(&mut self, start: Expression<'a>) -> Result<Expression<'a>, Message> {
         let place = start.place;
         let mut steps = Vec::new();
         while self.at_symbol(Symbol::Slide) {
@@ -1284,13 +1284,13 @@ impl Parser<'_> {
             let step_place = self.here();
             let mut target = match self.peek_kind() {
                 Some(TokenKind::Name(name)) => {
-                    let name = name.clone();
+                    let name = *name;
                     self.advance();
                     self.expression(ExpressionKind::Name(name), step_place)
                 }
                 Some(TokenKind::Keyword(Keyword::Be)) => {
                     self.advance();
-                    self.expression(ExpressionKind::Name("be".to_owned()), step_place)
+                    self.expression(ExpressionKind::Name("be"), step_place)
                 }
                 _ => return Err(self.unexpected("a procedure's name")),
             };
@@ -1322,7 +1322,13 @@ impl Parser<'_> {
         Ok(self.expression(ExpressionKind::Slide { start: Box::new(start), steps }, place))
     }
 
-    fn binary(&mut self, operator: BinaryOperator, left: Expression, right: Expression, at: Place) -> Expression {
+    fn binary(
+        &mut self,
+        operator: BinaryOperator,
+        left: Expression<'a>,
+        right: Expression<'a>,
+        at: Place,
+    ) -> Expression<'a> {
         let place = left.place.to(right.place);
         self.expression(
             ExpressionKind::Binary { operator, left: Box::new(left), right: Box::new(right), operator_place: at },
@@ -1330,7 +1336,7 @@ impl Parser<'_> {
         )
     }
 
-    fn or_expression(&mut self) -> Result<Expression, Message> {
+    fn or_expression(&mut self) -> Result<Expression<'a>, Message> {
         let mut left = self.and_expression()?;
         while self.at_keyword(Keyword::Or) {
             self.deeper()?;
@@ -1342,7 +1348,7 @@ impl Parser<'_> {
         Ok(left)
     }
 
-    fn and_expression(&mut self) -> Result<Expression, Message> {
+    fn and_expression(&mut self) -> Result<Expression<'a>, Message> {
         let mut left = self.not_expression()?;
         while self.at_keyword(Keyword::And) {
             self.deeper()?;
@@ -1355,7 +1361,7 @@ impl Parser<'_> {
     }
 
     /// trace: Unio D34: `not` comes after comparisons and before `and`.
-    fn not_expression(&mut self) -> Result<Expression, Message> {
+    fn not_expression(&mut self) -> Result<Expression<'a>, Message> {
         if self.at_keyword(Keyword::Not) {
             self.deeper()?;
             let place = self.here();
@@ -1382,7 +1388,7 @@ impl Parser<'_> {
         }
     }
 
-    fn comparison(&mut self) -> Result<Expression, Message> {
+    fn comparison(&mut self) -> Result<Expression<'a>, Message> {
         let left = self.measure_in()?;
         let Some(operator) = self.comparison_operator() else {
             return Ok(left);
@@ -1401,7 +1407,7 @@ impl Parser<'_> {
 
     /// trace: D122. `value in unit` measures a value in a unit of its group. Next to maths written without brackets,
     /// which part it measures isn't decided, so it stops.
-    fn measure_in(&mut self) -> Result<Expression, Message> {
+    fn measure_in(&mut self) -> Result<Expression<'a>, Message> {
         let value = self.join()?;
         if !(self.at_keyword(Keyword::In)
             && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(_))))
@@ -1422,7 +1428,7 @@ impl Parser<'_> {
 
     /// trace: D77. Text is joined only by filling it in with braces, so `&` is refused, with the braces form as the
     /// fix when the pieces are texts and names.
-    fn join(&mut self) -> Result<Expression, Message> {
+    fn join(&mut self) -> Result<Expression<'a>, Message> {
         let first = self.additive()?;
         if !self.at_symbol(Symbol::Ampersand) {
             return Ok(first);
@@ -1471,7 +1477,7 @@ impl Parser<'_> {
         Err(message)
     }
 
-    fn additive(&mut self) -> Result<Expression, Message> {
+    fn additive(&mut self) -> Result<Expression<'a>, Message> {
         let mut left = self.multiplicative()?;
         loop {
             let operator = match self.peek_kind() {
@@ -1488,7 +1494,7 @@ impl Parser<'_> {
         Ok(left)
     }
 
-    fn multiplicative(&mut self) -> Result<Expression, Message> {
+    fn multiplicative(&mut self) -> Result<Expression<'a>, Message> {
         let mut left = self.unary()?;
         loop {
             let at = self.here();
@@ -1516,7 +1522,7 @@ impl Parser<'_> {
     }
 
     /// trace: D108, D132. `a ** b` binds tighter than a negating `-`, and that than `*` and `/`.
-    fn power(&mut self) -> Result<Expression, Message> {
+    fn power(&mut self) -> Result<Expression<'a>, Message> {
         let base = self.operand()?;
         if !self.at_symbol(Symbol::Power) {
             return Ok(base);
@@ -1541,8 +1547,8 @@ impl Parser<'_> {
         }
         self.advance();
         let floor = match self.peek_kind() {
-            Some(TokenKind::Name(name)) if name == "floor" => true,
-            Some(TokenKind::Name(name)) if name == "trunc" => false,
+            Some(TokenKind::Name(name)) if *name == "floor" => true,
+            Some(TokenKind::Name(name)) if *name == "trunc" => false,
             _ => return Err(bare()),
         };
         self.advance();
@@ -1554,7 +1560,7 @@ impl Parser<'_> {
         })
     }
 
-    fn unary(&mut self) -> Result<Expression, Message> {
+    fn unary(&mut self) -> Result<Expression<'a>, Message> {
         if self.at_symbol(Symbol::Negate) {
             self.deeper()?;
             let place = self.here();
@@ -1570,7 +1576,7 @@ impl Parser<'_> {
         self.power()
     }
 
-    fn member_name(&mut self) -> Result<Word, Message> {
+    fn member_name(&mut self) -> Result<Word<'a>, Message> {
         match self.peek() {
             Some(Token { kind: TokenKind::Name(_) | TokenKind::TypeName(_), place, .. }) => {
                 let place = *place;
@@ -1581,7 +1587,7 @@ impl Parser<'_> {
     }
 
     /// A single value with everything that sticks to it: `.name`, `( )`, `[ ]`, `?` and `??` (Unio D81).
-    fn operand(&mut self) -> Result<Expression, Message> {
+    fn operand(&mut self) -> Result<Expression<'a>, Message> {
         self.deeper()?;
         let mut value = self.primary()?;
         while let Some(token) = self.peek() {
@@ -1640,7 +1646,7 @@ impl Parser<'_> {
     }
 
     /// The entries up to `closer`, which is read too: values, each with a label when it has one.
-    fn entries(&mut self, closer: Symbol) -> Result<Vec<Entry>, Message> {
+    fn entries(&mut self, closer: Symbol) -> Result<Vec<Entry<'a>>, Message> {
         let mut entries = Vec::new();
         if self.at_symbol(closer) {
             self.advance();
@@ -1667,7 +1673,7 @@ impl Parser<'_> {
         Ok(entries)
     }
 
-    fn primary(&mut self) -> Result<Expression, Message> {
+    fn primary(&mut self) -> Result<Expression<'a>, Message> {
         let Some(token) = self.take() else {
             // trace: D8
             return Err(Message::refused(self.end_place(), "this line ends where a value is still wanted")
@@ -1682,7 +1688,7 @@ impl Parser<'_> {
                 let number = match token.kind {
                     TokenKind::Whole(digits) => ExpressionKind::Whole(digits),
                     TokenKind::Float { text, approximate } => ExpressionKind::Float { text, approximate },
-                    _ => ExpressionKind::Whole(String::new()),
+                    _ => ExpressionKind::Whole(""),
                 };
                 let number = self.expression(number, place);
                 let unit = self.unit_written()?;
@@ -1696,7 +1702,7 @@ impl Parser<'_> {
             TokenKind::Text(text) => ExpressionKind::Text(text),
             TokenKind::Keyword(Keyword::True) => ExpressionKind::Bool(true),
             TokenKind::Keyword(Keyword::False) => ExpressionKind::Bool(false),
-            TokenKind::Keyword(Keyword::Be) => ExpressionKind::Name("be".to_owned()),
+            TokenKind::Keyword(Keyword::Be) => ExpressionKind::Name("be"),
             TokenKind::Name(name) => ExpressionKind::Name(name),
             TokenKind::TypeName(text) => ExpressionKind::TypeName(Word { text, place }),
             TokenKind::Symbol(Symbol::OpenRound) => {
@@ -1714,7 +1720,7 @@ impl Parser<'_> {
     }
 
     /// `[a, b]`, `[key: value]`, `[all: value]`, `[]` and `[:]` (D32, Unio D75, D76, D169).
-    fn square_literal(&mut self, open: Place) -> Result<Expression, Message> {
+    fn square_literal(&mut self, open: Place) -> Result<Expression<'a>, Message> {
         if self.at_symbol(Symbol::CloseSquare) {
             let close = self.here();
             self.advance();
@@ -1749,9 +1755,9 @@ impl Parser<'_> {
 }
 
 /// A name with its fields and facts, as braces can hold it (D28, D75).
-fn braced(expression: &Expression) -> Option<String> {
+fn braced(expression: &Expression<'_>) -> Option<String> {
     match &expression.kind {
-        ExpressionKind::Name(name) => Some(name.clone()),
+        ExpressionKind::Name(name) => Some((*name).to_owned()),
         ExpressionKind::Member { receiver, name } => Some(format!("{}.{}", braced(receiver)?, name.text)),
         ExpressionKind::Group(inner) => braced(inner),
         _ => None,

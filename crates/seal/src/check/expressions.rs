@@ -9,9 +9,9 @@ use crate::number::read_float_literal;
 use crate::syntax::lexer::cook_text;
 use crate::syntax::tree::{self as syntax, BinaryOperator, UnaryOperator};
 
-impl Checker<'_> {
+impl<'a> Checker<'a> {
     /// Checks an expression, used where a value of the type `wanted` goes, when that's known.
-    pub(super) fn expression(&mut self, expression: &syntax::Expression, wanted: Option<TypeId>) -> Expression {
+    pub(super) fn expression(&mut self, expression: &syntax::Expression<'a>, wanted: Option<TypeId>) -> Expression {
         let checked = self.expression_as_written(expression, wanted);
         match wanted {
             Some(wanted) => {
@@ -52,7 +52,7 @@ impl Checker<'_> {
     }
 
     #[allow(clippy::too_many_lines)] // one case per kind of expression
-    fn expression_as_written(&mut self, expression: &syntax::Expression, wanted: Option<TypeId>) -> Expression {
+    fn expression_as_written(&mut self, expression: &syntax::Expression<'a>, wanted: Option<TypeId>) -> Expression {
         use syntax::ExpressionKind as Kind;
         let place = expression.place;
         match &expression.kind {
@@ -81,7 +81,7 @@ impl Checker<'_> {
             Kind::Name(name) => self.name(name, place),
             Kind::TypeName(word) => {
                 let name = &word.text;
-                if self.record_names.contains_key(name) {
+                if self.record_names.contains_key(*name) {
                     // trace: D27
                     self.refuse_why(
                         place,
@@ -115,7 +115,7 @@ impl Checker<'_> {
                 // trace: D65, D66. `.len.egc`, `.len.ucp` and `.len.bytes` say which unit a text's length counts.
                 if let Kind::Member { receiver: text, name: fact } = &receiver.kind
                     && fact.text == "len"
-                    && matches!(name.text.as_str(), "egc" | "ucp" | "bytes")
+                    && matches!(name.text, "egc" | "ucp" | "bytes")
                 {
                     let text = self.expression(text, Some(TEXT));
                     if !self.program.types.unify(text.type_id, TEXT) {
@@ -137,12 +137,12 @@ impl Checker<'_> {
                 let result = self.program.types.fresh();
                 self.require(
                     receiver.type_id,
-                    Requirement::Member { name: name.text.clone(), result },
+                    Requirement::Member { name: name.text.to_owned(), result },
                     name.place,
                     "a `.` after a value reads one of its fields or facts",
                 );
                 Expression {
-                    kind: ExpressionKind::Member { receiver: Box::new(receiver), name: name.text.clone() },
+                    kind: ExpressionKind::Member { receiver: Box::new(receiver), name: name.text.to_owned() },
                     type_id: result,
                     place,
                 }
@@ -255,11 +255,17 @@ impl Checker<'_> {
     }
 
     /// A text as written: what it holds, with its braces filled in (D12, D28, D63, D75, D94, D118, Unio D30).
-    fn text_literal(&mut self, text: &str, place: Place) -> Expression {
+    fn text_literal(&mut self, text: &'a str, place: Place) -> Expression {
         if !text.contains('{') {
             return Expression { kind: ExpressionKind::Text(cook_text(text)), type_id: TEXT, place };
         }
         let characters: Vec<char> = text.chars().collect();
+        // Where each character starts in the text, so what's in braces is the script's own, borrowed (D140).
+        let offsets: Vec<usize> = text.char_indices().map(|(offset, _)| offset).chain([text.len()]).collect();
+        let slice = |from: usize, to: usize| match (offsets.get(from), offsets.get(to)) {
+            (Some(&from), Some(&to)) => text.get(from..to).unwrap_or(""),
+            _ => "",
+        };
         let column_of = |index: usize| place.column + 1 + u32::try_from(index).unwrap_or(0);
         let mut parts: Vec<Expression> = Vec::new();
         let mut plain = String::new();
@@ -291,9 +297,9 @@ impl Checker<'_> {
                         );
                         return Self::error(place);
                     };
-                    let inside: String = characters.get(index + 1..index + length).unwrap_or(&[]).iter().collect();
+                    let inside = slice(index + 1, index + length);
                     let brace_place = Place::new(place.line, column_of(index), u32::try_from(length + 1).unwrap_or(1));
-                    match inside.as_str() {
+                    match inside {
                         // trace: D118. `{newln}` and `{tab}` give a line break and a tab.
                         "newln" => plain.push('\n'),
                         "tab" => plain.push('\t'),
@@ -321,7 +327,7 @@ impl Checker<'_> {
                                     place,
                                 });
                             }
-                            if let Some(part) = self.brace(&inside, brace_place) {
+                            if let Some(part) = self.brace(inside, brace_place) {
                                 parts.push(part);
                             }
                         }
@@ -346,7 +352,7 @@ impl Checker<'_> {
 
     /// What's inside one pair of braces: a name, which may be followed by its fields and facts, and for a `Float`,
     /// `places:` (D28, D75, D94, D100).
-    fn brace(&mut self, inside: &str, place: Place) -> Option<Expression> {
+    fn brace(&mut self, inside: &'a str, place: Place) -> Option<Expression> {
         let is_name = |word: &str| {
             !word.is_empty()
                 && word.starts_with(|first: char| first.is_ascii_lowercase())
@@ -514,7 +520,7 @@ impl Checker<'_> {
     }
 
     /// Whether an expression is a value, as opposed to a procedure's name with its narrowings.
-    pub(super) fn is_value(&self, expression: &syntax::Expression) -> bool {
+    pub(super) fn is_value(&self, expression: &syntax::Expression<'a>) -> bool {
         match &expression.kind {
             syntax::ExpressionKind::Name(name) => self.visible(name).is_some(),
             syntax::ExpressionKind::Member { receiver, .. } => self.is_value(receiver),
@@ -548,8 +554,8 @@ impl Checker<'_> {
     fn binary(
         &mut self,
         operator: BinaryOperator,
-        left: &syntax::Expression,
-        right: &syntax::Expression,
+        left: &syntax::Expression<'a>,
+        right: &syntax::Expression<'a>,
         operator_place: Place,
         wanted: Option<TypeId>,
         place: Place,
@@ -704,7 +710,7 @@ impl Checker<'_> {
     }
 
     /// Collects the pieces of a join, left to right. The reader refuses `&` (D77), so only Seal's own joins get here.
-    fn join_parts(&mut self, expression: &syntax::Expression, parts: &mut Vec<Expression>) {
+    fn join_parts(&mut self, expression: &syntax::Expression<'a>, parts: &mut Vec<Expression>) {
         if let syntax::ExpressionKind::Binary { operator: BinaryOperator::Join, left, right, .. } = &expression.kind {
             self.join_parts(left, parts);
             self.join_parts(right, parts);
@@ -717,15 +723,15 @@ impl Checker<'_> {
     /// `receiver[entries]`: reaching an item, or building a record or a case.
     fn bracketed(
         &mut self,
-        receiver: &syntax::Expression,
-        entries: &[syntax::Entry],
+        receiver: &syntax::Expression<'a>,
+        entries: &[syntax::Entry<'a>],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
         if let Some(path) = type_path(receiver) {
             return self.build(&path, Some(entries), wanted, place);
         }
-        if matches!(&receiver.kind, syntax::ExpressionKind::Name(name) if name == "range")
+        if matches!(&receiver.kind, syntax::ExpressionKind::Name(name) if *name == "range")
             && self.visible("range").is_none()
         {
             // trace: D99. A `range` is a `List<Whole>`, usable anywhere a list is.
@@ -758,7 +764,7 @@ impl Checker<'_> {
             self.refuse(place, "an item is reached with one of `pos:`, `offset:` or `key:`");
             return Self::error(place);
         };
-        match entry.label.as_ref().map(|label| label.text.as_str()) {
+        match entry.label.as_ref().map(|label| label.text) {
             Some(label @ ("pos" | "offset")) => {
                 let index = self.expression(&entry.value, Some(WHOLE));
                 self.expect(&index, WHOLE, &format!("`{label}:`"));
@@ -813,13 +819,13 @@ impl Checker<'_> {
     #[allow(clippy::too_many_lines)] // records, a script's cases and `Maybe`'s are built the same way, checked here
     fn build(
         &mut self,
-        path: &[&syntax::Word],
-        entries: Option<&[syntax::Entry]>,
+        path: &[&syntax::Word<'a>],
+        entries: Option<&[syntax::Entry<'a>]>,
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
         let Some(type_word) = path.first() else { return Self::error(place) };
-        let type_name = type_word.text.as_str();
+        let type_name = type_word.text;
         // What's being built: its type, its fields, and its case's number when it's a case.
         let (type_id, fields, case): (TypeId, Vec<(String, TypeId)>, Option<u32>) = if type_name == "Maybe" {
             let inner = match wanted.map(|wanted| self.program.types.get(wanted).clone()) {
@@ -827,7 +833,7 @@ impl Checker<'_> {
                 _ => self.program.types.fresh(),
             };
             let maybe = self.program.types.maybe(inner);
-            match path.get(1).map(|word| word.text.as_str()) {
+            match path.get(1).map(|word| word.text) {
                 Some("none") if path.len() == 2 => (maybe, Vec::new(), Some(0)),
                 Some("some") if path.len() == 2 => (maybe, vec![("value".to_owned(), inner)], Some(1)),
                 _ => {
@@ -878,7 +884,7 @@ impl Checker<'_> {
             }
             return Self::error(place);
         };
-        let what = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+        let what = path.iter().map(|word| word.text).collect::<Vec<_>>().join(".");
         let entries = match (entries, fields.is_empty()) {
             (None, true) => &[][..],
             (None, false) => {
@@ -951,7 +957,7 @@ impl Checker<'_> {
     }
 
     /// trace: D30, Unio D75, D76, D167
-    fn list_literal(&mut self, items: &[syntax::Expression], wanted: Option<TypeId>, place: Place) -> Expression {
+    fn list_literal(&mut self, items: &[syntax::Expression<'a>], wanted: Option<TypeId>, place: Place) -> Expression {
         let wanted_kind = wanted.map(|wanted| self.program.types.get(wanted).clone());
         if wanted_kind == Some(Type::Error) {
             // A written type that was refused has had its message already.
@@ -1007,7 +1013,7 @@ impl Checker<'_> {
         }
     }
 
-    fn item(&mut self, value: &syntax::Expression, item: TypeId) -> Expression {
+    fn item(&mut self, value: &syntax::Expression<'a>, item: TypeId) -> Expression {
         let checked = self.expression(value, Some(item));
         self.expect(&checked, item, "the list's item");
         self.land(checked, item)
@@ -1016,13 +1022,13 @@ impl Checker<'_> {
     /// `[key: value, …]` (D32) and `[all: value]` (Unio D169).
     fn pairs(
         &mut self,
-        pairs: &[(syntax::Expression, syntax::Expression)],
+        pairs: &[(syntax::Expression<'a>, syntax::Expression<'a>)],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
         let wanted_kind = wanted.map(|wanted| self.program.types.get(wanted).clone());
         if let [(key, value)] = pairs
-            && matches!(&key.kind, syntax::ExpressionKind::Name(name) if name == "all")
+            && matches!(&key.kind, syntax::ExpressionKind::Name(name) if *name == "all")
         {
             let Some(Type::Array { item, length }) = wanted_kind else {
                 // trace: Unio D169
@@ -1110,8 +1116,8 @@ impl Checker<'_> {
     #[allow(clippy::too_many_lines)] // a value, `ignore`, `crash` and a handler, on a call or a `Maybe`
     fn handled(
         &mut self,
-        call: &syntax::Expression,
-        fallback: &syntax::Fallback,
+        call: &syntax::Expression<'a>,
+        fallback: &syntax::Fallback<'a>,
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
@@ -1229,9 +1235,9 @@ impl Checker<'_> {
     /// `call otherwise` and its cases, with any handlers it brings in with `include` (D37, Unio D40, D43, D186).
     fn otherwise(
         &mut self,
-        call: &syntax::Expression,
-        cases: &[syntax::OtherwiseCase],
-        includes: &[syntax::HandlerUse],
+        call: &syntax::Expression<'a>,
+        cases: &[syntax::OtherwiseCase<'a>],
+        includes: &[syntax::HandlerUse<'a>],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
@@ -1265,7 +1271,7 @@ impl Checker<'_> {
             }
         }
         for case in cases {
-            let failure = self.failure(&case.failure.text);
+            let failure = self.failure(case.failure.text);
             if checked_cases.iter().any(|(earlier, _)| *earlier == failure) {
                 self.refuse_why(
                     case.failure.place,
@@ -1291,7 +1297,7 @@ impl Checker<'_> {
     /// handler's parameters from its arguments, run before the case's own.
     pub(super) fn case_block(
         &mut self,
-        case: &syntax::OtherwiseCase,
+        case: &syntax::OtherwiseCase<'a>,
         type_id: TypeId,
         gives_nothing: bool,
         failable: bool,
@@ -1324,8 +1330,8 @@ impl Checker<'_> {
     /// A slide: `start |> step |> step |> step`, the same as the calls nested (Unio D5, D128).
     fn slide(
         &mut self,
-        start: &syntax::Expression,
-        steps: &[syntax::SlideStep],
+        start: &syntax::Expression<'a>,
+        steps: &[syntax::SlideStep<'a>],
         wanted: Option<TypeId>,
         place: Place,
     ) -> Expression {
@@ -1359,7 +1365,7 @@ impl Checker<'_> {
     }
 
     /// Whether a call's callee is a method on a value, as opposed to a procedure's name.
-    pub(super) fn is_method(&self, callee: &syntax::Expression) -> bool {
+    pub(super) fn is_method(&self, callee: &syntax::Expression<'a>) -> bool {
         matches!(&callee.kind, syntax::ExpressionKind::Member { receiver, .. } if self.is_value(receiver))
     }
 }
@@ -1369,22 +1375,22 @@ impl Checker<'_> {
 fn filled(expression: &syntax::Expression) -> Option<String> {
     fn path(expression: &syntax::Expression) -> Option<String> {
         match &expression.kind {
-            syntax::ExpressionKind::Name(name) => Some(name.clone()),
+            syntax::ExpressionKind::Name(name) => Some((*name).to_owned()),
             syntax::ExpressionKind::Member { receiver, name } => Some(format!("{}.{}", path(receiver)?, name.text)),
             _ => None,
         }
     }
     match &expression.kind {
-        syntax::ExpressionKind::Text(text) => Some(text.clone()),
+        syntax::ExpressionKind::Text(text) => Some((*text).to_owned()),
         syntax::ExpressionKind::Group(inner) => filled(inner),
         _ => Some(format!("{{{}}}", path(expression)?)),
     }
 }
 
 /// A capitalised path, as `Event.hurt` or `Maybe.some`: a type and what's narrowed from it.
-pub(super) fn type_path(expression: &syntax::Expression) -> Option<Vec<&syntax::Word>> {
+pub(super) fn type_path<'r, 'e>(expression: &'r syntax::Expression<'e>) -> Option<Vec<&'r syntax::Word<'e>>> {
     // The first word is rebuilt as a `Word` by its caller's lifetime, so the type's own name is found by walking.
-    fn walk<'e>(expression: &'e syntax::Expression, path: &mut Vec<&'e syntax::Word>) -> bool {
+    fn walk<'r, 'e>(expression: &'r syntax::Expression<'e>, path: &mut Vec<&'r syntax::Word<'e>>) -> bool {
         match &expression.kind {
             syntax::ExpressionKind::Member { receiver, name } => {
                 if walk(receiver, path) {
@@ -1413,7 +1419,7 @@ pub(super) fn type_path(expression: &syntax::Expression) -> Option<Vec<&syntax::
 }
 
 /// The type's own name as a word. A `TypeName` expression holds its text and place, the same as a [`syntax::Word`].
-fn type_word(expression: &syntax::Expression) -> Option<&syntax::Word> {
+fn type_word<'r, 'e>(expression: &'r syntax::Expression<'e>) -> Option<&'r syntax::Word<'e>> {
     match &expression.kind {
         syntax::ExpressionKind::TypeName(word) => Some(word),
         _ => None,
@@ -1423,10 +1429,10 @@ fn type_word(expression: &syntax::Expression) -> Option<&syntax::Word> {
 /// A procedure's name with its narrowings, as `show_msg` and `same_line`.
 pub(super) fn name_path(expression: &syntax::Expression) -> Option<Vec<String>> {
     match &expression.kind {
-        syntax::ExpressionKind::Name(name) => Some(vec![name.clone()]),
+        syntax::ExpressionKind::Name(name) => Some(vec![(*name).to_owned()]),
         syntax::ExpressionKind::Member { receiver, name } => {
             let mut path = name_path(receiver)?;
-            path.push(name.text.clone());
+            path.push(name.text.to_owned());
             Some(path)
         }
         _ => None,
@@ -1434,58 +1440,51 @@ pub(super) fn name_path(expression: &syntax::Expression) -> Option<Vec<String>> 
 }
 
 /// The unit after `in` in text's braces, as `secs`, `time::secs` or `px per secs`, placed where it's written (D122).
-fn brace_unit(unit: &str, line: u32, column: u32) -> Option<syntax::UnitWritten> {
-    let name = |text: &str, column: u32| -> Option<syntax::UnitName> {
-        let word = |text: &str, column: u32| {
-            let is_name = !text.is_empty()
-                && text.starts_with(|first: char| first.is_ascii_lowercase())
-                && text
-                    .chars()
-                    .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_');
-            is_name.then(|| syntax::Word {
-                text: text.to_owned(),
-                place: Place::new(line, column, u32::try_from(text.len()).unwrap_or(1)),
-            })
-        };
+fn brace_unit(unit: &str, line: u32, column: u32) -> Option<syntax::UnitWritten<'_>> {
+    fn word(text: &str, line: u32, column: u32) -> Option<syntax::Word<'_>> {
+        let is_name = !text.is_empty()
+            && text.starts_with(|first: char| first.is_ascii_lowercase())
+            && text
+                .chars()
+                .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_');
+        is_name.then(|| syntax::Word { text, place: Place::new(line, column, u32::try_from(text.len()).unwrap_or(1)) })
+    }
+    fn name(text: &str, line: u32, column: u32) -> Option<syntax::UnitName<'_>> {
         match text.split_once("::") {
             Some((group, name)) => Some(syntax::UnitName {
-                group: Some(word(group, column)?),
-                name: word(name, column + u32::try_from(group.len()).unwrap_or(0) + 2)?,
+                group: Some(word(group, line, column)?),
+                name: word(name, line, column + u32::try_from(group.len()).unwrap_or(0) + 2)?,
             }),
-            None => Some(syntax::UnitName { group: None, name: word(text, column)? }),
+            None => Some(syntax::UnitName { group: None, name: word(text, line, column)? }),
         }
-    };
+    }
     let place = Place::new(line, column, u32::try_from(unit.len()).unwrap_or(1));
     let (top, per) = match unit.split_once(" per ") {
         Some((top, per)) => {
             let per_column = column + u32::try_from(top.len()).unwrap_or(0) + 5;
-            (name(top, column)?, Some(name(per, per_column)?))
+            (name(top, line, column)?, Some(name(per, line, per_column)?))
         }
-        None => (name(unit, column)?, None),
+        None => (name(unit, line, column)?, None),
     };
     Some(syntax::UnitWritten { top, point: false, per, place })
 }
 
 /// A name and its fields and facts in text's braces, as `hero.hp`, placed where it's written.
-fn brace_path(path: &str, place: Place) -> Option<syntax::Expression> {
+fn brace_path(path: &str, place: Place) -> Option<syntax::Expression<'_>> {
     let mut column = place.column + 1;
     let mut built: Option<syntax::Expression> = None;
     for word in path.split('.') {
         let width = u32::try_from(word.len()).unwrap_or(1);
         let word_place = Place::new(place.line, column, width);
         built = Some(match built {
-            None => syntax::Expression {
-                id: u32::MAX,
-                kind: syntax::ExpressionKind::Name(word.to_owned()),
-                place: word_place,
-            },
+            None => syntax::Expression { id: u32::MAX, kind: syntax::ExpressionKind::Name(word), place: word_place },
             Some(receiver) => {
                 let whole = receiver.place.to(word_place);
                 syntax::Expression {
                     id: u32::MAX,
                     kind: syntax::ExpressionKind::Member {
                         receiver: Box::new(receiver),
-                        name: syntax::Word { text: word.to_owned(), place: word_place },
+                        name: syntax::Word { text: word, place: word_place },
                     },
                     place: whole,
                 }

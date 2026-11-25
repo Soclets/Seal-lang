@@ -52,11 +52,11 @@ fn expression_can_jump(expression: &syntax::Expression, loops: u32) -> bool {
 
 impl<'a> Checker<'a> {
     /// trace: D110. Each handler group, its members, and the procedures its `handles` line names.
-    pub(super) fn declare_handler_groups(&mut self, script: &'a syntax::Script) {
+    pub(super) fn declare_handler_groups(&mut self, script: &'a syntax::Script<'a>) {
         for item in &script.items {
             let syntax::Item::HandlerGroup(group) = item else { continue };
             let name = &group.name;
-            if self.handler_groups.contains_key(&name.text) {
+            if self.handler_groups.contains_key(name.text) {
                 self.refuse_why(
                     name.place,
                     format!("the handler group `{}` is declared twice", name.text),
@@ -67,7 +67,7 @@ impl<'a> Checker<'a> {
             if !self.check_new_name(name) {
                 continue;
             }
-            if let Some(&global) = self.globals.get(&name.text) {
+            if let Some(&global) = self.globals.get(name.text) {
                 let made = self.variable(global).map_or(name.place, |variable| variable.place);
                 self.messages.push(
                     Message::refused(
@@ -92,7 +92,7 @@ impl<'a> Checker<'a> {
                 }
             }
             for path in &group.handles {
-                let full = path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".");
+                let full = path.iter().map(|word| word.text).collect::<Vec<_>>().join(".");
                 let place = path.first().map_or(group.place, |word| word.place);
                 // trace: D129. `handles` names any procedure that can fail: the script's, a door, or a built-in.
                 let can_fail = match self.procedure_names.get(&full) {
@@ -117,7 +117,7 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
-            self.handler_groups.insert(name.text.clone(), group);
+            self.handler_groups.insert(name.text.to_owned(), group);
         }
     }
 
@@ -127,7 +127,7 @@ impl<'a> Checker<'a> {
     pub(super) fn handler_cases(
         &mut self,
         call: &Expression,
-        using: &syntax::HandlerUse,
+        using: &syntax::HandlerUse<'a>,
         type_id: TypeId,
         gives_nothing: bool,
     ) -> Option<Vec<(FailureId, Block)>> {
@@ -155,29 +155,30 @@ impl<'a> Checker<'a> {
             }
             _ => None,
         };
-        let member = using.name.text.as_str();
-        let group: &'a syntax::HandlerGroup = if let Some(word) = &using.group {
-            let Some(&group) = self.handler_groups.get(&word.text) else {
+        let member = using.name.text;
+        let group: &'a syntax::HandlerGroup<'a> = if let Some(word) = &using.group {
+            let Some(&group) = self.handler_groups.get(word.text) else {
                 self.refuse(word.place, format!("there's no handler group named `{}`", word.text));
                 return None;
             };
             group
         } else {
             // trace: D110. A short `::name` reaches into the groups that handle the procedure just called.
-            let mut handling: Vec<&'a syntax::HandlerGroup> = self
+            let mut handling: Vec<&'a syntax::HandlerGroup<'a>> = self
                 .handler_groups
                 .values()
                 .copied()
                 .filter(|group| {
                     called.as_ref().is_some_and(|called| {
-                        group.handles.iter().any(|path| {
-                            path.iter().map(|word| word.text.as_str()).collect::<Vec<_>>().join(".") == *called
-                        })
+                        group
+                            .handles
+                            .iter()
+                            .any(|path| path.iter().map(|word| word.text).collect::<Vec<_>>().join(".") == *called)
                     })
                 })
                 .collect();
-            handling.sort_by(|first, second| first.name.text.cmp(&second.name.text));
-            let with_member: Vec<&'a syntax::HandlerGroup> = handling
+            handling.sort_by(|first, second| first.name.text.cmp(second.name.text));
+            let with_member: Vec<&'a syntax::HandlerGroup<'a>> = handling
                 .iter()
                 .copied()
                 .filter(|group| group.members.iter().any(|known| known.name.text == member))
@@ -247,7 +248,7 @@ impl<'a> Checker<'a> {
             match handler.parameters.iter().position(|parameter| parameter.name.text == declaration.parameter.text) {
                 Some(position) => {
                     if let Some(slot) = labels.get_mut(position) {
-                        *slot = Some(declaration.label.text.clone());
+                        *slot = Some(declaration.label.text.to_owned());
                     }
                 }
                 None => self.refuse(
@@ -258,8 +259,7 @@ impl<'a> Checker<'a> {
         }
         let mut defaults: Vec<Option<Expression>> = vec![None; handler.parameters.len()];
         for declaration in &handler.defaults {
-            let Some(position) =
-                labels.iter().position(|label| label.as_deref() == Some(declaration.label.text.as_str()))
+            let Some(position) = labels.iter().position(|label| label.as_deref() == Some(declaration.label.text))
             else {
                 self.refuse(
                     declaration.label.place,
@@ -299,7 +299,7 @@ impl<'a> Checker<'a> {
         for parameter in &handler.parameters {
             // trace: D71
             self.check_new_name(&parameter.name);
-            if self.globals.contains_key(&parameter.name.text) {
+            if self.globals.contains_key(parameter.name.text) {
                 self.refuse_top_level_spelling(&parameter.name, "a handler's parameter");
             }
         }
@@ -311,7 +311,7 @@ impl<'a> Checker<'a> {
         let mut read = vec![false; handler.parameters.len()];
         let mut cases: Vec<(FailureId, Block)> = Vec::new();
         for case in &handler.cases {
-            let failure = self.failure(&case.failure.text);
+            let failure = self.failure(case.failure.text);
             if cases.iter().any(|(earlier, _)| *earlier == failure) {
                 self.refuse_why(
                     case.failure.place,
@@ -324,7 +324,7 @@ impl<'a> Checker<'a> {
             let mut made = Vec::new();
             for ((parameter, &parameter_type), value) in handler.parameters.iter().zip(&parameter_types).zip(&values) {
                 let id = self.new_variable(Variable {
-                    name: parameter.name.text.clone(),
+                    name: parameter.name.text.to_owned(),
                     type_id: parameter_type,
                     kind: VariableKind::Named,
                     mutable: false,
@@ -336,7 +336,7 @@ impl<'a> Checker<'a> {
                     made_at: 0,
                     place: parameter.name.place,
                 });
-                scope.insert(parameter.name.text.clone(), id);
+                scope.insert(parameter.name.text.to_owned(), id);
                 before.push(Statement {
                     kind: StatementKind::Make { variable: id, value: value.clone() },
                     place: using.place,

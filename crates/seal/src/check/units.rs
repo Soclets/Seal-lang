@@ -34,7 +34,7 @@ fn finer(groups: &[UnitGroupType], first: UnitRef, second: UnitRef) -> bool {
 impl<'a> Checker<'a> {
     /// trace: D123. Each `group.unit`: exactly one member marked `base`, and each other so many of an earlier one,
     /// exactly; one written with `~` has no fixed size, so it never converts by itself.
-    pub(super) fn declare_unit_groups(&mut self, script: &'a syntax::Script) {
+    pub(super) fn declare_unit_groups(&mut self, script: &'a syntax::Script<'a>) {
         // trace: D111, D123. The host's groups first, checked when it declared them.
         for group in self.host_units {
             let mut members: Vec<UnitMemberType> = Vec::new();
@@ -96,15 +96,15 @@ impl<'a> Checker<'a> {
                         self.amount_times(amount, earlier.size)
                     }
                 };
-                members.push(UnitMemberType { name: member.name.text.clone(), size });
+                members.push(UnitMemberType { name: member.name.text.to_owned(), size });
             }
-            self.program.types.unit_groups_mut().push(UnitGroupType { name: group.name.text.clone(), members });
+            self.program.types.unit_groups_mut().push(UnitGroupType { name: group.name.text.to_owned(), members });
         }
     }
 
     /// An amount as written in a unit's definition times an earlier unit's size: the number as written, marked
     /// inexact when it's written with `~` (D123).
-    fn amount_times(&mut self, amount: &syntax::Expression, size: Option<Size>) -> Option<Size> {
+    fn amount_times(&mut self, amount: &syntax::Expression<'a>, size: Option<Size>) -> Option<Size> {
         let size = size?;
         let (amount_numerator, amount_denominator, inexact) = match &amount.kind {
             syntax::ExpressionKind::Whole(digits) => (digits.replace('_', "").parse::<u128>().ok()?, 1, false),
@@ -134,7 +134,7 @@ impl<'a> Checker<'a> {
 
     /// A unit's name as written, found among the groups: its group is needed only when two groups have a unit of
     /// the same name (D112).
-    fn unit_ref(&mut self, name: &syntax::UnitName) -> Option<UnitRef> {
+    fn unit_ref(&mut self, name: &syntax::UnitName<'a>) -> Option<UnitRef> {
         let groups = &self.program.types.unit_groups;
         let mut found: Vec<UnitRef> = Vec::new();
         for (group_index, group) in groups.iter().enumerate() {
@@ -183,7 +183,7 @@ impl<'a> Checker<'a> {
     }
 
     /// A unit as written, found: `secs`, `px.point`, `px per secs` (D112, D120, D121).
-    pub(super) fn resolve_unit(&mut self, written: &syntax::UnitWritten) -> Option<Unit> {
+    pub(super) fn resolve_unit(&mut self, written: &syntax::UnitWritten<'a>) -> Option<Unit> {
         let top = self.unit_ref(&written.top)?;
         let per = match &written.per {
             Some(per) => Some(self.unit_ref(per)?),
@@ -201,16 +201,16 @@ impl<'a> Checker<'a> {
     }
 
     /// A unit a host wrote for a door's value (D111), found as a script's is; a refusal names the host's unit.
-    pub(super) fn host_unit(&mut self, text: &str) -> Option<Unit> {
-        let name = |text: &str| syntax::UnitName {
-            group: text
-                .split_once("::")
-                .map(|(group, _)| syntax::Word { text: group.to_owned(), place: Place::default() }),
-            name: syntax::Word {
-                text: text.split_once("::").map_or(text, |(_, name)| name).to_owned(),
-                place: Place::default(),
-            },
-        };
+    pub(super) fn host_unit(&mut self, text: &'a str) -> Option<Unit> {
+        fn name(text: &str) -> syntax::UnitName<'_> {
+            syntax::UnitName {
+                group: text.split_once("::").map(|(group, _)| syntax::Word { text: group, place: Place::default() }),
+                name: syntax::Word {
+                    text: text.split_once("::").map_or(text, |(_, name)| name),
+                    place: Place::default(),
+                },
+            }
+        }
         let (top, per) = text.split_once(" per ").map_or((text, None), |(top, per)| (top, Some(per)));
         let (top, point) = top.strip_suffix(".point").map_or((top, false), |top| (top, true));
         let written = syntax::UnitWritten { top: name(top), point, per: per.map(name), place: Place::default() };
@@ -424,8 +424,8 @@ impl<'a> Checker<'a> {
     /// trace: D112. A number written with its unit, as `2 secs` or `120.0 px per secs`.
     pub(super) fn measured_literal(
         &mut self,
-        number: &syntax::Expression,
-        unit: &syntax::UnitWritten,
+        number: &syntax::Expression<'a>,
+        unit: &syntax::UnitWritten<'a>,
         place: Place,
     ) -> Expression {
         let checked = self.expression(number, None);
@@ -442,8 +442,8 @@ impl<'a> Checker<'a> {
     /// `Whole` when the count is always whole, and a `Float` otherwise.
     pub(super) fn measure_in(
         &mut self,
-        value: &syntax::Expression,
-        unit: &syntax::UnitWritten,
+        value: &syntax::Expression<'a>,
+        unit: &syntax::UnitWritten<'a>,
         place: Place,
     ) -> Expression {
         let checked = self.expression(value, None);

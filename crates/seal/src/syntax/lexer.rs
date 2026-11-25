@@ -215,28 +215,29 @@ impl Symbol {
     }
 }
 
+/// A token's words, digits and text are the script's own, borrowed, never copied (D140).
 #[derive(Clone, Debug, PartialEq)]
-pub enum TokenKind {
+pub enum TokenKind<'a> {
     /// A lowercase word that isn't a keyword (D24).
-    Name(String),
+    Name(&'a str),
     Keyword(Keyword),
     /// A capitalised word: a capital always means a type (D24).
-    TypeName(String),
+    TypeName(&'a str),
     /// A number with no point: its digits (Unio D180).
-    Whole(String),
+    Whole(&'a str),
     /// A number with a point: its text without the `~`, and whether `~` was written (Unio D155, D180).
     Float {
-        text: String,
+        text: &'a str,
         approximate: bool,
     },
-    /// Text in double quotes, without the quotes (D16, Unio D21).
-    Text(String),
+    /// Text in double quotes, without the quotes, as written (D16, Unio D21).
+    Text(&'a str),
     Symbol(Symbol),
     /// The note after `end \\`, naming the block the `end` closes, with single spaces between its words (D102).
     Note(String),
 }
 
-impl TokenKind {
+impl TokenKind<'_> {
     /// How the token reads in a message.
     #[must_use]
     pub fn describe(&self) -> String {
@@ -270,27 +271,27 @@ pub enum Gap {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
+pub struct Token<'a> {
+    pub kind: TokenKind<'a>,
     pub place: Place,
     pub gap: Gap,
 }
 
 /// One statement's worth of tokens (D8).
 #[derive(Clone, Debug, PartialEq)]
-pub struct Line {
+pub struct Line<'a> {
     /// The number of spaces before the first token.
     pub indentation: u32,
-    pub tokens: Vec<Token>,
+    pub tokens: Vec<Token<'a>>,
     /// The place of the whole first physical line, for messages about the line itself.
     pub place: Place,
     /// Where the `///` comment right before the line starts, when it has one (D63, D91).
     pub documented: Option<Place>,
 }
 
-struct Lexer {
-    lines: Vec<Line>,
-    current: Vec<Token>,
+struct Lexer<'a> {
+    lines: Vec<Line<'a>>,
+    current: Vec<Token<'a>>,
     current_indentation: u32,
     current_place: Place,
     /// The open `(` and `[`, innermost last.
@@ -301,8 +302,6 @@ struct Lexer {
     mistakes: Vec<SpacingMistake>,
     /// The `///` comment waiting for the line it describes.
     documented: Option<Place>,
-    /// The word being read, in room every word reuses.
-    word: String,
 }
 
 /// Splits a script's text into logical lines of tokens.
@@ -311,7 +310,7 @@ struct Lexer {
 ///
 /// Returns the first thing that can't be read, as a message.
 #[allow(clippy::too_many_lines)] // one pass over a script's lines: each kind of line is dealt with where it's met
-pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
+pub fn lex(source: &str) -> Result<Vec<Line<'_>>, Message> {
     let mut lexer = Lexer {
         lines: Vec::new(),
         current: Vec::new(),
@@ -321,9 +320,10 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         type_depth: 0,
         mistakes: Vec::new(),
         documented: None,
-        word: String::with_capacity(32),
     };
-    let mut physical: Vec<&str> = source.split('\n').collect();
+    // Room for every line at once, counted before it's filled.
+    let mut physical: Vec<&str> = Vec::with_capacity(source.bytes().filter(|&byte| byte == b'\n').count() + 1);
+    physical.extend(source.split('\n'));
     lexer.lines.reserve(physical.len());
     // A file's last line break ends its last line; it doesn't start an empty one.
     if physical.last() == Some(&"") {
@@ -344,12 +344,18 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
         Message::refused(place, "this `///` has no declaration after it")
             .with_why("a `///` comment describes the declaration on the line after it.")
     };
-    // One line's characters, in room that every line reuses.
-    let mut characters: Vec<char> = Vec::new();
-    for (index, text) in physical.iter().enumerate() {
+    // One line's characters, and where each starts in the line's text, in room that every line reuses, enough for
+    // the longest line from the start.
+    let longest = physical.iter().map(|line| line.len()).max().unwrap_or(0);
+    let mut characters: Vec<char> = Vec::with_capacity(longest);
+    let mut offsets: Vec<usize> = Vec::with_capacity(longest + 1);
+    for (index, &text) in physical.iter().enumerate() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
         characters.clear();
         characters.extend(text.chars());
+        offsets.clear();
+        offsets.extend(text.char_indices().map(|(offset, _)| offset));
+        offsets.push(text.len());
         let leading = characters.iter().take_while(|&&character| character == ' ').count();
         if let Some((depth, name, _)) = &comment_block {
             // Everything inside a block comment is ignored; an `end` at its own depth closes it, and the note after
@@ -492,7 +498,7 @@ pub fn lex(source: &str) -> Result<Vec<Line>, Message> {
             lexer.current_indentation = u32::try_from(leading).unwrap_or(u32::MAX);
             lexer.current_place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
         }
-        lexer.line(number, &characters, leading, continued)?;
+        lexer.line(number, (&characters, text, &offsets), leading, continued)?;
         if lexer.open_brackets.is_empty() {
             lexer.finish_line(&physical)?;
         }
@@ -558,7 +564,7 @@ fn column_of(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX - 1).saturating_add(1)
 }
 
-impl Lexer {
+impl<'a> Lexer<'a> {
     fn finish_line(&mut self, physical: &[&str]) -> Result<(), Message> {
         // The next line's tokens get room for a usual line at once, instead of growing into it.
         let tokens = std::mem::replace(&mut self.current, Vec::with_capacity(12));
@@ -569,7 +575,7 @@ impl Lexer {
         Ok(())
     }
 
-    fn push(&mut self, kind: TokenKind, place: Place, gap: Gap) {
+    fn push(&mut self, kind: TokenKind<'a>, place: Place, gap: Gap) {
         self.current.push(Token { kind, place, gap });
     }
 
@@ -596,7 +602,20 @@ impl Lexer {
     }
 
     #[allow(clippy::too_many_lines)] // one pass over a line's characters, a case per kind of token
-    fn line(&mut self, number: u32, characters: &[char], start: usize, continued: bool) -> Result<(), Message> {
+    fn line(
+        &mut self,
+        number: u32,
+        (characters, text, offsets): (&[char], &'a str, &[usize]),
+        start: usize,
+        continued: bool,
+    ) -> Result<(), Message> {
+        // The text from one character to another, borrowed from the script (D140).
+        let slice = |from: usize, to: usize| -> &'a str {
+            match (offsets.get(from), offsets.get(to)) {
+                (Some(&from), Some(&to)) => text.get(from..to).unwrap_or(""),
+                _ => "",
+            }
+        };
         let mut index = start;
         let mut first = true;
         loop {
@@ -658,22 +677,18 @@ impl Lexer {
                     while characters.get(end).is_some_and(|&next| next.is_ascii_alphanumeric() || next == '_') {
                         end += 1;
                     }
-                    // One room for every word, copied out only for a name, at its exact length.
-                    self.word.clear();
-                    self.word.extend(characters.get(index..end).unwrap_or(&[]));
                     let place = place_of(end - index);
-                    let kind = word_token(&self.word, place)?;
+                    let kind = word_token(slice(index, end), place)?;
                     self.push(kind, place, gap);
                     index = end;
                 }
                 '0'..='9' | '~' => {
-                    let (kind, length) = number_token(number, characters, index)?;
+                    let (kind, length) = number_token(number, (characters, &slice), index)?;
                     self.push(kind, place_of(length), gap);
                     index += length;
                 }
                 '"' => {
                     let mut end = index + 1;
-                    let mut text = String::new();
                     loop {
                         match characters.get(end) {
                             None => {
@@ -686,11 +701,7 @@ impl Lexer {
                             // trace: D63, Unio D30. `\` makes the next character literal; the text is kept as
                             // written, and read with `cook_text`, so that `fmt` can tell `\{` from `{`.
                             Some('\\') => match characters.get(end + 1) {
-                                Some(&next @ ('"' | '\\' | '{')) => {
-                                    text.push('\\');
-                                    text.push(next);
-                                    end += 1;
-                                }
+                                Some('"' | '\\' | '{') => end += 1,
                                 next => {
                                     // trace: D92. A habit from another language mustn't turn into a stray letter.
                                     let shown = next.map_or_else(String::new, ToString::to_string);
@@ -711,11 +722,12 @@ impl Lexer {
                                 )
                                 .with_why("a tab can't be told from spaces, so a tab in text is written `{tab}`."));
                             }
-                            Some(&other) => text.push(other),
+                            Some(_) => {}
                         }
                         end += 1;
                     }
-                    self.push(TokenKind::Text(text), place_of(end + 1 - index), gap);
+                    // The text is kept as written, `\` and all, so it's the script's own between the quotes.
+                    self.push(TokenKind::Text(slice(index + 1, end)), place_of(end + 1 - index), gap);
                     index = end + 1;
                 }
                 _ => {
@@ -844,7 +856,7 @@ impl Lexer {
 }
 
 /// A word: a keyword, a name, or a type's name (D7, D24).
-fn word_token(word: &str, place: Place) -> Result<TokenKind, Message> {
+fn word_token(word: &str, place: Place) -> Result<TokenKind<'_>, Message> {
     let first = word.chars().next().unwrap_or('_');
     if first.is_ascii_uppercase() {
         if word.contains('_') {
@@ -861,13 +873,13 @@ fn word_token(word: &str, place: Place) -> Result<TokenKind, Message> {
             return Err(Message::refused(place, format!("a type's name has no `_`, so `{word}` is written `{fixed}`"))
                 .with_why("a type's name joins its words with capitals, as `HighScore`."));
         }
-        return Ok(TokenKind::TypeName(word.to_owned()));
+        return Ok(TokenKind::TypeName(word));
     }
     if let Some(keyword) = Keyword::from_word(word) {
         return Ok(TokenKind::Keyword(keyword));
     }
     check_name_spelling(word, place)?;
-    Ok(TokenKind::Name(word.to_owned()))
+    Ok(TokenKind::Name(word))
 }
 
 /// D24's spelling: lowercase English letters, digits, and `_` between words, starting with a letter.
@@ -914,7 +926,11 @@ pub fn check_name_spelling(word: &str, place: Place) -> Result<(), Message> {
 }
 
 /// A number: digits, with a point for a `Float` (Unio D180) and `~` in front of an inexact one (Unio D155).
-fn number_token(number: u32, characters: &[char], start: usize) -> Result<(TokenKind, usize), Message> {
+fn number_token<'a>(
+    number: u32,
+    (characters, slice): (&[char], &dyn Fn(usize, usize) -> &'a str),
+    start: usize,
+) -> Result<(TokenKind<'a>, usize), Message> {
     let approximate = characters.get(start) == Some(&'~');
     let digits_start = if approximate { start + 1 } else { start };
     let mut end = digits_start;
@@ -931,7 +947,7 @@ fn number_token(number: u32, characters: &[char], start: usize) -> Result<(Token
     }
     let length = end - start;
     let place = Place::new(number, column_of(start), u32::try_from(length).unwrap_or(u32::MAX));
-    let text: String = characters.get(digits_start..end).unwrap_or(&[]).iter().collect();
+    let text = slice(digits_start, end);
     if characters.get(end).is_some_and(|&next| next.is_ascii_alphabetic() || next == '_') {
         return Err(Message::refused(place, "a letter comes right after this number"));
     }
@@ -1000,7 +1016,7 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], physical: &[&str]) 
         // trace: D110. `handles [ … ]`, a handler group's first line, is spaced as `labels [ … ]` is.
         let after_handles = index == 0
             && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
-            && matches!(&before.kind, TokenKind::Name(word) if word == "handles");
+            && matches!(&before.kind, TokenKind::Name(word) if *word == "handles");
         // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
         let jump_mark = index >= 1
             && matches!(before.kind, TokenKind::Symbol(Symbol::Star))
@@ -1086,7 +1102,7 @@ fn ends_with_rounding(tokens: &[Token]) -> bool {
     let [.., word, dot, rounding] = tokens else { return false };
     matches!(word.kind, TokenKind::Keyword(Keyword::Div | Keyword::Rem))
         && dot.kind == TokenKind::Symbol(Symbol::Dot)
-        && matches!(&rounding.kind, TokenKind::Name(name) if name == "floor" || name == "trunc")
+        && matches!(&rounding.kind, TokenKind::Name(name) if *name == "floor" || *name == "trunc")
 }
 
 fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
@@ -1101,7 +1117,7 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     }
     // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
     if *after == TokenKind::Symbol(Symbol::Path) {
-        return u32::from(!matches!(before, TokenKind::Name(name) if name != "include"));
+        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "include"));
     }
     let touches_brackets = matches!(
         before,
@@ -1125,7 +1141,7 @@ mod tests {
     use super::*;
     use crate::message::MessageKind;
 
-    fn kinds(source: &str) -> Vec<TokenKind> {
+    fn kinds(source: &str) -> Vec<TokenKind<'_>> {
         lex(source)
             .map(|lines| lines.into_iter().flat_map(|line| line.tokens).map(|token| token.kind).collect())
             .unwrap_or_default()
@@ -1144,11 +1160,11 @@ mod tests {
         assert_eq!(
             kinds("hp_max: Whole = 3"),
             vec![
-                TokenKind::Name("hp_max".into()),
+                TokenKind::Name("hp_max"),
                 TokenKind::Symbol(Symbol::Colon),
-                TokenKind::TypeName("Whole".into()),
+                TokenKind::TypeName("Whole"),
                 TokenKind::Symbol(Symbol::Equals),
-                TokenKind::Whole("3".into()),
+                TokenKind::Whole("3"),
             ]
         );
         assert!(lex("getService = 3").is_err());
@@ -1160,10 +1176,10 @@ mod tests {
         assert_eq!(
             kinds("a - -1"),
             vec![
-                TokenKind::Name("a".into()),
+                TokenKind::Name("a"),
                 TokenKind::Symbol(Symbol::Minus),
                 TokenKind::Symbol(Symbol::Negate),
-                TokenKind::Whole("1".into()),
+                TokenKind::Whole("1"),
             ]
         );
     }

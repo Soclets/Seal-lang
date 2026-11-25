@@ -848,7 +848,7 @@ impl Checker<'_> {
                 continue;
             };
             let mut written_ids: Vec<FailureId> =
-                written.iter().filter_map(|word| facts.known_failure(&word.text)).collect();
+                written.iter().filter_map(|word| facts.known_failure(word.text)).collect();
             written_ids.sort();
             written_ids.dedup();
             if written_ids != procedure.failures || written_ids.len() != written.len() {

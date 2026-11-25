@@ -98,7 +98,7 @@ fn plain_value(expression: &seal::syntax::tree::Expression) -> Option<Value> {
         ExpressionKind::Whole(digits) => digits.parse().ok().map(Value::Whole),
         ExpressionKind::Float { text, .. } => text.parse().ok().map(Value::Float),
         ExpressionKind::Bool(flag) => Some(Value::Bool(*flag)),
-        ExpressionKind::Text(text) => Some(Value::Text(text.clone())),
+        ExpressionKind::Text(text) => Some(Value::Text((*text).to_owned())),
         ExpressionKind::Unary { operator: UnaryOperator::Negate, operand } => match &operand.kind {
             ExpressionKind::Whole(digits) => format!("-{digits}").parse().ok().map(Value::Whole),
             ExpressionKind::Float { text, .. } => format!("-{text}").parse().ok().map(Value::Float),
@@ -110,7 +110,7 @@ fn plain_value(expression: &seal::syntax::tree::Expression) -> Option<Value> {
 
 fn procedure_name(expression: &seal::syntax::tree::Expression) -> Option<String> {
     match &expression.kind {
-        ExpressionKind::Name(name) => Some(name.clone()),
+        ExpressionKind::Name(name) => Some((*name).to_owned()),
         ExpressionKind::Member { receiver, name } => Some(format!("{}.{}", procedure_name(receiver)?, name.text)),
         _ => None,
     }
@@ -126,7 +126,7 @@ fn read_call(line: &str) -> Option<(String, Vec<Argument>)> {
     let arguments = arguments
         .iter()
         .map(|Entry { label, value }| {
-            Some(Argument { label: label.as_ref().map(|label| label.text.clone()), value: plain_value(value)? })
+            Some(Argument { label: label.as_ref().map(|label| label.text.to_owned()), value: plain_value(value)? })
         })
         .collect::<Option<Vec<_>>>()?;
     Some((name, arguments))
