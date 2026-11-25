@@ -5,7 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D145, in DECISIONS.md. D144 (`use`) and D145 (`ret`, `incl`) change five tests, which fail until built;
+- D130 to D146, in DECISIONS.md. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
   the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
   are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
   installed through Homebrew.
@@ -37,3 +37,4 @@ message once the open questions are settled. Removed once sent.
 - Its 373 draft wordings (PROGRESS.md at 384d500): the design session reviews them, bringing only unsure ones to
   Tankun.
 - Rocq extracted to OCaml for a future oracle (asked; not answered).
+- `in` has two meanings, `for_each x in xs` and measuring `total in secs` (D122 didn't weigh it against D71).
