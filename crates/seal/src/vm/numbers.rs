@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use super::heap::{Heap, Number};
+use super::heap::{Heap, Number, NumberRef};
 use super::machine::Stop;
 use super::show::{compare_numbers, number_text};
 use crate::big::Big;
@@ -28,17 +28,17 @@ fn failed(what: &str, when: String, why: &str) -> Stop {
 }
 
 /// A number's exact value as a decimal.
-fn exact(number: &Number) -> HugeDecimal {
+fn exact(number: NumberRef<'_>) -> HugeDecimal {
     match number {
-        Number::Huge(value) => HugeDecimal::from_big(value.clone()),
-        Number::Decimal(value) => value.exact(),
-        Number::HugeDecimal(value) => value.clone(),
+        NumberRef::Huge(value) => HugeDecimal::from_big(value.clone()),
+        NumberRef::Decimal(value) => value.exact(),
+        NumberRef::HugeDecimal(value) => value.clone(),
     }
 }
 
 /// How many 32-bit pieces a number has, for counting work: for a `HugeDecimal`, with its exponent's zeros, which
 /// lining two up can write out.
-fn pieces(number: &Number) -> u64 {
+fn pieces(number: NumberRef<'_>) -> u64 {
     (number.size() as u64 / 4).max(1)
 }
 
@@ -117,26 +117,26 @@ pub fn operation(code: u8, registers: &[u64], left: Register, right: Register, h
     match answer {
         Answer::Bool(flag) => Ok(u64::from(flag)),
         Answer::Number(number) => {
-            heap.work = heap.work.saturating_add(pieces(&number));
+            heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
             heap.new_number(number).map_err(Stop::from)
         }
     }
 }
 
 /// An operation on one number.
-fn one(operation: u8, value: &Number) -> Result<Answer, Stop> {
+fn one(operation: u8, value: NumberRef<'_>) -> Result<Answer, Stop> {
     let when = || format!("`sqrt({})`", number_text(value));
     Ok(Answer::Number(match (operation, value) {
-        (op::NEGATE, Number::Huge(value)) => Number::Huge(value.negated()),
-        (op::NEGATE, Number::Decimal(value)) => Number::Decimal(value.negated()),
-        (op::NEGATE, Number::HugeDecimal(value)) => Number::HugeDecimal(value.negated()),
-        (op::ABS, Number::Huge(value)) => Number::Huge(value.abs()),
-        (op::ABS, Number::Decimal(value)) => Number::Decimal(value.abs()),
-        (op::ABS, Number::HugeDecimal(value)) => Number::HugeDecimal(value.abs()),
-        (op::SQRT, Number::Decimal(value)) => {
+        (op::NEGATE, NumberRef::Huge(value)) => Number::Huge(value.negated()),
+        (op::NEGATE, NumberRef::Decimal(value)) => Number::Decimal(value.negated()),
+        (op::NEGATE, NumberRef::HugeDecimal(value)) => Number::HugeDecimal(value.negated()),
+        (op::ABS, NumberRef::Huge(value)) => Number::Huge(value.abs()),
+        (op::ABS, NumberRef::Decimal(value)) => Number::Decimal(value.abs()),
+        (op::ABS, NumberRef::HugeDecimal(value)) => Number::HugeDecimal(value.abs()),
+        (op::SQRT, NumberRef::Decimal(value)) => {
             Number::Decimal(value.square_root().map_err(|error| decimal_stop(error, when()))?)
         }
-        (op::SQRT, Number::HugeDecimal(value)) => {
+        (op::SQRT, NumberRef::HugeDecimal(value)) => {
             Number::HugeDecimal(value.square_root().map_err(|error| decimal_stop(error, when()))?)
         }
         _ => return Err(internal("a number operation its type doesn't take")),
@@ -144,12 +144,12 @@ fn one(operation: u8, value: &Number) -> Result<Answer, Stop> {
 }
 
 /// trace: D108, D127. A number to a whole power, with the memory it needs counted first.
-fn power(base: &Number, power: i64, room: usize) -> Result<Answer, Stop> {
+fn power(base: NumberRef<'_>, power: i64, room: usize) -> Result<Answer, Stop> {
     let when = || format!("`{} ** {power}`", number_text(base));
     let room_digits = (room as u64).saturating_mul(2);
     let too_much = || Stop::OutOfMemory { needed: room.saturating_add(1), in_use: 0, cap: room };
     Ok(Answer::Number(match base {
-        Number::Huge(value) => {
+        NumberRef::Huge(value) => {
             if power < 0 {
                 return Err(failed(
                     "this raises a `HugeWhole` to a negative power",
@@ -164,8 +164,8 @@ fn power(base: &Number, power: i64, room: usize) -> Result<Answer, Stop> {
             }
             Number::Huge(if is_small && times > 2 { value.power(2 - (times % 2)) } else { value.power(times) })
         }
-        Number::Decimal(value) => Number::Decimal(value.power(power).map_err(|error| decimal_stop(error, when()))?),
-        Number::HugeDecimal(value) => match value.power(power, room_digits) {
+        NumberRef::Decimal(value) => Number::Decimal(value.power(power).map_err(|error| decimal_stop(error, when()))?),
+        NumberRef::HugeDecimal(value) => match value.power(power, room_digits) {
             Ok(raised) => Number::HugeDecimal(raised),
             Err(NumberError::TooBig) => return Err(too_much()),
             Err(error) => return Err(decimal_stop(error, when())),
@@ -174,7 +174,7 @@ fn power(base: &Number, power: i64, room: usize) -> Result<Answer, Stop> {
 }
 
 /// trace: D127. An operation on two numbers of one type.
-fn two(operation: u8, left: &Number, right: &Number, room: usize) -> Result<Answer, Stop> {
+fn two(operation: u8, left: NumberRef<'_>, right: NumberRef<'_>, room: usize) -> Result<Answer, Stop> {
     let symbol = match operation {
         op::ADD => "+",
         op::SUBTRACT => "-",
@@ -195,8 +195,8 @@ fn two(operation: u8, left: &Number, right: &Number, room: usize) -> Result<Answ
             op::LESS => Answer::Bool(order == Ordering::Less),
             op::AT_MOST => Answer::Bool(order != Ordering::Greater),
             // `min` and `max` give the first of two equal values, as they do for `Whole`s.
-            op::MIN => Answer::Number(if order == Ordering::Greater { right.clone() } else { left.clone() }),
-            _ => Answer::Number(if order == Ordering::Less { right.clone() } else { left.clone() }),
+            op::MIN => Answer::Number(if order == Ordering::Greater { right.to_number() } else { left.to_number() }),
+            _ => Answer::Number(if order == Ordering::Less { right.to_number() } else { left.to_number() }),
         });
     }
     if operation == op::MULTIPLY && left.size().saturating_add(right.size()) > room {
@@ -206,7 +206,7 @@ fn two(operation: u8, left: &Number, right: &Number, room: usize) -> Result<Answ
     let remainder = matches!(operation, op::REMAINDER_FLOOR | op::REMAINDER_TRUNC);
     let by_zero = || failed("this divides by zero", when(), "dividing by zero has no answer.");
     Ok(Answer::Number(match (left, right) {
-        (Number::Huge(left), Number::Huge(right)) => Number::Huge(match operation {
+        (NumberRef::Huge(left), NumberRef::Huge(right)) => Number::Huge(match operation {
             op::ADD => left.add(right),
             op::SUBTRACT => left.subtract(right),
             op::MULTIPLY => left.multiply(right),
@@ -228,20 +228,20 @@ fn two(operation: u8, left: &Number, right: &Number, room: usize) -> Result<Answ
                 if remainder { rest } else { quotient }
             }
         }),
-        (Number::Decimal(left), Number::Decimal(right)) => {
+        (NumberRef::Decimal(left), NumberRef::Decimal(right)) => {
             let stop = |error| decimal_stop(error, when());
             Number::Decimal(match operation {
-                op::ADD => left.add(right).map_err(stop)?,
-                op::SUBTRACT => left.subtract(right).map_err(stop)?,
-                op::MULTIPLY => left.multiply(right).map_err(stop)?,
-                op::DIVIDE => left.divide(right).map_err(stop)?,
+                op::ADD => left.add(&right).map_err(stop)?,
+                op::SUBTRACT => left.subtract(&right).map_err(stop)?,
+                op::MULTIPLY => left.multiply(&right).map_err(stop)?,
+                op::DIVIDE => left.divide(&right).map_err(stop)?,
                 _ => {
-                    let (quotient, rest) = left.divide_whole(right, floor).map_err(stop)?;
+                    let (quotient, rest) = left.divide_whole(&right, floor).map_err(stop)?;
                     if remainder { rest } else { quotient }
                 }
             })
         }
-        (Number::HugeDecimal(left), Number::HugeDecimal(right)) => {
+        (NumberRef::HugeDecimal(left), NumberRef::HugeDecimal(right)) => {
             let stop = |error| decimal_stop(error, when());
             Number::HugeDecimal(match operation {
                 op::ADD => left.add(right),
@@ -259,15 +259,17 @@ fn two(operation: u8, left: &Number, right: &Number, room: usize) -> Result<Answ
 }
 
 /// `clamp` and `lerp` (D107, D114, D127).
-fn three(operation: u8, first: &Number, second: &Number, third: &Number) -> Result<Answer, Stop> {
+fn three(operation: u8, first: NumberRef<'_>, second: NumberRef<'_>, third: NumberRef<'_>) -> Result<Answer, Stop> {
     if operation == op::LERP {
-        let (Number::Decimal(a), Number::Decimal(b), Number::Decimal(t)) = (first, second, third) else {
+        let (NumberRef::Decimal(a), NumberRef::Decimal(b), NumberRef::Decimal(t)) = (first, second, third) else {
             return Err(internal("`lerp` on numbers that aren't `Decimal`s"));
         };
         let when = || format!("`lerp({}, to: {}, by: {})`", a.to_text(), b.to_text(), t.to_text());
-        return Ok(Answer::Number(Number::Decimal(a.lerp(b, t).map_err(|error| decimal_stop(error, when()))?)));
+        return Ok(Answer::Number(Number::Decimal(a.lerp(&b, &t).map_err(|error| decimal_stop(error, when()))?)));
     }
-    let order = |a: &Number, b: &Number| compare_numbers(a, b).ok_or_else(|| internal("numbers of different types"));
+    let order = |a: NumberRef<'_>, b: NumberRef<'_>| {
+        compare_numbers(a, b).ok_or_else(|| internal("numbers of different types"))
+    };
     if order(second, third)? == Ordering::Greater {
         return Err(Stop::NotDesigned("a `clamp` whose `low:` is more than its `high:`".to_owned()));
     }
@@ -278,7 +280,7 @@ fn three(operation: u8, first: &Number, second: &Number, third: &Number) -> Resu
     } else {
         first
     };
-    Ok(Answer::Number(clamped.clone()))
+    Ok(Answer::Number(clamped.to_number()))
 }
 
 /// What a `ConvertNumber` gives: the slot it makes, or the failure it fails with.
@@ -321,10 +323,14 @@ pub fn convert(conversion: NumberConversion, failure: u16, slot: u64, heap: &mut
                 None => return fail,
             }
         }
-        _ => heap.number(slot).map_err(Stop::from)?.clone(),
+        _ => heap.number(slot).map_err(Stop::from)?.to_number(),
     };
-    heap.work = heap.work.saturating_add(pieces(&number));
-    let value = exact(&number);
+    heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
+    let value = match &number {
+        Number::Huge(value) => HugeDecimal::from_big(value.clone()),
+        Number::Decimal(value) => value.exact(),
+        Number::HugeDecimal(value) => value.clone(),
+    };
     let whole = |rounding: Option<Rounding>| value.to_whole(rounding.unwrap_or(Rounding::Trunc));
     let rounding = match conversion.how {
         NumberHow::Round(rounding) => Some(rounding),
@@ -380,7 +386,7 @@ fn read_whole(text: &str) -> Option<Big> {
 /// A decimal shown to `places` digits after its point, rounded to the nearest, a tie away from zero, with no minus
 /// on zero (D94, D125).
 #[must_use]
-pub fn with_places(number: &Number, places: u8) -> String {
+pub fn with_places(number: NumberRef<'_>, places: u8) -> String {
     exact(number).with_places(places)
 }
 
@@ -396,7 +402,7 @@ pub fn land(
     heap: &mut Heap,
     layouts: &[crate::compile::bytecode::Layout],
 ) -> Result<u64, Stop> {
-    let Number::Huge(value) = heap.number(slot).map_err(Stop::from)? else {
+    let NumberRef::Huge(value) = heap.number(slot).map_err(Stop::from)? else {
         return Err(internal("a ranged `HugeWhole` that isn't one"));
     };
     for (edge, is_min) in [(limits.min, true), (limits.max, false)] {

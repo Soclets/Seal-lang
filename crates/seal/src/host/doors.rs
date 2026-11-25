@@ -203,6 +203,8 @@ struct Door {
 pub(crate) struct Loaded {
     pub(crate) source: Arc<str>,
     pub(crate) compiled: Arc<Compiled>,
+    /// The name it was last loaded under, shared with a script loaded under the same one.
+    pub(crate) name: Arc<str>,
 }
 
 /// How many compiled scripts a set of doors keeps for loading again.

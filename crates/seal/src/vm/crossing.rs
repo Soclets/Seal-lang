@@ -1,7 +1,7 @@
 //! Values crossing between a script's heap and its host (D15, D48): always as copies.
 
 use super::dict::{Dict, Probe};
-use super::heap::{Heap, HeapError, Number, Object, SLOT_COST};
+use super::heap::{Heap, HeapError, Number, NumberRef, Object, SLOT_COST};
 use crate::compile::bytecode::{Crossing, Layout, PLAIN_CASE};
 use crate::host::Value;
 
@@ -207,9 +207,9 @@ pub fn to_value(slot: u64, crossing: &Crossing, heap: &Heap, layouts: &[Layout])
         Crossing::Bool => Value::Bool(slot != 0),
         Crossing::Text => Value::Text(heap.text(slot)?.to_owned()),
         Crossing::HugeWhole | Crossing::Decimal | Crossing::HugeDecimal => match heap.number(slot)? {
-            Number::Huge(value) => Value::HugeWhole(value.clone()),
-            Number::Decimal(value) => Value::Decimal(*value),
-            Number::HugeDecimal(value) => Value::HugeDecimal(value.clone()),
+            NumberRef::Huge(value) => Value::HugeWhole(value.clone()),
+            NumberRef::Decimal(value) => Value::Decimal(value),
+            NumberRef::HugeDecimal(value) => Value::HugeDecimal(value.clone()),
         },
         Crossing::List(item) => match heap.get(slot)? {
             Object::List { items, .. } => {

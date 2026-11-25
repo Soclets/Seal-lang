@@ -79,17 +79,56 @@ struct TaskSlot {
     running: Option<Running>,
 }
 
+/// A script's tasks: the first held in the script itself, since most scripts pause one task at a time, and any more
+/// in a list of their own.
+#[derive(Default)]
+struct Tasks {
+    first: Option<TaskSlot>,
+    more: Vec<TaskSlot>,
+}
+
+impl Tasks {
+    fn len(&self) -> usize {
+        usize::from(self.first.is_some()) + self.more.len()
+    }
+
+    fn get(&self, index: usize) -> Option<&TaskSlot> {
+        if index == 0 { self.first.as_ref() } else { self.more.get(index - 1) }
+    }
+
+    fn get_mut(&mut self, index: usize) -> Option<&mut TaskSlot> {
+        if index == 0 { self.first.as_mut() } else { self.more.get_mut(index - 1) }
+    }
+
+    fn push(&mut self, slot: TaskSlot) {
+        if self.first.is_none() {
+            self.first = Some(slot);
+        } else {
+            self.more.push(slot);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.first = None;
+        self.more.clear();
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &TaskSlot> {
+        self.first.iter().chain(&self.more)
+    }
+}
+
 /// A loaded script (D4). Each one is fully separate, with its own names, memory, limits and doors (D49), and can
 /// move between threads.
 pub struct Script {
-    name: String,
+    name: Arc<str>,
     /// The script's text, for the lines its messages show, and what it compiled to. Both are shared with any
     /// other script loaded from the same text with the same doors.
     source: Arc<str>,
     compiled: Arc<Compiled>,
     doors: Doors,
     machine: Machine,
-    tasks: Vec<TaskSlot>,
+    tasks: Tasks,
     limits: Limits,
     /// Why the script stopped, once it has.
     stopped: Option<Message>,
@@ -185,7 +224,7 @@ impl Script {
             Some(loaded) => Ok(Ok(loaded)),
             None => catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors, plain))).map(|prepared| {
                 prepared.map(|compiled| {
-                    let loaded = Loaded { source: source.into(), compiled: Arc::new(compiled) };
+                    let loaded = Loaded { source: source.into(), compiled: Arc::new(compiled), name: name.into() };
                     if !plain {
                         doors.keep(loaded.clone());
                     }
@@ -193,7 +232,7 @@ impl Script {
                 })
             }),
         };
-        let Loaded { source: shared_source, compiled } = match prepared {
+        let Loaded { source: shared_source, compiled, name: kept_name } = match prepared {
             Ok(Ok(loaded)) => loaded,
             Ok(Err(mut messages)) => {
                 for message in &mut messages {
@@ -208,13 +247,15 @@ impl Script {
             }
         };
         let failures = compiled.built_in_failures;
+        // The name is shared with the last script loaded from this text under it, as it usually is.
+        let shared_name = if *kept_name == *name { kept_name } else { Arc::from(name) };
         let mut script = Script {
-            name: name.to_owned(),
+            name: shared_name,
             source: shared_source,
             compiled,
             doors: doors.clone(),
             machine: Machine { heap: Heap::new(limits.memory), ..Machine::default() },
-            tasks: Vec::new(),
+            tasks: Tasks::default(),
             limits,
             stopped: None,
             spare_task: None,
@@ -493,7 +534,7 @@ impl Script {
     /// A refusal for something decided that isn't built yet.
     fn not_built(&self, what: String) -> Error {
         let mut message = Message::not_built_yet(Place::default(), what);
-        self.name.clone_into(&mut message.file);
+        message.file = self.name.to_string();
         Error::Refused(Messages::one(message))
     }
 
@@ -521,10 +562,6 @@ impl Script {
                     let free = self.tasks.iter().position(|slot| slot.running.is_none());
                     let index = free.unwrap_or(self.tasks.len());
                     if free.is_none() {
-                        // Most scripts have one task paused at a time, so the first gets room for one.
-                        if self.tasks.is_empty() {
-                            self.tasks.reserve_exact(1);
-                        }
                         self.tasks.push(TaskSlot::default());
                     }
                     let generation = self.tasks.get(index).map_or(0, |slot| slot.generation);

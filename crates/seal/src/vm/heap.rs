@@ -6,7 +6,8 @@
 
 use super::dict::Dict;
 use crate::compile::bytecode::{Layout, PLAIN_CASE};
-pub use crate::decimal::Number;
+use crate::decimal::PackedDecimal;
+pub use crate::decimal::{Number, NumberRef};
 
 /// What every heap value costs beyond its contents, in bytes of the memory cap.
 pub const VALUE_COST: usize = 48;
@@ -47,6 +48,8 @@ pub enum Object {
     },
     Dict(Box<Dict>),
     Number(Box<Number>),
+    /// A `Decimal`, held in the entry itself (D116).
+    Decimal(PackedDecimal),
     /// A value taken out for a moment while it's being changed.
     Taken,
 }
@@ -242,7 +245,10 @@ impl Heap {
     /// Fails when the script would hold more than its cap (D14).
     pub fn new_number(&mut self, number: Number) -> Result<u64, HeapError> {
         let size = number.size();
-        self.allocate(Object::Number(Box::new(number)), size)
+        match number {
+            Number::Decimal(decimal) => self.allocate(Object::Decimal(decimal.into()), size),
+            other => self.allocate(Object::Number(Box::new(other)), size),
+        }
     }
 
     /// The number a handle leads to.
@@ -251,9 +257,14 @@ impl Heap {
     ///
     /// Fails when the handle doesn't lead to a number, which is a bug in Seal.
     #[inline]
-    pub fn number(&self, handle: u64) -> Result<&Number, HeapError> {
+    pub fn number(&self, handle: u64) -> Result<NumberRef<'_>, HeapError> {
         match self.get(handle)? {
-            Object::Number(number) => Ok(number),
+            Object::Decimal(decimal) => Ok(NumberRef::Decimal((*decimal).into())),
+            Object::Number(number) => Ok(match number.as_ref() {
+                Number::Huge(value) => NumberRef::Huge(value),
+                Number::Decimal(value) => NumberRef::Decimal(*value),
+                Number::HugeDecimal(value) => NumberRef::HugeDecimal(value),
+            }),
             _ => Err(HeapError::Broken("a handle that should lead to a number")),
         }
     }
@@ -375,6 +386,7 @@ impl Heap {
                     dict.size()
                 }
                 Object::Number(number) => number.size(),
+                Object::Decimal(_) => 16,
             };
             self.refund(VALUE_COST.saturating_add(size));
             if let Ok(index) = u32::try_from(slot) {
@@ -440,6 +452,7 @@ impl Heap {
                 (Object::Dict(Box::new(copy)), size, inside, dict.len())
             }
             Object::Number(number) => (Object::Number(number.clone()), number.size(), Vec::new(), 1),
+            Object::Decimal(decimal) => (Object::Decimal(*decimal), 16, Vec::new(), 1),
             Object::Free | Object::Taken => return Err(HeapError::Broken("a value that isn't there to copy")),
         };
         self.work = self.work.saturating_add(work as u64);

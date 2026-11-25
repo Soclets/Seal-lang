@@ -195,7 +195,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D135** A `mut` name that's never changed is refused, with the line without `mut` as the fix (a draft wording, as
   D135 says its wording comes later): any change counts, `=`, a method, or deep inside. A name never read gets only
   "never used".
-- **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** `crates/seal/src/decimal.rs` holds
+- **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
+  entry itself, in two 64-bit halves, so working with one allocates nothing beyond the entry; the money benchmark
+  went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/seal/src/decimal.rs` holds
   decimal128, with IEEE 754's rounding (34 digits, to the nearest, a tie to even, exponents -6176 to 6111) and its
   preferred exponents, so places carry through (`1.50 + 1.50` is `3.00`), each operation worked out exactly on
   `Big` and rounded once; and the exact `HugeDecimal`, whose `/` and `sqrt` give the exact answer or stop. Checked
@@ -275,9 +277,9 @@ In short, judged Normal against Normal (D58):
   from one text, each resumed 100 times), with resuming and footprint each better than Luau's.
 - **Where Seal is behind Luau: loading a script from a text of its own.** On 2026-11-25 (after C13), timed apart from
   the rest of the patrol run: from the same text, where Seal reuses what it compiled and Luau compiles once, a script
-  loads and runs to its first pause in about 190 ns against Luau's 200 ns (met, from 230 ns: the top level's task
-  becomes the first call's, a new stack comes zeroed from the system, and the kept scripts are searched newest
-  first). From a text of its own, with nothing reused, a 12-line script takes Seal about 8.6 µs and Luau about 5.1 µs
+  loads and runs to its first pause in about 170 ns against Luau's 185 ns (met, from 230 ns: the top level's task
+  becomes the first call's, a new stack comes zeroed from the system, the kept scripts are searched newest first,
+  the first paused task is held in the script itself, and the name is shared with the kept script's). From a text of its own, with nothing reused, a 12-line script takes Seal about 8.2 µs and Luau about 5.0 µs
   (not met; it was 12.3 µs after C12, and about 10 µs before). Split up: reading about 3.3 µs, checking about 3.1 µs,
   compiling about 1.0 µs, and setting the script up about 0.9 µs. Done: a syntax expression is 72 bytes instead of 208
   (C12's units and handlers had grown it), the reader moves names out of tokens instead of copying them and compares
@@ -344,6 +346,10 @@ Ralph has no `Float`, lists, `for each`, `.len`, dividing or the biggest `Whole`
 (with and without parameters), comments and `show_msg`. 2 of the 14 tests and every fuzzed script match. Seal's
 dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused` parameters (D61), deeper changes
 (D62), and everything with records, `one_of`, `Dict` and failures.
+
+Sent 2026-11-25 on its own: whether D57's "loading each from a text of its own" counts as met within twice Luau's
+time, since Seal type-checks before running and Luau doesn't (recommended), or the reader, checker and compiler get
+the rework (names as numbers, trees in one block) that closing the rest needs.
 
 Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - How a whole-valued `Decimal` shows: built as D125 reads, with the places it keeps, so `d: Decimal = 3` shows `3`

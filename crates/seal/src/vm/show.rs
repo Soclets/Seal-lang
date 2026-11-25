@@ -3,7 +3,7 @@
 //! Both walk a value through the heap without nesting in the host's stack, since a value can be as deep as the script
 //! makes it (D72, Building rule 1).
 
-use super::heap::{Heap, HeapError, Number, Object};
+use super::heap::{Heap, HeapError, NumberRef, Object};
 use crate::check::types::{Type, TypeId, TypeTable};
 use crate::compile::bytecode::{Layout, PLAIN_CASE};
 use crate::number::float_to_text;
@@ -328,21 +328,21 @@ pub fn equal(
 
 /// A `HugeWhole`, `Decimal` or `HugeDecimal` as it's shown (D115, D124, D125).
 #[must_use]
-pub fn number_text(number: &Number) -> String {
+pub fn number_text(number: NumberRef<'_>) -> String {
     match number {
-        Number::Huge(value) => value.to_decimal(),
-        Number::Decimal(value) => value.to_text(),
-        Number::HugeDecimal(value) => value.to_text(),
+        NumberRef::Huge(value) => value.to_decimal(),
+        NumberRef::Decimal(value) => value.to_text(),
+        NumberRef::HugeDecimal(value) => value.to_text(),
     }
 }
 
 /// Two numbers of one kind compared by amount; nothing for two of different kinds, which a script never compares.
 #[must_use]
-pub fn compare_numbers(left: &Number, right: &Number) -> Option<std::cmp::Ordering> {
+pub fn compare_numbers(left: NumberRef<'_>, right: NumberRef<'_>) -> Option<std::cmp::Ordering> {
     match (left, right) {
-        (Number::Huge(left), Number::Huge(right)) => Some(left.compare(right)),
-        (Number::Decimal(left), Number::Decimal(right)) => Some(left.compare(right)),
-        (Number::HugeDecimal(left), Number::HugeDecimal(right)) => Some(left.compare(right)),
+        (NumberRef::Huge(left), NumberRef::Huge(right)) => Some(left.compare(right)),
+        (NumberRef::Decimal(left), NumberRef::Decimal(right)) => Some(left.compare(&right)),
+        (NumberRef::HugeDecimal(left), NumberRef::HugeDecimal(right)) => Some(left.compare(right)),
         _ => None,
     }
 }

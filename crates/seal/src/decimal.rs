@@ -793,6 +793,71 @@ impl Number {
     }
 }
 
+/// A number as the heap holds it, to read: a `HugeWhole` or `HugeDecimal` where it lies, a `Decimal` copied out,
+/// since it's small enough to live in the heap's own entry.
+#[derive(Clone, Copy, Debug)]
+pub enum NumberRef<'a> {
+    Huge(&'a Big),
+    Decimal(Decimal),
+    HugeDecimal(&'a HugeDecimal),
+}
+
+impl NumberRef<'_> {
+    /// What it costs of the memory cap beyond the value itself.
+    #[must_use]
+    pub fn size(self) -> usize {
+        match self {
+            NumberRef::Huge(value) => Number::Huge(value.clone()).size(),
+            NumberRef::Decimal(_) => 16,
+            NumberRef::HugeDecimal(value) => value
+                .coefficient
+                .size()
+                .saturating_add(8)
+                .saturating_add(usize::try_from(value.exponent.unsigned_abs() / 2).unwrap_or(usize::MAX)),
+        }
+    }
+
+    /// The number itself, owned.
+    #[must_use]
+    pub fn to_number(self) -> Number {
+        match self {
+            NumberRef::Huge(value) => Number::Huge(value.clone()),
+            NumberRef::Decimal(value) => Number::Decimal(value),
+            NumberRef::HugeDecimal(value) => Number::HugeDecimal(value.clone()),
+        }
+    }
+}
+
+/// A `Decimal` in two 64-bit halves, so the heap can hold it in an entry of its own size, with nothing allocated.
+#[derive(Clone, Copy, Debug)]
+pub struct PackedDecimal {
+    high: u64,
+    low: u64,
+    exponent: i32,
+    negative: bool,
+}
+
+impl From<Decimal> for PackedDecimal {
+    fn from(value: Decimal) -> Self {
+        PackedDecimal {
+            high: (value.coefficient >> 64) as u64,
+            low: value.coefficient as u64,
+            exponent: value.exponent,
+            negative: value.negative,
+        }
+    }
+}
+
+impl From<PackedDecimal> for Decimal {
+    fn from(value: PackedDecimal) -> Self {
+        Decimal {
+            negative: value.negative,
+            coefficient: (u128::from(value.high) << 64) | u128::from(value.low),
+            exponent: value.exponent,
+        }
+    }
+}
+
 /// A magnitude rounded to a `Decimal`: to 34 digits and into the exponents it has, to the nearest, a tie to even.
 /// `sticky` says the value is a little more than `magnitude × 10^exponent`, which has more than 34 digits then.
 fn round(negative: bool, magnitude: Big, exponent: i64, sticky: bool) -> Result<Decimal, NumberError> {
