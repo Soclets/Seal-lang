@@ -15,6 +15,8 @@ where `name` is the name and `value` its value. `mut`, `unused` and `=` are writ
   List<Text> = []` (D30). A written type may leave out the parts the value shows, as `board: Array[len: 64] = [all:
   0]` (D82).
 - **When `name` already exists, `name = value` changes it,** which is allowed only if it was made with `mut` (D2).
+- **A name made with `mut` must be changed somewhere,** by `=`, a method that changes it, or a change deep inside it,
+  or it's refused, with removing `mut` as the fix (D135).
 - **A name that's made and never read is refused,** saying plainly that it's never used, with no guess at what was
   meant: a typo such as `tires = tries + 1` is caught this way (D2, Unio D54).
 - **`unused` marks a name that's never read on purpose,** so it isn't refused, and reading it later is refused.

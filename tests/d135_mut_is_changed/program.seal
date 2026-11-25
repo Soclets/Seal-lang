@@ -1,0 +1,13 @@
+record Body
+    vx: Whole
+end
+
+mut tries = 0
+tries = tries + 1
+mut bag: List<Text> = []
+bag.add("Gem")
+mut bodies = [Body[vx: 0], Body[vx: 0]]
+bodies[pos: 1].vx = 3
+lives = 3
+first = bodies[pos: 1].vx
+show_msg("{tries} {bag} {first} {lives}")

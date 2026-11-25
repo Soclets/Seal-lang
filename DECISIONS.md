@@ -4054,3 +4054,31 @@ d = asin(0.5)                      // a plain Float, in radians
 **Tankun's words.** "Do we usually do that?", then, asked "Should `asin`, `acos` and `atan2` give `rads` only when
 given values with units, and a plain `Float` otherwise?", the owner chose: "Yea"
 
+
+## D135. A `mut` name that's never changed is refused
+
+2026-11-25.
+
+**Chosen.** A name made with `mut` must be changed somewhere, or it's refused, with removing `mut` as the fix:
+
+```
+mut lives = 3
+show_msg("{lives}")        // refused: `lives` is never changed, so `mut` goes
+```
+
+- **Any change counts:** `=`, a method that changes it, as `bag.add("Gem")`, or a change deep inside it, as
+  `bodies[pos: 1].vx = 1.0` (D62).
+- **It's refused, not warned about,** as a name that's never used is (D2).
+- Its wording comes with a later batch.
+
+**Weighed.**
+- Leaving it allowed, as now. `mut` would promise only that a name might change, and a change that was meant but never
+  written, as a counter never counted, would go unseen.
+- A warning, as Rust and Swift give, and JavaScript's linters for a `let` that could be `const`. Seal refuses rather
+  than warns everywhere.
+
+**Why this won.** `mut` becomes a promise both ways: a name without it never changes, and a name with it really does,
+so a reader can trust either word, and a forgotten change is caught as a forgotten use is.
+
+**Tankun's words.** "Should `mut` be a must?", "No, I meant make `mut` means must change?", then, asked "Should a `mut`
+name that's never changed be refused, with removing `mut` as the fix?", the owner chose: "yea"
