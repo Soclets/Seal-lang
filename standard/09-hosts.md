@@ -1,7 +1,8 @@
 # 9. Hosts
 
-A host is the Rust program that embeds Seal (D1). This chapter says what a script sees of it; how a host's Rust code
-calls Seal is the building session's to propose.
+A host is the program that embeds Seal: a Rust program, or one in any language that can call C, through Seal's C API
+(D1, D136). This chapter says what a script sees of it, which is the same either way; how a host's code calls Seal is
+the building session's to propose.
 
 ## Loading and calling
 

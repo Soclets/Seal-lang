@@ -1394,6 +1394,8 @@ building session's to propose.
 **Tankun's words.** Asked "Should Seal be one workspace with these five parts, the library alone being what hosts
 depend on?", the owner chose: "yea".
 
+(Changed by D136: a sixth part, `seal-c`, a C API for hosts not written in Rust.)
+
 ## D48. The host's side: doors as typed Rust closures, chosen per script, and errors, never crashes
 
 2026-11-23.
@@ -1430,6 +1432,8 @@ A script's own data lives inside it, as `mut hp = 30`; the host's own data is re
 **Tankun's words.** "Wait, isn't goblin made by Seal insdie?", then, asked "Should the host's side work this way: doors
 as typed Rust closures, doors and limits chosen per script, and loading and calling returning errors, never
 crashing?", the owner chose: "yea".
+
+(Changed by D136: a host can also embed Seal through its C API, with the same guarantees.)
 
 ## D49. Scripts are fully separate and movable between threads, and pause through doors
 
@@ -4082,3 +4086,34 @@ so a reader can trust either word, and a forgotten change is caught as a forgott
 
 **Tankun's words.** "Should `mut` be a must?", "No, I meant make `mut` means must change?", then, asked "Should a `mut`
 name that's never changed be refused, with removing `mut` as the fix?", the owner chose: "yea"
+
+## D136. A C API, in a crate of its own that holds Seal's only `unsafe` code
+
+2026-11-25.
+
+**Chosen.** Seal can be embedded from any language that can call C, not only from Rust:
+- **A C API,** plain functions with C's calling convention, which C, C++, C#, Python, JavaScript runtimes and nearly
+  every other language can call. This is how Lua, Luau and Wasmtime reach every engine.
+- **It lives in a crate of its own, `seal-c`,** a thin layer over the `seal` library, adding a sixth part to D47's
+  workspace. A Rust host, as NginSeal, never uses it.
+- **`seal-c` holds Seal's only `unsafe` code,** which crossing into C needs, kept as small as it can be and tested
+  hard, with each `unsafe` block saying why it's sound. Building rule 2 gains that one exception; the `seal` library
+  and every other part still forbid `unsafe`.
+- **A host through C gets what a Rust host gets** (D48): doors it makes and names, limits per script, and errors,
+  never crashes, with nothing a script does able to harm the host (Building rule 1).
+- The API's shape and names are the building session's to propose. It's built after the current work.
+
+Routes on top of it, as a Unity package, a Godot extension or a WebAssembly build for web games, come later, each
+decided on its own.
+
+**Weighed.**
+- Rust only, as D1 and D48 have it. Most engines are C++ (Godot, Unreal) or C# (Unity), and couldn't embed Seal.
+- `unsafe` inside the `seal` library, where the C functions would be easiest to write. The sandbox's walls would rest
+  on hand-checked code everywhere, not just in one small layer.
+- WebAssembly first. It reaches the web, but an engine would still need a WebAssembly runtime to run Seal at all.
+
+**Why this won.** The C API is the one door every engine can use, and keeping its `unsafe` in one small crate leaves
+the library's guarantees as they are.
+
+**Tankun's words.** "Let's design compatibility?", "embed", then, asked "Should Seal get a C API, in its own crate
+holding the only `unsafe` code, so non-Rust engines can embed it?", the owner chose: "yea"

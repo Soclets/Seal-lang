@@ -4,7 +4,7 @@ How Seal is built, as decided so far. The language itself is in `standard/`; thi
 for the building session. The details inside each part are the building session's to propose (IMPLEMENTATION.md,
 Building rule 5).
 
-- **Language:** Rust, with no `unsafe` (D1, IMPLEMENTATION.md, Building rules 2 to 4).
+- **Language:** Rust, with no `unsafe` outside `seal-c` (D1, D136, IMPLEMENTATION.md, Building rules 2 to 4).
 - **Memory:** every value owned by one holder, counted holders and copy-on-write for big values, no garbage collector
   (D15).
 - **Running a script** (D46):
@@ -25,6 +25,7 @@ run:   a register VM runs the bytecode, counting steps
 | language server | errors as you type, worked-out types, colours (D7) |
 | fuzzer | random scripts against the library (Building rule 6) |
 | Unio translator | for checking against Ralph (D19) |
+| `seal-c` | the C API, for hosts not written in Rust, a thin layer over the library and the only part with `unsafe`; built after the current work (D136) |
 
   The four tools are built on the library, never copying its insides. How the library is split inside is the building
   session's to propose.
