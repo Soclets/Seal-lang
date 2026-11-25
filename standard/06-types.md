@@ -24,7 +24,9 @@ examples in Seal's syntax (README).
   `Float` don't mix quietly (D115). A number written too big for a `Whole` is a `HugeWhole` where one is wanted, and
   refused elsewhere (D115).
 - **A `Decimal` counts in tens,** so `0.1` is exactly 0.1. It holds 34 digits; past them it rounds, nearest with ties
-  to even, and `/` rounds the same way. It never shows `~`, since what it shows is always exactly what it holds (D124). A `HugeDecimal` never rounds on `+`, `-` or
+  to even, and `/` rounds the same way. It never shows `~`, since what it shows is always exactly what it holds (D124).
+  It keeps its trailing zeros as IEEE decimal128 does, so `1.50 + 1.50` shows `3.00`; `==` compares amounts, so
+  `3.00 == 3.0` (D125). A `HugeDecimal` never rounds on `+`, `-` or
   `*`, and its `/` gives the exact answer or stops, as `/` on a `Whole` does (D116, Unio D70, D155).
 - **Where it always fits, a number becomes the bigger type by itself:** a `Whole` into a `Decimal` or `HugeDecimal`,
   a `HugeWhole` into a `HugeDecimal`, and a `Decimal` into a `HugeDecimal`. Every other way is written with `be.` and

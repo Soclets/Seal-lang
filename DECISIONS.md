@@ -3746,3 +3746,19 @@ exactly what it shows, as `7 div.floor 2` is exactly `3`.
 
 **Tankun's words.** "Why?", then, asked "Should a `Decimal` never show `~`, since it always shows exactly what it
 holds?", the owner chose: "yea"
+
+## D125. A `Decimal` keeps its trailing zeros when shown
+
+2026-11-25.
+
+**Chosen.** A `Decimal` is shown with the decimal places IEEE 754 decimal128 keeps for it, so places carry through a
+sum: `1.50 + 1.50` shows `3.00`, and `4.99 + 0.01` shows `5.00`. `==` and the other comparisons compare amounts, so
+`3.00 == 3.0` is true, and `places:` (D94) still shows a fixed number of digits when that's wanted.
+
+**Weighed.**
+- The shortest form, `3.0`, as a `Float` shows. Money would lose its cents, needing `places: 2` at every price shown.
+
+**Why this won.** It's what decimal128 does by design, as Python's `Decimal` does, and it's what money wants.
+
+**Tankun's words.** Asked "Should a `Decimal` keep its trailing zeros when shown, as IEEE decimal128 does?", the owner
+chose: "yea"
