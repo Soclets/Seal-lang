@@ -64,7 +64,7 @@ struct Function {
     views: Vec<ItemView>,
     /// Whether the statement being compiled is a plain one, which reads and changes items through their views.
     views_on: bool,
-    /// Pairs of names known to hold different numbers here, as a `for each j in range[from: i + 1, …]` makes `i`
+    /// Pairs of names known to hold different numbers here, as a `for j from i + 1 …` makes `i`
     /// and `j`: items reached with one are never the item reached with the other.
     distinct: Vec<(VariableId, VariableId)>,
 }

@@ -42,6 +42,10 @@ struct Parser<'a> {
     pending: Option<Expression<'a>>,
     /// Lists kept from scripts read before on this thread, for this one's tree (D140).
     spare: SpareLists,
+    /// How many whole expressions are being read, one inside another.
+    nesting: u32,
+    /// The nesting at which a bare `to` ends a value rather than measuring it: a `for` line's own (D172).
+    to_ends_at: Option<u32>,
 }
 
 /// What a block's body ran into: the line that isn't part of it.
@@ -107,6 +111,8 @@ pub fn parse(source: &str) -> Result<Script<'_>, Message> {
         expression_depth: 0,
         pending: None,
         spare: SpareLists::take(),
+        nesting: 0,
+        to_ends_at: None,
     };
     parser.enter_line();
     let mut items = parser.spare.items();
@@ -1181,6 +1187,7 @@ impl<'a> Parser<'a> {
                 return Ok(Statement { kind: StatementKind::While { condition, body }, place });
             }
             Some(Keyword::ForEach) => return self.for_each(),
+            Some(Keyword::For) => return self.for_counting(),
             Some(Keyword::Match) => return self.match_statement(),
             Some(Keyword::Break) => {
                 self.advance();
@@ -1382,6 +1389,59 @@ impl<'a> Parser<'a> {
         Ok(Statement { kind: StatementKind::If { branches, otherwise }, place: opener.place })
     }
 
+    /// trace: D172. `for i from 1 to 3`, `for i from 0 before size` and `step_by`: counting, with `range`'s words
+    /// and no brackets or colons. On this line a bare `to` ends the first number rather than measuring it, so
+    /// measuring there is written in brackets.
+    fn for_counting(&mut self) -> Result<Statement<'a>, Message> {
+        let opener = self.opener("for");
+        self.expect_keyword(Keyword::For)?;
+        let counter_unused = self.at_keyword(Keyword::Unused);
+        if counter_unused {
+            self.advance();
+        }
+        let counter = self.expect_name("the counter's name")?;
+        // `for … in`, as Python writes it, goes through items: that's `for_each`.
+        if self.at_keyword(Keyword::In) {
+            let line = self.physical_line(opener.place.line);
+            let fixed = line.replacen("for ", "for_each ", 1);
+            return Err(Message::refused(self.here(), "`for` counts, and going through items is `for_each`")
+                .with_fix(fixed)
+                .with_why("`for` counts from one number to another; `for_each` goes through a list's items."));
+        }
+        let wanted = "`from`, as in `for i from 1 to 3`";
+        if !matches!(self.peek_kind(), Some(TokenKind::Name("from"))) {
+            return Err(self.unexpected(wanted));
+        }
+        self.advance();
+        let outer = self.to_ends_at.replace(self.nesting + 1);
+        let from = self.full_expression();
+        self.to_ends_at = outer;
+        let from = from?;
+        let inclusive = match self.peek_kind() {
+            Some(TokenKind::Name("to")) => true,
+            Some(TokenKind::Name("before")) => false,
+            _ => return Err(self.unexpected("`to` or `before`")),
+        };
+        self.advance();
+        let outer = self.to_ends_at.replace(self.nesting + 1);
+        let end = self.full_expression();
+        self.to_ends_at = outer;
+        let end = end?;
+        let step = if matches!(self.peek_kind(), Some(TokenKind::Name("step_by"))) {
+            self.advance();
+            Some(self.full_expression()?)
+        } else {
+            None
+        };
+        self.end_line()?;
+        let body = self.body(&opener)?;
+        self.end_of(&opener)?;
+        Ok(Statement {
+            kind: StatementKind::For { counter, counter_unused, from, end, inclusive, step, body },
+            place: opener.place,
+        })
+    }
+
     /// trace: D22, D33, Unio D171, D174
     fn for_each(&mut self) -> Result<Statement<'a>, Message> {
         let opener = self.opener("for_each");
@@ -1470,6 +1530,13 @@ impl<'a> Parser<'a> {
 
     /// A whole expression: slides come last, taking everything on their left (Unio D73).
     fn full_expression(&mut self) -> Result<Expression<'a>, Message> {
+        self.nesting += 1;
+        let read = self.full_expression_here();
+        self.nesting -= 1;
+        read
+    }
+
+    fn full_expression_here(&mut self) -> Result<Expression<'a>, Message> {
         let saved = self.expression_depth;
         // Most values are one operand with no operator after it, so the operand is read first, and the operators'
         // levels, from `or` down, are gone through only when an operator follows: each level gives back what it reads
@@ -1654,6 +1721,10 @@ impl<'a> Parser<'a> {
     /// measures isn't decided, so it stops.
     fn measure_to(&mut self) -> Result<Expression<'a>, Message> {
         let value = self.join()?;
+        // trace: D172. On a `for` line, `to` ends the first number.
+        if self.to_ends_at == Some(self.nesting) {
+            return Ok(value);
+        }
         if !(matches!(self.peek_kind(), Some(TokenKind::Name("to")))
             && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Name(_))))
         {
@@ -1951,7 +2022,10 @@ impl<'a> Parser<'a> {
         let place = token.place;
         let kind = match token.kind {
             TokenKind::Whole(_) | TokenKind::Float { .. }
-                if matches!(self.peek(), Some(Token { kind: TokenKind::Name(_), gap: Gap::Spaces(_), .. })) =>
+                if matches!(self.peek(), Some(Token { kind: TokenKind::Name(_), gap: Gap::Spaces(_), .. }))
+                    // trace: D172. On a `for` line, a number's `to`, `before` or `step_by` is the loop's word.
+                    && !(self.to_ends_at.is_some()
+                        && matches!(self.peek_kind(), Some(TokenKind::Name("to" | "before" | "step_by")))) =>
             {
                 // trace: D112. A unit stands right after its number, as `2 secs`.
                 let number = match token.kind {

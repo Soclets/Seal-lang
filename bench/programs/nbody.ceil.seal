@@ -29,9 +29,9 @@ end
 proc advance[bodies: List<Body>, dt: Float] -> List<Body>
     mut moved = bodies
     count = moved.len
-    for_each i in range[from: 1, to: count]
+    for i from 1 to count
         mut a = moved[pos: i]
-        for_each j in range[from: i + 1, before: count + 1]
+        for j from i + 1 before count + 1
             mut b = moved[pos: j]
             dx = a.x - b.x
             dy = a.y - b.y

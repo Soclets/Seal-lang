@@ -61,7 +61,7 @@ unsafe extern "C" fn wild_door(
 }
 
 const SCRIPTS: [&str; 5] = [
-    "proc run[n: Whole] -> Whole\n    mut total = 0\n    for_each i in range[from: 1, to: n]\n        total = total + poke(i, 2)\n    end\n    return total\nend\n",
+    "proc run[n: Whole] -> Whole\n    mut total = 0\n    for i from 1 to n\n        total = total + poke(i, 2)\n    end\n    return total\nend\n",
     "proc greet[name: Text] -> Text\n    return shout(\"hi {name}\")\nend\n",
     "proc nap\n    rest(1)\nend\n",
     "proc list -> List<Text>\n    return [\"a\", shout(\"b\")]\nend\n",

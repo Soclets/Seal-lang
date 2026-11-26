@@ -345,8 +345,9 @@ fn d115_a_huge_whole_takes_units_and_limits() {
 fn d146_d157_d158_return_for_each_and_eq_are_the_words() {
     let script = "proc twice[n: Whole] -> Whole\n    return n * 2\nend\nmut total = 0\nfor_each n in [1, 2]\n    if n not_eq 2\n        total = total + twice(n)\n    end\nend\nsame = total eq 2\nshow_msg(\"{total} {same}\")\n";
     assert_eq!(shows(script), ["2 true"]);
-    // `for` and `each` alone are names, now that `for_each` is one keyword.
-    assert_eq!(shows("for = 1\neach = 2\nshow_msg(\"{for} {each}\")\n"), ["1 2"]);
+    // `each` alone is a name, now that `for_each` is one keyword; `for` is a keyword again, for counting (D172).
+    assert_eq!(shows("each = 2\nshow_msg(\"{each}\")\n"), ["2"]);
+    assert!(!refusal("for = 1\n").is_empty());
     // `ret`, `incl` and `use` are plain names again.
     assert_eq!(shows("ret = 1\nincl = 2\nuse = 3\nshow_msg(\"{ret} {incl} {use}\")\n"), ["1 2 3"]);
     let old = "proc one -> Whole\n    ret 1\nend\n";
@@ -542,4 +543,32 @@ fn d168_requirements_list_methods_a_type_meeting_them_has() {
         "{}",
         refusal(&unmet)
     );
+}
+
+// trace: D172. `for` counts, with `range`'s words and no brackets; `for_each` goes through items.
+#[test]
+fn d172_for_counts_and_for_each_goes_through_items() {
+    let counting = "mut total = 0\nfor round from 1 to 3\n    total = _ + round\nend\nfor n from 10 to 0 step_by -5\n    show_msg(\"{n}\")\nend\nfor unused i from 0 before 0\n    show_msg(\"never\")\nend\nshow_msg(\"{total}\")\n";
+    assert_eq!(shows(counting), ["10", "5", "0", "6"]);
+    // A bare `to` on a `for` line ends the first number; measuring there is bracketed.
+    let names = "size = 2\nfor i from size to size + 1\n    show_msg(\"{i}\")\nend\n";
+    assert_eq!(shows(names), ["2", "3"]);
+    let through = "mut total = 0\nfor_each i in range[from: 1, to: 3, step_by: 2]\n    total = _ + i\nend\nshow_msg(\"{total}\")\n";
+    let refused = refusal(through);
+    assert!(refused.contains("`for` counts from one number to another"), "{refused}");
+    assert!(refused.contains("for i from 1 to 3 step_by 2"), "{refused}");
+    assert!(!refused.contains("never"), "only the loop's first line is refused: {refused}");
+    let python = "names = [\"a\"]\nfor n in names\n    show_msg(n)\nend\n";
+    assert!(refusal(python).contains("for_each n in names"), "{}", refusal(python));
+    let zero = "for i from 1 to 3 step_by 0\n    show_msg(\"{i}\")\nend\n";
+    assert!(refusal(zero).contains("this `for` counts by 0"), "{}", refusal(zero));
+    let away = "for i from 5 to 3\n    show_msg(\"{i}\")\nend\n";
+    assert!(refusal(away).contains("counts by 1 from 5, away from its end, 3"), "{}", refusal(away));
+    let unseen = "n = 0\nfor i from 1 to n\n    show_msg(\"{i}\")\nend\n";
+    assert!(refusal(unseen).contains("check failed"), "{}", refusal(unseen));
+    let unused = "for i from 1 to 2\n    show_msg(\"x\")\nend\n";
+    assert!(refusal(unused).contains("as `for unused i`"), "{}", refusal(unused));
+    assert_eq!(shows("for unused i from 1 to 2\n    show_msg(\"x\")\nend\n"), ["x", "x"]);
+    let changed = "for i from 1 to 2\n    i = 5\nend\n";
+    assert!(refusal(changed).contains("`i` can't be given a new value"), "{}", refusal(changed));
 }

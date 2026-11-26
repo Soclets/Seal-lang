@@ -271,6 +271,18 @@ pub enum StatementKind<'a> {
         condition: Expression<'a>,
         body: Block<'a>,
     },
+    /// `for i from 1 to 3`, counting (D172).
+    For {
+        counter: Word<'a>,
+        /// The counter is marked `unused`: never read, on purpose (D61).
+        counter_unused: bool,
+        from: Expression<'a>,
+        end: Expression<'a>,
+        /// `to` includes the end; `before` stops short of it.
+        inclusive: bool,
+        step: Option<Expression<'a>>,
+        body: Block<'a>,
+    },
     ForEach {
         item: Word<'a>,
         /// The item is marked `unused`: never read, on purpose (D61).

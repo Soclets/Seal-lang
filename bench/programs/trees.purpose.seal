@@ -14,7 +14,7 @@ end
 
 proc run[rounds: Whole] -> Whole
     mut made = 0
-    for_each unused round in range[from: 1, to: rounds]
+    for unused round from 1 to rounds
         unused tree = build(10)
         made = made + 1
     end

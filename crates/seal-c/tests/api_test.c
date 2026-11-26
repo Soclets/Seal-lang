@@ -93,7 +93,7 @@ static seal_doors *make_doors(game *the_game) {
 static const char *SCRIPT =
     "proc fight[rounds: Whole] -> Whole\n"
     "    mut total = 0\n"
-    "    for_each round in range[from: 1, to: rounds]\n"
+    "    for round from 1 to rounds\n"
     "        damage(round, 3)\n"
     "        total = total + round\n"
     "    end\n"
@@ -271,7 +271,7 @@ static double seconds(void) {
 static int bench(long count) {
     game the_game = {0};
     seal_doors *doors = make_doors(&the_game);
-    const char *source = "proc run[n: Whole]\n    for_each round in range[from: 1, to: n]\n        damage(round, 2)\n    end\nend\n";
+    const char *source = "proc run[n: Whole]\n    for round from 1 to n\n        damage(round, 2)\n    end\nend\n";
     seal_script *script = NULL;
     seal_limits limits = {UINT64_MAX, 1 << 24};
     if (seal_script_load("bench.seal", source, strlen(source), doors, limits, &script) != SEAL_OK) return 1;

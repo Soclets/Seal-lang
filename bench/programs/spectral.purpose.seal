@@ -1,11 +1,11 @@
 // Purpose: loops over a list of floats. A list of 1,000 floats is summed `rounds` times.
 proc run[rounds: Whole] -> Float
     mut values: List<Float> = []
-    for_each i in range[from: 1, to: 1000]
+    for i from 1 to 1000
         values.add(be.Float(i) * 0.5)
     end
     mut total = 0.0
-    for_each unused round in range[from: 1, to: rounds]
+    for unused round from 1 to rounds
         for_each value in values
             total = total + value
         end

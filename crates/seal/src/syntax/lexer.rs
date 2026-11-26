@@ -18,6 +18,8 @@ pub enum Keyword {
     Break,
     /// `for_each`, one keyword of two words joined (D146).
     ForEach,
+    /// `for`, the loop that counts (D172).
+    For,
     In,
     At,
     Proc,
@@ -64,6 +66,7 @@ impl Keyword {
             "while" => Keyword::While,
             "break" => Keyword::Break,
             "for_each" => Keyword::ForEach,
+            "for" => Keyword::For,
             "in" => Keyword::In,
             "at" => Keyword::At,
             "proc" => Keyword::Proc,
@@ -117,6 +120,7 @@ impl Keyword {
             Keyword::While => "while",
             Keyword::Break => "break",
             Keyword::ForEach => "for_each",
+            Keyword::For => "for",
             Keyword::In => "in",
             Keyword::At => "at",
             Keyword::Proc => "proc",
@@ -680,6 +684,17 @@ impl<'a> Lexer<'a> {
         if ends_with_rounding(self.current()) {
             return false;
         }
+        // trace: D172. On a `for` line, `from`, `to`, `before` and `step_by` are the loop's words, each before a
+        // number, as in `for n from 10 to 0 step_by -5`.
+        if matches!(self.current().first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::For)))
+            && self.current().len() > 2
+            && matches!(
+                self.current().last().map(|token| &token.kind),
+                Some(TokenKind::Name("from" | "to" | "before" | "step_by"))
+            )
+        {
+            return false;
+        }
         matches!(
             self.current().last().map(|token| &token.kind),
             Some(
@@ -1152,13 +1167,18 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Re
         let after_handles = index == 0
             && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
             && matches!(&before.kind, TokenKind::Name(word) if *word == "handles" || *word == "meets");
+        // trace: D172. On a `for` line, `from`, `to`, `before` and `step_by` stand apart from what follows them.
+        let after_counting_word =
+            matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::For)))
+                && index >= 2
+                && matches!(before.kind, TokenKind::Name("from" | "to" | "before" | "step_by"));
         // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
         let jump_mark = index >= 1
             && matches!(before.kind, TokenKind::Symbol(Symbol::Star))
             && matches!(tokens.get(index - 1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path)));
         let wanted = if jump_mark {
             0
-        } else if after_operator || after_labels || after_handles {
+        } else if after_operator || after_labels || after_handles || after_counting_word {
             1
         } else {
             wanted_spaces(&before.kind, &after.kind)

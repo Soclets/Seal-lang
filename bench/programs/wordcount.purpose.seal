@@ -2,11 +2,11 @@
 proc run[rounds: Whole] -> Whole
     mut keys: List<Text> = []
     mut counts: Dict<key: Text, value: Whole> = [:]
-    for_each i in range[from: 1, to: 1000]
+    for i from 1 to 1000
         keys.add("key{i}")
         counts[key: "key{i}"] = 0
     end
-    for_each unused round in range[from: 1, to: rounds]
+    for unused round from 1 to rounds
         for_each key in keys
             counts[key: key] = (counts[key: key] ?? 0) + 1
         end

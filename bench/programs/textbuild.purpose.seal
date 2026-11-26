@@ -1,7 +1,7 @@
 // Purpose: joining text. One text grows by two characters, `count` times.
 proc run[count: Whole] -> Text
     mut text = ""
-    for_each unused piece in range[from: 1, to: count]
+    for unused piece from 1 to count
         text = "{text}ab"
     end
     return text

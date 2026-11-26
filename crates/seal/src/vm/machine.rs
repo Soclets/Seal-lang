@@ -2174,23 +2174,23 @@ pub fn run(
             Instruction::PrepareRangeTo { base: range } | Instruction::PrepareRangeBefore { base: range } => {
                 let inclusive = matches!(instruction, Instruction::PrepareRangeTo { .. });
                 let (from, end, step) = (whole!(range), whole!(range + 1), whole!(range + 2));
+                // trace: D172, Unio D172. A `for` that counts by 0, or away from its end, fails its check as it starts.
                 let label = if inclusive { "to" } else { "before" };
-                let when = || format!("`range[from: {from}, {label}: {end}, step_by: {step}]`");
+                let when = || format!("`for` from {from} {label} {end}, `step_by` {step}");
                 if step == 0 {
-                    // trace: Unio D172
                     return Err(check_failed(
-                        "this range's step is 0",
+                        "this `for` counts by 0",
                         when(),
-                        "a range with a step of 0 never reaches its end.",
+                        "a `for` that counts by 0 never reaches its end.",
                         pc,
                     ));
                 }
                 let away = if step > 0 { from > end } else { from < end };
                 if away {
                     return Err(check_failed(
-                        "this range's step points away from its end",
+                        &format!("this `for` counts by {step} from {from}, away from its end, {end}"),
                         when(),
-                        "a range's step points towards its end; a negative `step_by:` counts down.",
+                        "a `for` counts towards its end; `step_by` with a negative number counts down.",
                         pc,
                     ));
                 }

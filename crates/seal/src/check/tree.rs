@@ -25,6 +25,8 @@ pub enum VariableKind {
     Parameter,
     /// A `for_each`'s item (Unio D171).
     LoopItem,
+    /// A `for`'s counter (D172).
+    LoopCounter,
     /// A `for_each`'s position or key (D33, Unio D174).
     LoopPosition,
     /// A value taken out of a case by `match` (D37).

@@ -143,6 +143,14 @@ impl SpareLists {
                 self.expression(source);
                 self.block(body);
             }
+            StatementKind::For { from, end, step, body, .. } => {
+                self.expression(from);
+                self.expression(end);
+                if let Some(step) = step {
+                    self.expression(step);
+                }
+                self.block(body);
+            }
             StatementKind::Match { subject, cases } => {
                 self.expression(subject);
                 for case in cases {

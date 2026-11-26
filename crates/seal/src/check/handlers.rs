@@ -24,9 +24,9 @@ fn can_jump(block: &[syntax::Statement], loops: u32) -> bool {
             branches.iter().any(|(_, body)| can_jump(body, loops))
                 || otherwise.as_ref().is_some_and(|body| can_jump(body, loops))
         }
-        syntax::StatementKind::While { body, .. } | syntax::StatementKind::ForEach { body, .. } => {
-            can_jump(body, loops + 1)
-        }
+        syntax::StatementKind::While { body, .. }
+        | syntax::StatementKind::ForEach { body, .. }
+        | syntax::StatementKind::For { body, .. } => can_jump(body, loops + 1),
         syntax::StatementKind::Match { cases, .. } => cases.iter().any(|case| can_jump(&case.body, loops)),
         syntax::StatementKind::Name { value, .. }
         | syntax::StatementKind::Expression(value)

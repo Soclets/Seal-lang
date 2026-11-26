@@ -27,11 +27,11 @@ proc run[max_depth: Whole] -> Whole
     mut depth = 4
     while depth at_most max_depth
         mut rounds = 1
-        for_each unused doubling in range[from: 1, to: max_depth - depth + 4]
+        for unused doubling from 1 to max_depth - depth + 4
             rounds = rounds * 2
         end
         mut check = 0
-        for_each unused round in range[from: 1, to: rounds]
+        for unused round from 1 to rounds
             check = check + count(build(depth))
         end
         total = total + check

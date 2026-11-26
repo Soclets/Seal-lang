@@ -4,7 +4,7 @@ end
 
 proc times[u: List<Float>, size: Whole] -> List<Float>
     mut out: List<Float> = []
-    for_each i in range[from: 0, before: size]
+    for i from 0 before size
         mut sum = 0.0
         for_each value at offset j in u
             sum = sum + eval_a(i, j) * value
@@ -16,7 +16,7 @@ end
 
 proc times_transposed[u: List<Float>, size: Whole] -> List<Float>
     mut out: List<Float> = []
-    for_each i in range[from: 0, before: size]
+    for i from 0 before size
         mut sum = 0.0
         for_each value at offset j in u
             sum = sum + eval_a(j, i) * value

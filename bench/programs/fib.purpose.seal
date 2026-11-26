@@ -9,7 +9,7 @@ end
 
 proc run[depth: Whole] -> Whole
     mut total = 0
-    for_each unused round in range[from: 1, to: 20000]
+    for unused round from 1 to 20000
         total = total + down(depth)
     end
     return total

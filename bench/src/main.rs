@@ -254,8 +254,7 @@ fn doors(count: usize) -> Result<String, String> {
             added.fetch_add(amount.wrapping_mul(times).cast_unsigned(), Ordering::Relaxed);
         })
         .map_err(|message| message.to_string())?;
-    let source =
-        "proc run[n: Whole]\n    for_each round in range[from: 1, to: n]\n        damage(round, 2)\n    end\nend\n";
+    let source = "proc run[n: Whole]\n    for round from 1 to n\n        damage(round, 2)\n    end\nend\n";
     let mut script = Script::load("doors.seal", source, &doors, LIMITS).map_err(|error| error.to_string())?;
     let count = i64::try_from(count).map_err(|_| "too many calls".to_owned())?;
     let mut best = f64::MAX;

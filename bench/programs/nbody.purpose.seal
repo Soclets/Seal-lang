@@ -8,7 +8,7 @@ end
 
 proc run[steps: Whole] -> Float
     mut point = Point[x: 0.0, y: 0.0, vx: 1.0, vy: 0.5]
-    for_each unused step in range[from: 1, to: steps]
+    for unused step from 1 to steps
         point.vx = point.vx * ~0.999 + ~0.001
         point.vy = point.vy * ~0.999 - ~0.0005
         point.x = point.x + point.vx * ~0.01

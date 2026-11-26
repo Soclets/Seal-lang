@@ -1915,6 +1915,11 @@ impl<'a> Checker<'a> {
                     format!("`{name}` is never used"),
                     &format!("a parameter that's never read on purpose is marked, as `unused {name}`."),
                 ),
+                VariableKind::LoopCounter => self.refuse_why(
+                    place,
+                    format!("`{name}` is never used"),
+                    &format!("a `for`'s counter that's never read on purpose is marked, as `for unused {name}`."),
+                ),
                 VariableKind::LoopItem => self.refuse_why(
                     place,
                     format!("`{name}` is never used"),
@@ -2185,6 +2190,9 @@ impl<'a> Checker<'a> {
             }
             syntax::StatementKind::ForEach { item, item_unused, position, position_unused, source, body } => {
                 self.for_each(item, (*item_unused, *position_unused), position.as_ref(), source, body)?
+            }
+            syntax::StatementKind::For { counter, counter_unused, from, end, inclusive, step, body } => {
+                self.for_counting(counter, *counter_unused, (from, end, *inclusive, step.as_ref()), body)
             }
             syntax::StatementKind::Match { subject, cases } => self.match_statement(subject, cases),
             syntax::StatementKind::Break => {
@@ -2477,6 +2485,10 @@ impl<'a> Checker<'a> {
             VariableKind::LoopItem | VariableKind::LoopPosition => (
                 format!("line {} makes it for each pass of the loop", made_place.line),
                 "a `for_each`'s variables never change; each pass gives them their next values.",
+            ),
+            VariableKind::LoopCounter => (
+                format!("line {} makes it for each pass of the loop", made_place.line),
+                "a `for`'s counter never changes; each pass gives it the next number.",
             ),
             VariableKind::CaseValue | VariableKind::Named => (
                 format!("line {} takes it out of a case", made_place.line),
@@ -3011,27 +3023,29 @@ impl<'a> Checker<'a> {
         source: &syntax::Expression<'a>,
         body: &[syntax::Statement<'a>],
     ) -> Option<StatementKind> {
-        // A range is written with `[ ]`, since nothing runs (Unio D165, D170).
+        // trace: D172. A `range[…]` written straight into a `for_each` is counting, which is `for`'s: refused, with the
+        // `for` line as the fix.
         if let syntax::ExpressionKind::Bracketed { receiver, entries } = &source.kind
             && matches!(&receiver.kind, syntax::ExpressionKind::Name(name) if *name == "range")
             && self.lookup("range", receiver.place).is_none()
         {
+            let mut message = Message::refused(source.place, "`for_each` goes through items, and counting is `for`")
+                .with_why("`for` counts from one number to another, as `for i from 1 to 3`; `for_each` goes through a list's items.");
+            if position.is_none()
+                && let Some(fixed) = self.counting_line(item, item_unused, entries, source.place)
+            {
+                message = message.with_fix(fixed);
+            }
+            self.messages.push(message);
+            // The loop is still checked, as counting, so nothing in it is refused only because of its first line.
             let (from, end, inclusive, step) = self.range_parts(entries, source.place)?;
             self.context.open_scope();
-            let item_id = self.make_local(item, WHOLE, VariableKind::LoopItem);
+            let item_id = self.make_local(item, WHOLE, VariableKind::LoopCounter);
             self.mark_unused(item_id, item_unused);
-            let position_id = match position {
-                Some((syntax::PositionKind::Key, word)) => {
-                    self.refuse(word.place, "`at key` is for going through a `Dict`");
-                    None
-                }
-                Some((kind, word)) => {
-                    let id = self.make_local(word, WHOLE, VariableKind::LoopPosition);
-                    self.mark_unused(id, position_unused);
-                    Some((id, *kind == syntax::PositionKind::Offset))
-                }
-                None => None,
-            };
+            if let Some((_, word)) = position {
+                let id = self.make_local(word, WHOLE, VariableKind::LoopPosition);
+                self.mark_unused(id, true);
+            }
             self.context.loop_depth += 1;
             let body = self.block(body);
             self.context.loop_depth -= 1;
@@ -3040,7 +3054,7 @@ impl<'a> Checker<'a> {
             self.context.keep_scope(scope);
             return Some(StatementKind::ForRange {
                 item: item_id,
-                position: position_id,
+                position: None,
                 from: Box::new(from),
                 end: Box::new(end),
                 inclusive,
@@ -3149,6 +3163,108 @@ impl<'a> Checker<'a> {
         };
         self.refuse_plain_range(&from, &end, inclusive, step.as_ref(), place);
         Some((from, end, inclusive, step))
+    }
+
+    /// trace: D172. The `for` line for a `for_each` over a `range[…]` written on one line, when its parts are
+    /// `from:`, `to:` or `before:` and `step_by:`.
+    fn counting_line(
+        &self,
+        item: &syntax::Word<'a>,
+        item_unused: bool,
+        entries: &[syntax::Entry<'a>],
+        place: Place,
+    ) -> Option<String> {
+        let line: Vec<char> = self.source_line(place.line).chars().collect();
+        let text_of = |at: Place| -> Option<String> {
+            let from = at.column.checked_sub(1)? as usize;
+            let to = from + at.width as usize;
+            (at.line == place.line).then(|| line.get(from..to).map(|part| part.iter().collect()))?
+        };
+        let mut parts = [None, None, None];
+        for entry in entries {
+            let value = text_of(entry.value.place)?;
+            match entry.label.as_ref()?.text {
+                "from" => parts[0] = Some(format!("from {value}")),
+                label @ ("to" | "before") => parts[1] = Some(format!("{label} {value}")),
+                "step_by" => parts[2] = Some(format!("step_by {value}")),
+                _ => return None,
+            }
+        }
+        let [Some(from), Some(end), step] = parts else { return None };
+        let indentation: String = line.iter().take_while(|&&character| character == ' ').collect();
+        let unused = if item_unused { "unused " } else { "" };
+        let step = step.map(|step| format!(" {step}")).unwrap_or_default();
+        Some(format!("{indentation}for {unused}{} {from} {end}{step}", item.text))
+    }
+
+    /// trace: D172. `for i from 1 to 3`: a new immutable counter for each pass, ending with the loop.
+    fn for_counting(
+        &mut self,
+        counter: &syntax::Word<'a>,
+        counter_unused: bool,
+        (from, end, inclusive, step): (
+            &syntax::Expression<'a>,
+            &syntax::Expression<'a>,
+            bool,
+            Option<&syntax::Expression<'a>>,
+        ),
+        body: &[syntax::Statement<'a>],
+    ) -> StatementKind {
+        let number = |checker: &mut Self, expression: &syntax::Expression<'a>, what: &str| {
+            let checked = checker.expression(expression, Some(WHOLE));
+            checker.expect(&checked, WHOLE, what);
+            checked
+        };
+        let from = number(self, from, "a `for`'s first number");
+        let end = number(self, end, "a `for`'s last number");
+        let step = step.map(|step| number(self, step, "a `for`'s step"));
+        self.refuse_plain_count(&from, &end, step.as_ref());
+        self.context.open_scope();
+        let counter_id = self.make_local(counter, WHOLE, VariableKind::LoopCounter);
+        self.mark_unused(counter_id, counter_unused);
+        self.context.loop_depth += 1;
+        let body = self.block(body);
+        self.context.loop_depth -= 1;
+        let scope = self.context.scopes.pop().unwrap_or_default();
+        self.check_unused(&scope);
+        self.context.keep_scope(scope);
+        StatementKind::ForRange {
+            item: counter_id,
+            position: None,
+            from: Box::new(from),
+            end: Box::new(end),
+            inclusive,
+            step: step.map(Box::new),
+            body,
+        }
+    }
+
+    /// trace: D172. A `for` whose step Seal can see is 0, or whose numbers it can see count away from the end, is
+    /// refused; one it can't see stops with a failed check when it starts.
+    fn refuse_plain_count(&mut self, from: &Expression, end: &Expression, step: Option<&Expression>) {
+        let plain = |expression: &Expression| match expression.kind {
+            ExpressionKind::Whole(value) => Some(value),
+            _ => None,
+        };
+        let step_value = match step {
+            Some(step) => plain(step),
+            None => Some(1),
+        };
+        if step_value == Some(0) {
+            let place = step.map_or(from.place, |step| step.place);
+            self.refuse_why(place, "this `for` counts by 0", "a `for` that counts by 0 never reaches its end.");
+            return;
+        }
+        if let (Some(start), Some(last), Some(by)) = (plain(from), plain(end), step_value) {
+            let away = if by > 0 { start > last } else { start < last };
+            if away {
+                self.refuse_why(
+                    from.place.to(end.place),
+                    format!("this `for` counts by {by} from {start}, away from its end, {last}"),
+                    "a `for` counts towards its end; `step_by` with a negative number counts down.",
+                );
+            }
+        }
     }
 
     /// The name an expression reads from, when it's a name or a part of one.
@@ -3407,6 +3523,12 @@ fn statement_can_fail(statement: &syntax::Statement) -> bool {
         }
         syntax::StatementKind::While { condition, body } => expression_can_fail(condition) || block_can_fail(body),
         syntax::StatementKind::ForEach { source, body, .. } => expression_can_fail(source) || block_can_fail(body),
+        syntax::StatementKind::For { from, end, step, body, .. } => {
+            expression_can_fail(from)
+                || expression_can_fail(end)
+                || step.as_ref().is_some_and(expression_can_fail)
+                || block_can_fail(body)
+        }
         syntax::StatementKind::Match { subject, cases } => {
             expression_can_fail(subject) || cases.iter().any(|case| block_can_fail(&case.body))
         }
@@ -3546,11 +3668,8 @@ pub(crate) mod tests {
         );
         assert!(whats("proc tick[unused amount: Whole]\n    show_msg(\"x\")\nend\n").is_empty());
         assert!(whats("proc tick\n    show_msg(\"x\")\nend\ntick()\n").is_empty());
-        assert_eq!(
-            whats("for_each round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n"),
-            vec!["refused: `round` is never used"]
-        );
-        assert!(whats("for_each unused round in range[from: 1, to: 3]\n    show_msg(\"x\")\nend\n").is_empty());
+        assert_eq!(whats("for round from 1 to 3\n    show_msg(\"x\")\nend\n"), vec!["refused: `round` is never used"]);
+        assert!(whats("for unused round from 1 to 3\n    show_msg(\"x\")\nend\n").is_empty());
         let event =
             "one_of Event\n    healed[amount: Whole, by: Text]\nend\nevent = Event.healed[amount: 1, by: \"Mia\"]\n";
         assert!(whats(&format!("{event}match event\n    case healed[by]\n        show_msg(by)\nend\n")).is_empty());

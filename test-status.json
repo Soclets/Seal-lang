@@ -1,5 +1,5 @@
 {
-  "passed": 30,
+  "passed": 31,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -31,6 +31,7 @@
     "d164_methods": { "status": "pass" },
     "d165_mut_methods": { "status": "pass" },
     "d166_number_requirement": { "status": "pass" },
-    "d168_requirements": { "status": "pass" }
+    "d168_requirements": { "status": "pass" },
+    "d172_for_counts": { "status": "pass" }
   }
 }

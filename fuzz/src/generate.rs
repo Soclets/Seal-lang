@@ -964,13 +964,14 @@ impl Generator {
         // A range that starts past its end is a failed check, so the one starting past the outer place stops
         // `before:` one past the list's length, which is empty when there's nothing left.
         let range = match self.random.below(3) {
-            0 => format!("range[from: {outer} + 1, before: {spots}.len + 1]"),
-            1 => format!("range[from: 1, to: {spots}.len]"),
-            _ => format!("range[from: {outer}, to: {spots}.len]"),
+            0 => format!("from {outer} + 1 before {spots}.len + 1"),
+            1 => format!("from 1 to {spots}.len"),
+            _ => format!("from {outer} to {spots}.len"),
         };
-        self.line(&format!("for_each {outer} in range[from: 1, to: {spots}.len]"));
+        // trace: D172. Counting is `for`.
+        self.line(&format!("for {outer} from 1 to {spots}.len"));
         self.depth += 1;
-        self.line(&format!("for_each {inner} in {range}"));
+        self.line(&format!("for {inner} {range}"));
         self.depth += 1;
         let place = |generator: &mut Generator| match generator.random.below(8) {
             0..=2 => format!("pos: {outer}"),
@@ -1266,25 +1267,21 @@ impl Generator {
                 let item = self.fresh();
                 let from = self.random.below(5);
                 let range = match self.random.below(4) {
-                    0 => format!("range[from: {from}, to: {}]", from + self.random.below(5)),
-                    1 => format!("range[from: {from}, before: {}]", from + self.random.below(5)),
-                    2 => format!(
-                        "range[from: {}, to: {from}, step_by: -{}]",
-                        from + self.random.below(8),
-                        self.random.below(3) + 1
-                    ),
-                    _ => format!(
-                        "range[from: {from}, to: {}, step_by: {}]",
-                        self.value(Kind::Whole, 0),
-                        self.value(Kind::Whole, 0)
-                    ),
+                    0 => format!("from {from} to {}", from + self.random.below(5)),
+                    1 => format!("from {from} before {}", from + self.random.below(5)),
+                    2 => {
+                        format!("from {} to {from} step_by -{}", from + self.random.below(8), self.random.below(3) + 1)
+                    }
+                    _ => {
+                        format!("from {from} to {} step_by {}", self.value(Kind::Whole, 0), self.value(Kind::Whole, 0))
+                    }
                 };
-                // One loop in six never reads its counter, and says so (D61).
+                // trace: D172. Counting is `for`; one loop in six never reads its counter, and says so (D61).
                 if self.random.chance(1, 6) {
-                    self.line(&format!("for_each unused {item} in {range}"));
+                    self.line(&format!("for unused {item} {range}"));
                     self.loop_body(&[]);
                 } else {
-                    self.line(&format!("for_each {item} in {range}"));
+                    self.line(&format!("for {item} {range}"));
                     self.loop_body(&[(item, Kind::Whole)]);
                 }
             }
@@ -1701,7 +1698,7 @@ impl Generator {
 }
 
 /// The words and symbols of Seal, for scripts made of nothing but them.
-pub const VOCABULARY: [&str; 79] = [
+pub const VOCABULARY: [&str; 82] = [
     "mut",
     "unused",
     "if",
@@ -1711,6 +1708,9 @@ pub const VOCABULARY: [&str; 79] = [
     "while",
     "break",
     "for_each",
+    "for",
+    "from",
+    "step_by",
     "in",
     "at",
     "proc",

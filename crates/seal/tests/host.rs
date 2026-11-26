@@ -333,9 +333,9 @@ end
 proc settle[count: Whole] -> Float
     mut balls = [Ball[x: 0.0, v: 1.5, hits: 0], Ball[x: 4.0, v: -0.5, hits: 0], Ball[x: 9.0, v: 0.25, hits: 0]]
     kept = balls
-    for_each unused round in range[from: 1, to: count]
-        for_each i in range[from: 1, to: balls.len]
-            for_each j in range[from: i + 1, before: balls.len + 1]
+    for unused round from 1 to count
+        for i from 1 to balls.len
+            for j from i + 1 before balls.len + 1
                 gap = balls[pos: j].x - balls[pos: i].x
                 balls[pos: i].v = balls[pos: i].v + gap * 0.125 - balls[pos: j].v * 0.5
                 balls[pos: j].v = balls[pos: j].v - gap * 0.125 * balls[pos: i].v
