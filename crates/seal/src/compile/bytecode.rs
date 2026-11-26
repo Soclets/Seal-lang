@@ -1107,44 +1107,130 @@ pub type ReadKept<T> = fn(&[u8]) -> Option<Vec<T>>;
 /// A list of a compiled script that's needed only now and then, for messages or a host's call: made as it's
 /// compiled, or, for a script loaded from a `.sealc` file, left in the file's bytes, checked, and read from them
 /// the first time it's wanted, so loading makes nothing for it (D173). It reads as a slice either way.
-pub struct Kept<T> {
-    /// The list, when it was made rather than left in a file.
+pub struct Kept<T: 'static> {
+    /// The list, when it was made as it was compiled, or once it's changed.
     made: Vec<T>,
-    /// The list read from the file, the first time it's wanted.
-    read: std::sync::OnceLock<Vec<T>>,
-    /// The file's bytes from where the list starts, and how to read it.
-    in_file: Option<(std::sync::Arc<[u8]>, usize, ReadKept<T>)>,
-    /// How many items a list left in a file has, known without reading it.
-    known: usize,
+    /// Where to find the list when it's left in a file.
+    file: Option<KeptIn<T>>,
 }
 
-impl<T> Kept<T> {
-    /// A list left in a file's bytes, at `at`, already checked, read by `read` when it's first wanted.
+/// trace: D173. The lists a compiled script leaves in its file, read when they're first wanted, all behind one
+/// allocation: kept apart from the lists the run loop uses, so a compiled script stays small, as its size and shape
+/// move how the processor runs the loop.
+pub struct FileLists {
+    bytes: std::sync::Arc<[u8]>,
+    places: std::sync::OnceLock<Vec<Place>>,
+    fused_places: std::sync::OnceLock<Vec<(u32, Place)>>,
+    procedures: std::sync::OnceLock<Vec<CompiledProcedure>>,
+    failure_names: std::sync::OnceLock<Vec<std::borrow::Cow<'static, str>>>,
+}
+
+impl FileLists {
+    /// The lists left in a script's block, none of them read yet.
     #[must_use]
-    pub fn in_file(bytes: std::sync::Arc<[u8]>, at: usize, known: usize, read: ReadKept<T>) -> Kept<T> {
-        Kept { made: Vec::new(), read: std::sync::OnceLock::new(), in_file: Some((bytes, at, read)), known }
+    pub fn new(bytes: std::sync::Arc<[u8]>) -> std::sync::Arc<FileLists> {
+        std::sync::Arc::new(FileLists {
+            bytes,
+            places: std::sync::OnceLock::new(),
+            fused_places: std::sync::OnceLock::new(),
+            procedures: std::sync::OnceLock::new(),
+            failure_names: std::sync::OnceLock::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn places(&self) -> &std::sync::OnceLock<Vec<Place>> {
+        &self.places
+    }
+
+    #[must_use]
+    pub fn fused_places(&self) -> &std::sync::OnceLock<Vec<(u32, Place)>> {
+        &self.fused_places
+    }
+
+    #[must_use]
+    pub fn procedures(&self) -> &std::sync::OnceLock<Vec<CompiledProcedure>> {
+        &self.procedures
+    }
+
+    #[must_use]
+    pub fn failure_names(&self) -> &std::sync::OnceLock<Vec<std::borrow::Cow<'static, str>>> {
+        &self.failure_names
+    }
+}
+
+/// Which of a script's file lists a [`Kept`] is, where it starts in the block, how to read it, and how many items it
+/// has.
+struct KeptIn<T: 'static> {
+    lists: std::sync::Arc<FileLists>,
+    pick: fn(&FileLists) -> &std::sync::OnceLock<Vec<T>>,
+    read: ReadKept<T>,
+    at: u32,
+    known: u32,
+}
+
+impl<T: 'static> Clone for KeptIn<T> {
+    fn clone(&self) -> KeptIn<T> {
+        KeptIn {
+            lists: std::sync::Arc::clone(&self.lists),
+            pick: self.pick,
+            read: self.read,
+            at: self.at,
+            known: self.known,
+        }
+    }
+}
+
+impl<T: 'static> KeptIn<T> {
+    /// The list read from the file's block, the first time it's wanted: out of line, so the code that reads a list
+    /// made as it was compiled stays small wherever it's used.
+    #[cold]
+    #[inline(never)]
+    fn list(&self) -> &[T] {
+        (self.pick)(&self.lists).get_or_init(|| self.fresh())
+    }
+
+    /// The list read from the block anew.
+    fn fresh(&self) -> Vec<T> {
+        self.lists.bytes.get(self.at as usize..).and_then(self.read).unwrap_or_default()
+    }
+}
+
+impl<T: 'static> Kept<T> {
+    /// A list left in a file's block, at `at`, already checked, read by `read` when it's first wanted and kept in
+    /// the part of `lists` that `pick` gives.
+    #[must_use]
+    pub fn in_file(
+        lists: &std::sync::Arc<FileLists>,
+        pick: fn(&FileLists) -> &std::sync::OnceLock<Vec<T>>,
+        (at, known): (usize, usize),
+        read: ReadKept<T>,
+    ) -> Kept<T> {
+        let (Ok(at), Ok(known)) = (u32::try_from(at), u32::try_from(known)) else { return Kept::from(Vec::new()) };
+        Kept { made: Vec::new(), file: Some(KeptIn { lists: std::sync::Arc::clone(lists), pick, read, at, known }) }
     }
 
     /// How many items there are, without reading a list left in a file.
     #[must_use]
     pub fn count(&self) -> usize {
-        if self.in_file.is_some() && self.read.get().is_none() { self.known } else { self.list().len() }
+        match &self.file {
+            None => self.made.len(),
+            Some(file) => (file.pick)(&file.lists).get().map_or(file.known as usize, Vec::len),
+        }
     }
 
+    #[inline]
     fn list(&self) -> &[T] {
-        match &self.in_file {
-            Some((bytes, at, read)) => self.read.get_or_init(|| bytes.get(*at..).and_then(*read).unwrap_or_default()),
+        match &self.file {
             None => &self.made,
+            Some(file) => file.list(),
         }
     }
 
     /// The list, to change, read from the file first when it's there.
     pub fn as_mut_vec(&mut self) -> &mut Vec<T> {
-        if let Some((bytes, at, read)) = self.in_file.take() {
-            self.made = match self.read.take() {
-                Some(list) => list,
-                None => bytes.get(at..).and_then(read).unwrap_or_default(),
-            };
+        if let Some(file) = self.file.take() {
+            self.made = file.fresh();
         }
         &mut self.made
     }
@@ -1154,41 +1240,41 @@ impl<T> Kept<T> {
     }
 }
 
-impl<T> From<Vec<T>> for Kept<T> {
+impl<T: 'static> From<Vec<T>> for Kept<T> {
     fn from(list: Vec<T>) -> Kept<T> {
-        Kept { made: list, read: std::sync::OnceLock::new(), in_file: None, known: 0 }
+        Kept { made: list, file: None }
     }
 }
 
-impl<T> Default for Kept<T> {
+impl<T: 'static> Default for Kept<T> {
     fn default() -> Kept<T> {
         Kept::from(Vec::new())
     }
 }
 
-impl<T: Clone> Clone for Kept<T> {
+impl<T: Clone + 'static> Clone for Kept<T> {
     fn clone(&self) -> Kept<T> {
-        match (self.read.get(), &self.in_file) {
-            (None, Some((bytes, at, read))) => Kept::in_file(std::sync::Arc::clone(bytes), *at, self.known, *read),
-            _ => Kept::from(self.list().to_vec()),
+        match &self.file {
+            Some(file) => Kept { made: Vec::new(), file: Some(file.clone()) },
+            None => Kept::from(self.made.clone()),
         }
     }
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for Kept<T> {
+impl<T: std::fmt::Debug + 'static> std::fmt::Debug for Kept<T> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.list().fmt(formatter)
     }
 }
 
-impl<T> std::ops::Deref for Kept<T> {
+impl<T: 'static> std::ops::Deref for Kept<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
         self.list()
     }
 }
 
-impl<'k, T> IntoIterator for &'k Kept<T> {
+impl<'k, T: 'static> IntoIterator for &'k Kept<T> {
     type Item = &'k T;
     type IntoIter = std::slice::Iter<'k, T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -1196,7 +1282,7 @@ impl<'k, T> IntoIterator for &'k Kept<T> {
     }
 }
 
-impl<T: PartialEq> PartialEq<[T]> for Kept<T> {
+impl<T: PartialEq + 'static> PartialEq<[T]> for Kept<T> {
     fn eq(&self, other: &[T]) -> bool {
         self.list() == other
     }

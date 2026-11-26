@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use super::bytecode::{
-    Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction,
-    JoinPiece, Kept, Layout, PauseMaps, ProcedureEntry,
+    Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, FileLists,
+    Instruction, JoinPiece, Kept, Layout, PauseMaps, ProcedureEntry,
 };
 use super::instruction_file::{self, Table};
 use crate::big::Big;
@@ -713,12 +713,14 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
     let built_in_failures = [input.u32()?, input.u32()?, input.u32()?];
     let types = TypeTable::read_file(input)?;
     let kept = check_kept(input, (&entries, code.len(), types.len()))?;
+    // trace: D173. One allocation for every list left in the block.
+    let lists = FileLists::new(Arc::clone(blob));
     Ok(Compiled {
         code,
-        places: kept_list(blob, kept.places, read_places),
+        places: Kept::in_file(&lists, FileLists::places, kept.places, read_places),
         constants,
         texts,
-        procedures: kept_list(blob, kept.procedures, read_procedures),
+        procedures: Kept::in_file(&lists, FileLists::procedures, kept.procedures, read_procedures),
         entries,
         top_level_entry,
         top_level_frame_size,
@@ -734,9 +736,9 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
         numbers,
         number_conversions,
         far_jumps,
-        fused_places: kept_list(blob, kept.fused_places, read_fused_places),
+        fused_places: Kept::in_file(&lists, FileLists::fused_places, kept.fused_places, read_fused_places),
         pause_maps: PauseMaps::in_file(Arc::clone(blob), pause_at),
-        failure_names: kept_list(blob, kept.failure_names, read_failure_names),
+        failure_names: Kept::in_file(&lists, FileLists::failure_names, kept.failure_names, read_failure_names),
         built_in_failures,
         types,
     })
@@ -888,11 +890,6 @@ pub fn read_pause_maps(bytes: &[u8]) -> Option<PauseMaps> {
         maps.insert(at, &list);
     }
     Some(maps)
-}
-
-/// A list left in the file's block, at a place [`check_kept`] found.
-fn kept_list<T>(blob: &Arc<[u8]>, (at, count): (usize, usize), read: crate::compile::bytecode::ReadKept<T>) -> Kept<T> {
-    Kept::in_file(Arc::clone(blob), at, count, read)
 }
 
 /// Reads a counted list left in the file, already checked.
