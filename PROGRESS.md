@@ -325,7 +325,8 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D169, D175, D177: signed `.sealc` files** (`host/signing.rs`), ML-DSA-44 from `fips204` without its
   random-number feature. `seal keygen NAME` writes `NAME.public` and `NAME.secret` from the system's randomness;
   `seal build --sign NAME.secret` appends the signature over the whole file and `SEALSIG\x01`; `seal run --key
-  NAME.public` loads only a file signed with it. A host calls `Doors::require_signature` (C:
+  NAME.public` loads only a file signed with it. The secret key is written readable by its owner only, never over
+  another, and `seal keygen` says to keep it off repositories. A host calls `Doors::require_signature` (C:
   `seal_doors_require_signature`); a file that isn't signed, is changed in any byte, or is signed with another key is
   refused, and each file that passes is kept whole, so it's checked once in a run (about 43 µs). A host that doesn't
   require signatures loads a signed file as it is. The fuzzer signs one script in four and checks a change after
@@ -456,7 +457,9 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   the same bytecode and the same machine instructions (4% fewer now, with call frames at the loop's own width); the
   processor takes more cycles for where the run loop lands in the program. A harmless change in an unrelated file moves
   it between 32.9 and 34.8 ms. A table for a base case's comparison was tried and made it slower, since the branch it
-  replaced is always predicted. The design session has the numbers.
+  replaced is always predicted. LLVM's alignment flags (functions and blocks to 16, 32 or 64 bytes, tried through
+  RUSTFLAGS) neither brought it back nor steadied it: every build measured now lands at 33.2 to 34.3 ms against
+  LuaJIT's 33.6, so it stands at about 99% to 102% as measured. The design session has the numbers.
 - **Loading from a text of its own against Luau: met, thinly** (98% to 100% across today's runs).
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
