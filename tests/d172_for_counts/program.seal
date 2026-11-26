@@ -1,0 +1,13 @@
+mut total = 0
+for round from 1 to 3
+    total = _ + round
+end
+names = ["Ann", "Bo", "Cy"]
+for i from 0 before names.len
+    name = names[offset: i]
+    show_msg("{i} {name}")
+end
+for n from 10 to 0 step_by -5
+    show_msg("{n}")
+end
+show_msg("{total}")

@@ -7,7 +7,7 @@ score = _ + 10
 mut x = 3
 x = _ * _
 mut enemies = [Enemy[hp: 4], Enemy[hp: 9]]
-for_each i in range[from: 1, to: enemies.len]
+for i from 1 to enemies.len
     enemies[pos: i].hp = _ - 1
 end
 mut hp = 95

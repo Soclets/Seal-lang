@@ -1,1 +1,1 @@
-for_each goes through a range and a list with at pos, from Unio. D22, Unio D170, D171, D174.
+for counts from 1 to 3, and for_each goes through a list with at pos, from Unio. D172, D22, Unio D170, D171, D174.

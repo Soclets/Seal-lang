@@ -3004,6 +3004,8 @@ for each i in range[from: 0, before: bag.len]
 **Tankun's words.** "why?", "Why not just make it a list?", "Why not just write it normally?", then, asked "Should a
 `range` just be a `List<Whole>`, usable anywhere a list is?", the owner chose: "yea"
 
+(Changed by D172: counting is written `for i from 1 to 3`; a `range` written straight into `for_each` is refused.)
+
 ## D100. Every value shows as it's written in Seal
 
 2026-11-24.
@@ -4452,6 +4454,8 @@ is not really another thing, it's the same shit", "What? Why?", "It's not the sa
 like `let mut`", "Bro, what is going onnn", "It's one keyword, right? It doesn't modify like `let mut`?", "Wait, `in`
 has two meanings?", then, asked "Should `for each` become `for_each`?", the owner chose: "yea"
 
+(Changed by D172: `for` is a keyword again, the counting loop.)
+
 ## D147. `_` is the current value of what's being changed, in place of `+=`
 
 2026-11-25.
@@ -5246,3 +5250,45 @@ compare against.
 
 **Tankun's words.** Asked "should loading a `.sealc` have a goal of being faster than LuaJIT loading its own compiled
 bytecode (`luajit -b` files), judged like D57's rows?", the owner chose: "yea"
+
+## D172. `for` counts: `for i from 1 to 3`, and `for_each` goes through items
+
+2026-11-26.
+
+**Chosen.** Counting is a loop of its own, `for`, using `range`'s words without brackets or colons:
+
+```
+for round from 1 to 3
+    show_msg("Round {round}!")
+end
+for i from 0 before size
+    show_msg("{i}")
+end
+for n from 10 to 0 step_by -2
+    show_msg("{n}")
+end
+```
+
+- **`to` includes the last number, `before` stops short of it, and `step_by` is optional,** counting by 1, negative to
+  count down, as `range`'s labels are (Unio D170, D172). A step of 0, or one pointing away from the end, is refused
+  where Seal can see it and stops with a failed check otherwise.
+- **The counter is a new immutable variable for each pass,** ending with the loop; `break` leaves it.
+- **`for_each` goes through items, `for` counts:** `range[…]` written straight into a `for_each` is refused, with the
+  `for` line as the fix, so counting has one form. A range kept in a variable is a list (D99), gone through with
+  `for_each`.
+- **`for` with `in`,** as Python writes it, is refused, with `for_each` as the fix.
+- `for` is a keyword again, after D146 left it a plain name.
+
+**Weighed.**
+- `for_each i in range[from: 0, before: size]`, as D99 had it. Tankun: `for_each` reads oddly when counting; a counter
+  isn't an item.
+- `for_each i from 0 before size`, as the design session first proposed: one loop keyword, but "each" stretched over
+  numbers.
+- `for i in range[…]`. `in` goes through a list's items, `for_each`'s job, so two ways to write the same loop.
+
+**Why this won.** The first word says which loop it is, and "for round from 1 to 3" is how maths, BASIC and Lua say it.
+
+**Tankun's words.** "`for_each i in range[from: 0, before: size]` reads weird", "I meant `for_each` in that situation",
+"Why not just use `for` there?", "No `in range[]`?", then, asked "Should counting be its own loop, `for i from 1 to 3`
+or `for i from 0 before size`, with an optional `step_by`, and `for_each` kept for going through items?", the owner
+chose: "yea"

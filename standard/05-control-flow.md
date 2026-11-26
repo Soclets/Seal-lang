@@ -43,14 +43,11 @@ end
 for_each name at pos i in names
     show_msg("{i}. {name}")
 end
-for_each round in range[from: 1, to: 3]
-    show_msg("Round {round}!")
-end
 ```
 
 As in Unio (D22, Unio D171 to D174):
-- **It goes through a `List`, an `Array` or a `range[…]`,** in order, or a `Dict`'s values, with `at key name` giving
-  each key (D33); `at pos` and `at offset` on a `Dict` are refused, with `at key` as the fix (D105).
+- **It goes through a `List`, an `Array` or a `range[…]` kept in a variable,** in order, or a `Dict`'s values, with `at
+  key name` giving each key (D33); `at pos` and `at offset` on a `Dict` are refused, with `at key` as the fix (D105).
 - **The item's name is new for each pass,** made by the `for_each` line, and ends with the loop.
 - **`at pos i` or `at offset i`** gives the position too, counting from 1 or from 0.
 - **What it goes through can't change inside it,** nor through a call that can change it, and a loop going through a
@@ -60,5 +57,31 @@ As in Unio (D22, Unio D171 to D174):
 `range` is in chapter 8. Unio's standard, chapter 5, has the rules in full.
 
 `for_each` goes through a text by graphemes, what a person sees as one character (D65, D66).
+
+## `for`
+
+`for` counts, with `range`'s words, `from`, `to` or `before`, and `step_by`, written without brackets or colons
+(D172):
+
+```
+for round from 1 to 3
+    show_msg("Round {round}!")
+end
+for i from 0 before size
+    show_msg("{i}")
+end
+for n from 10 to 0 step_by -2
+    show_msg("{n}")
+end
+```
+
+- **`to` includes the last number, `before` stops short of it,** and `step_by` is optional, counting by 1, negative to
+  count down, as `range`'s labels are (Unio D170, D172). A step of 0, or one pointing away from the end, is refused
+  where Seal can see it and stops with a failed check otherwise, as for `range`.
+- **The counter is a new immutable variable for each pass,** ending with the loop; `break` leaves it.
+- **`for_each` goes through items; `for` counts.** A `range[…]` written straight into a `for_each`, as
+  `for_each i in range[from: 1, to: 3]`, is refused, with `for i from 1 to 3` as the fix; a range kept in a variable
+  is a list, gone through with `for_each` (D99).
+- **`for` with `in`,** as Python writes `for x in xs`, is refused, with `for_each x in xs` as the fix.
 
 **Not decided:** leaving an outer loop; other loops.
