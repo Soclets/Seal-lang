@@ -23,17 +23,21 @@ fn taken(shown: &Mutex<Vec<String>>) -> Vec<String> {
 }
 
 const GOBLIN: &str = "record Enemy\n    name: Text\n    hp: Whole\n\n    proc take_damage[mut enemy: Enemy, amount: Whole]\n        enemy.hp = max(_ - amount, 0)\n    end\nend\n\nmut goblin = Enemy[name: \"Goblin\", hp: 30]\ngoblin.take_damage(12)\nshow_msg(\"{goblin.name} {goblin.hp}\")\n";
+/// A unit group of the script's own, after Seal's, which a file writes and reads back (D123, D171).
+const COINS: &str = "group.unit coins\n    ::bits base\n    ::stacks = 12 bits\nend\n\nheap = 3 stacks\nbits = heap to bits\nshow_msg(\"{bits}\")\n";
 const COUNTER: &str = "mut total: HugeWhole = 1\nfor_each n in range[from: 1, to: 30]\n    total = total * n\nend\nshow_msg(\"{total}\")\n";
 
 // trace: D141, D153
 #[test]
 fn d141_d153_a_bundle_loads_each_script_by_name_running_as_its_text_does() {
     let (doors, shown) = doors();
-    let Ok(bytes) = seal::build(&[("goblin.seal", GOBLIN), ("counter.seal", COUNTER)], &doors) else {
+    let scripts = [("goblin.seal", GOBLIN), ("counter.seal", COUNTER), ("coins.seal", COINS)];
+    let Ok(bytes) = seal::build(&scripts, &doors) else {
         panic!("the scripts didn't build");
     };
-    assert_eq!(seal::names(&bytes, &doors).ok(), Some(vec!["goblin.seal".to_owned(), "counter.seal".to_owned()]));
-    for (name, source) in [("goblin.seal", GOBLIN), ("counter.seal", COUNTER)] {
+    let names = scripts.iter().map(|(name, _)| (*name).to_owned()).collect::<Vec<_>>();
+    assert_eq!(seal::names(&bytes, &doors).ok(), Some(names));
+    for (name, source) in scripts {
         assert!(Script::load(name, source, &doors, LIMITS).is_ok());
         let from_text = taken(&shown);
         assert!(Script::load_compiled(&bytes, name, &doors, LIMITS).is_ok(), "{name} didn't load");

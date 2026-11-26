@@ -286,7 +286,8 @@ pub fn check(
 }
 
 /// The failures Seal's own operations give (D32, D73, D101, D126, Unio D95).
-const BUILT_IN_FAILURES: [&str; 6] = ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"];
+pub(crate) const BUILT_IN_FAILURES: [&str; 6] =
+    ["missing", "not_a_whole", "full", "not_a_bool", "too_big", "not_a_number"];
 
 /// How many failures' names are found by looking down their list, before a table is made for finding them.
 const FEW_FAILURES: usize = 32;

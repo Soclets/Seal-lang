@@ -98,7 +98,7 @@ pub struct Unit {
 }
 
 /// A unit group: what its units measure (D113, D123).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitGroupType {
     pub name: String,
     pub members: Vec<UnitMemberType>,
@@ -106,7 +106,7 @@ pub struct UnitGroupType {
 
 /// A unit in its group, with its size in the group's base unit, when it has a fixed one (D113, D120, D123).
 /// `frames` and `tiles` have none: they convert only through a rate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitMemberType {
     pub name: String,
     pub size: Option<Size>,
@@ -343,6 +343,12 @@ impl TypeTable {
         // Built once, then copied for each script: Seal's own types and unit groups are the same every time.
         static BASE: std::sync::OnceLock<TypeTable> = std::sync::OnceLock::new();
         BASE.get_or_init(TypeTable::base).clone()
+    }
+
+    /// Seal's own unit groups, shared, which every table starts with (D113).
+    fn seal_groups() -> std::sync::Arc<Vec<UnitGroupType>> {
+        static BASE: std::sync::OnceLock<TypeTable> = std::sync::OnceLock::new();
+        BASE.get_or_init(TypeTable::base).unit_groups.clone()
     }
 
     fn base() -> Self {
@@ -833,6 +839,16 @@ impl TypeTable {
 
 // ---- in a `.sealc` file (D141) ----
 
+/// The lists [`TypeTable::verify`] works in: each type's parts, how deep each is, which are being walked, and the
+/// walk itself.
+#[derive(Default)]
+struct VerifyLists {
+    inside: Vec<([TypeId; 2], u8)>,
+    depth: Vec<Option<u32>>,
+    walking: Vec<bool>,
+    stack: Vec<(usize, usize)>,
+}
+
 use crate::compile::file::{FileError, Reader, Writer};
 
 /// How deeply a file's types may nest, so walking one can't overrun the host's stack.
@@ -946,8 +962,14 @@ impl TypeTable {
                 fields(&case.fields, out);
             }
         }
-        out.count(self.unit_groups.len());
-        for group in self.unit_groups.iter() {
+        // Seal's own groups, which every table starts with, are one flag (D171); only the rest are written.
+        let own = Self::seal_groups();
+        let starts_with_own = self.unit_groups.get(..own.len()) == Some(own.as_slice());
+        out.flag(starts_with_own);
+        let written =
+            if starts_with_own { self.unit_groups.get(own.len()..).unwrap_or(&[]) } else { &self.unit_groups[..] };
+        out.count(written.len());
+        for group in written {
             out.text(&group.name);
             out.count(group.members.len());
             for member in &group.members {
@@ -1055,8 +1077,12 @@ impl TypeTable {
             }
             one_ofs.push(OneOfType { name, cases: list });
         }
+        let starts_with_own = input.flag()?;
         let count = input.count(8)?;
-        let mut unit_groups = Vec::with_capacity(count);
+        let only_own = starts_with_own && count == 0;
+        let own = Self::seal_groups();
+        let mut unit_groups =
+            if starts_with_own && count > 0 { own.as_ref().clone() } else { Vec::with_capacity(count) };
         for _ in 0..count {
             let name = input.text()?;
             let members = input.count(5)?;
@@ -1101,7 +1127,8 @@ impl TypeTable {
             bindings,
             records,
             one_ofs,
-            unit_groups: std::sync::Arc::new(unit_groups),
+            // Seal's own, and no others, are shared as a table made from text shares them (D140).
+            unit_groups: if only_own { own } else { std::sync::Arc::new(unit_groups) },
             big_edges,
             parameters,
             required,
@@ -1117,8 +1144,23 @@ impl TypeTable {
     /// # Errors
     ///
     /// What doesn't fit.
-    #[allow(clippy::too_many_lines)] // what each kind of type names is checked, then the walk through them
     pub fn verify(&self) -> Result<(), String> {
+        // The lists checking works in, kept on the thread between files, so checking one makes nothing (D171).
+        thread_local! {
+            static KEPT: std::cell::Cell<VerifyLists> = std::cell::Cell::new(VerifyLists::default());
+        }
+        let mut lists = KEPT.take();
+        let checked = self.verify_in(&mut lists);
+        KEPT.set(lists);
+        checked
+    }
+
+    #[allow(clippy::too_many_lines)] // what each kind of type names is checked, then the walk through them
+    fn verify_in(&self, lists: &mut VerifyLists) -> Result<(), String> {
+        let VerifyLists { inside, depth, walking, stack } = lists;
+        inside.clear();
+        depth.clear();
+        walking.clear();
         let count = self.types.len();
         let in_table = |id: TypeId| (id.0 as usize) < count;
         let unit_known = |unit: UnitRef| {
@@ -1144,20 +1186,22 @@ impl TypeTable {
             }
         }
         // What's inside each type, followed when walking it: its parts, and what a variable is bound to.
-        let mut inside: Vec<Vec<TypeId>> = Vec::with_capacity(count);
+        // At most two parts each, kept side by side, so checking makes one list for all of them (D171).
+        inside.reserve(count);
         for kind in &self.types {
             let parts = match kind {
                 Type::Variable(variable) => match self.bindings.get(*variable as usize) {
-                    Some(binding) => binding.iter().copied().collect(),
+                    Some(Some(binding)) => ([*binding, TypeId(0)], 1),
+                    Some(None) => ([TypeId(0); 2], 0),
                     None => return Err("a type to be worked out with no binding".to_owned()),
                 },
-                Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => vec![*item],
-                Type::Dict { key, value } => vec![*key, *value],
+                Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => ([*item, TypeId(0)], 1),
+                Type::Dict { key, value } => ([*key, *value], 2),
                 Type::Measured { base, unit } => {
                     if !unit_known(unit.top) || unit.per.is_some_and(|per| !unit_known(per)) {
                         return Err("a unit that isn't one of the script's".to_owned());
                     }
-                    vec![*base]
+                    ([*base, TypeId(0)], 1)
                 }
                 Type::Ranged { base, limits } => {
                     for edge in [limits.min, limits.max].into_iter().flatten() {
@@ -1165,7 +1209,7 @@ impl TypeTable {
                             return Err("a limit that isn't one of the script's".to_owned());
                         }
                     }
-                    vec![*base]
+                    ([*base, TypeId(0)], 1)
                 }
                 Type::Record(record) if *record as usize >= self.records.len() => {
                     return Err("a record that isn't one of the script's".to_owned());
@@ -1176,9 +1220,9 @@ impl TypeTable {
                 Type::Parameter(parameter) if *parameter as usize >= self.parameters.len() => {
                     return Err("a type parameter that isn't one of the script's".to_owned());
                 }
-                _ => Vec::new(),
+                _ => ([TypeId(0); 2], 0),
             };
-            if !parts.iter().all(|&part| in_table(part)) {
+            if !parts.0.iter().take(usize::from(parts.1)).all(|&part| in_table(part)) {
                 return Err("a type inside another that isn't in the table".to_owned());
             }
             inside.push(parts);
@@ -1190,15 +1234,24 @@ impl TypeTable {
             return Err("a field whose type isn't in the table".to_owned());
         }
         // Depth first, without nesting in the host's stack: a type met again while it's being walked is a loop.
-        let mut depth: Vec<Option<u32>> = vec![None; count];
-        let mut walking = vec![false; count];
+        depth.resize(count, None);
+        walking.resize(count, false);
         for start in 0..count {
             if depth.get(start).copied().flatten().is_some() {
                 continue;
             }
-            let mut stack = vec![(start, 0usize)];
+            // A type with nothing inside is as deep as it gets at once, with no walk.
+            if inside.get(start).is_some_and(|(_, parts)| *parts == 0) {
+                if let Some(slot) = depth.get_mut(start) {
+                    *slot = Some(0);
+                }
+                continue;
+            }
+            stack.clear();
+            stack.push((start, 0));
             while let Some(&mut (at, ref mut next)) = stack.last_mut() {
-                let parts = inside.get(at).map_or(&[][..], Vec::as_slice);
+                let parts =
+                    inside.get(at).map_or(&[][..], |(parts, count)| parts.get(..usize::from(*count)).unwrap_or(&[]));
                 if let Some(walking_now) = walking.get_mut(at) {
                     *walking_now = true;
                 }

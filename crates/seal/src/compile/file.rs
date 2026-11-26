@@ -66,13 +66,34 @@ impl std::fmt::Display for FileError {
 /// file damaged by chance, never one changed on purpose (D141).
 #[must_use]
 pub fn hash(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ (bytes.len() as u64);
-    let mut words = bytes.chunks_exact(8);
-    for word in &mut words {
-        let mut eight = [0u8; 8];
-        eight.copy_from_slice(word);
-        hash = (hash ^ u64::from_le_bytes(eight)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-        hash ^= hash >> 29;
+    // Four lanes of eight bytes each, worked on side by side, so the processor needn't wait on one to start the next
+    // (D171); then joined, and what's left over added a word or a byte at a time.
+    const MULTIPLY: u64 = 0x9e37_79b9_7f4a_7c15;
+    let word = |eight: &[u8]| {
+        let mut array = [0u8; 8];
+        array.copy_from_slice(eight);
+        u64::from_le_bytes(array)
+    };
+    let mix = |hash: u64, word: u64| {
+        let hash = (hash ^ word).wrapping_mul(MULTIPLY);
+        hash ^ (hash >> 29)
+    };
+    let mut lanes = [
+        0xcbf2_9ce4_8422_2325_u64 ^ (bytes.len() as u64),
+        0x8422_2325_cbf2_9ce4,
+        0x2545_f491_4f6c_dd1d,
+        0x9e37_79b9_7f4a_7c15,
+    ];
+    let mut blocks = bytes.chunks_exact(32);
+    for block in &mut blocks {
+        for (lane, eight) in lanes.iter_mut().zip(block.chunks_exact(8)) {
+            *lane = mix(*lane, word(eight));
+        }
+    }
+    let mut hash = lanes.iter().fold(0u64, |joined, &lane| mix(joined, lane));
+    let mut words = blocks.remainder().chunks_exact(8);
+    for eight in &mut words {
+        hash = mix(hash, word(eight));
     }
     for &byte in words.remainder() {
         hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
@@ -246,9 +267,18 @@ impl<'b> Reader<'b> {
     ///
     /// When the file ends, or the text isn't UTF-8.
     pub fn text(&mut self) -> Result<String, FileError> {
+        self.text_in_file().map(str::to_owned)
+    }
+
+    /// A text, as it is in the file, with nothing made.
+    ///
+    /// # Errors
+    ///
+    /// When the file ends, or the text isn't UTF-8.
+    pub fn text_in_file(&mut self) -> Result<&'b str, FileError> {
         let length = self.count(1)?;
         let bytes = self.take(length)?;
-        std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| FileError::Damaged("a text that isn't UTF-8"))
+        std::str::from_utf8(bytes).map_err(|_| FileError::Damaged("a text that isn't UTF-8"))
     }
 
     /// # Errors
@@ -275,10 +305,10 @@ impl<'b> Reader<'b> {
     }
 }
 
-/// One script in a file, read back.
-pub struct FileScript {
-    pub name: String,
-    pub source: String,
+/// One script in a file, read back, its name and text as they are in the file.
+pub struct FileScript<'b> {
+    pub name: &'b str,
+    pub source: &'b str,
     pub compiled: Compiled,
 }
 
@@ -298,7 +328,6 @@ pub fn write(scripts: &[ToWrite], doors: u64) -> Vec<u8> {
         .map(|script| {
             let mut out = Writer::default();
             out.text(script.name);
-            out.u64(hash(script.source.as_bytes()));
             out.text(script.source);
             write_compiled(script.compiled, &mut out);
             out.bytes
@@ -322,7 +351,7 @@ pub fn write(scripts: &[ToWrite], doors: u64) -> Vec<u8> {
 }
 
 /// The header checked and the index read: the scripts' names, each with where its bytes are.
-fn index(bytes: &[u8], doors: u64) -> Result<Vec<(String, std::ops::Range<usize>)>, FileError> {
+fn index(bytes: &[u8], doors: u64) -> Result<Vec<(&str, std::ops::Range<usize>)>, FileError> {
     if bytes.len() < MAGIC.len() || bytes.get(..MAGIC.len()) != Some(MAGIC.as_slice()) {
         return Err(FileError::NotSeal);
     }
@@ -345,7 +374,7 @@ fn index(bytes: &[u8], doors: u64) -> Result<Vec<(String, std::ops::Range<usize>
     let count = input.count(8)?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
-        let name = input.text()?;
+        let name = input.text_in_file()?;
         let length = input.count(0)?;
         entries.push((name, length));
     }
@@ -369,7 +398,7 @@ fn index(bytes: &[u8], doors: u64) -> Result<Vec<(String, std::ops::Range<usize>
 ///
 /// When the file isn't one this Seal built for these doors, or is damaged.
 pub fn names(bytes: &[u8], doors: u64) -> Result<Vec<String>, FileError> {
-    Ok(index(bytes, doors)?.into_iter().map(|(name, _)| name).collect())
+    Ok(index(bytes, doors)?.into_iter().map(|(name, _)| name.to_owned()).collect())
 }
 
 /// trace: D141, D153. Reads the script named `name` from a file, and verifies it.
@@ -377,18 +406,17 @@ pub fn names(bytes: &[u8], doors: u64) -> Result<Vec<String>, FileError> {
 /// # Errors
 ///
 /// When the file isn't one this Seal built for these doors, is damaged, has no such script, or fails verifying.
-pub fn read(bytes: &[u8], name: &str, doors: u64, door_count: usize) -> Result<FileScript, FileError> {
+pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> Result<FileScript<'b>, FileError> {
     let index = index(bytes, doors)?;
     let range = index
         .into_iter()
-        .find(|(written, _)| written == name)
+        .find(|(written, _)| *written == name)
         .map(|(_, range)| range)
         .ok_or_else(|| FileError::NotInFile(name.to_owned()))?;
     let mut input = Reader::new(bytes.get(range).ok_or(FileError::Damaged("a script past its end"))?);
-    let written_name = input.text()?;
-    let source_hash = input.u64()?;
-    let source = input.text()?;
-    if written_name != name || hash(source.as_bytes()) != source_hash {
+    let written_name = input.text_in_file()?;
+    let source = input.text_in_file()?;
+    if written_name != name {
         return Err(FileError::Damaged("a script that isn't what its index says"));
     }
     let compiled = read_compiled(&mut input)?;
@@ -507,9 +535,15 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
             out.u16(register);
         }
     }
+    // A failure of Seal's own is its number among them, from 1, so reading it makes nothing (D171); 0 is a text.
     out.count(compiled.failure_names.len());
     for name in &compiled.failure_names {
-        out.text(name);
+        if let Some(own) = crate::check::BUILT_IN_FAILURES.iter().position(|own| *own == name.as_ref()) {
+            out.u8(u8::try_from(own + 1).unwrap_or(0));
+        } else {
+            out.u8(0);
+            out.text(name);
+        }
     }
     for &failure in &compiled.built_in_failures {
         out.u32(failure);
@@ -641,7 +675,15 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
     let count = input.count(4)?;
     let mut failure_names = Vec::with_capacity(count);
     for _ in 0..count {
-        failure_names.push(std::borrow::Cow::Owned(input.text()?));
+        let name = match input.u8()? {
+            0 => std::borrow::Cow::Owned(input.text()?),
+            own => std::borrow::Cow::Borrowed(
+                *crate::check::BUILT_IN_FAILURES
+                    .get(usize::from(own) - 1)
+                    .ok_or(FileError::Damaged("a failure of Seal's own that isn't one"))?,
+            ),
+        };
+        failure_names.push(name);
     }
     let built_in_failures = [input.u32()?, input.u32()?, input.u32()?];
     let types = TypeTable::read_file(input)?;
@@ -1235,7 +1277,7 @@ pub fn verify(compiled: &Compiled, door_count: usize) -> Result<(), String> {
                 }
             }
             check_tables(*instruction, compiled, door_count).map_err(|what| wrong(&what))?;
-            for (field, number) in instruction_file::numbered(*instruction) {
+            for (field, number) in instruction_file::numbered(*instruction).into_iter().flatten() {
                 let length = match field {
                     "constant" => compiled.constants.len(),
                     // A failure's number counts from 1, with 0 for none.

@@ -107,9 +107,9 @@ impl Script {
             Err(_) => return Err(refused(name, &FileError::Damaged("reading it went wrong"))),
         };
         let loaded = Loaded {
-            source: Arc::from(script.source.as_str()),
+            source: Arc::from(script.source),
             compiled: Arc::new(script.compiled),
-            name: Arc::from(script.name.as_str()),
+            name: Arc::from(script.name),
         };
         Self::from_loaded(loaded, name, doors, limits, true)
     }
