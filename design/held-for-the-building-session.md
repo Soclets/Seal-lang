@@ -26,7 +26,8 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 
 ## Still to settle with Tankun
 
-- Tomorrow: the SPARK ML-DSA-44 project's repository, model and prompt (Opus 5.5 recommended; guides read first).
+- Tomorrow: the SPARK ML-DSA-44 project's repository and prompt, for Claude Opus 5.5 at `xhigh` (Tankun, 2026-11-26);
+  the Opus 5.5 guides are read again first if this session has been compacted.
 
 - A method that changes its value, called on a field or a list item (D165 stops there).
 - A method that changes its value and can fail: what the lent variable holds after a failure.
