@@ -271,8 +271,9 @@ end
 id = nearest_enemy() ?? 0
 ```
 
-A `Maybe` is made as any `one_of`'s case is (D35), as `Maybe.some[value: p]` or `Maybe.none`, with `T` worked out
-from the value or the type it goes into.
+A `Maybe` is made as any `one_of`'s case is (D35), as `Maybe.some[value: p]` or `Maybe.none`. Like `[]`, a
+`Maybe.none` can't say its `T`, so its type is written where nothing else says it, as `found: Maybe<Whole> =
+Maybe.none` (D30); a `return` into a procedure's written result type already says it (D81).
 
 `?? crash` on a `Maybe` stops the script with a failed check when it's `none`, as for a failure (D54, D79). `?? ignore`
 on a `Maybe` is refused, since the name would be left with nothing in it, with `??` and a value as the fix (D79).
