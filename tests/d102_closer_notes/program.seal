@@ -1,7 +1,7 @@
 proc count_down[start: Whole]
     mut n = start
     while n > 0
-        if n == 1
+        if n eq 1
             show_msg("one")
         else
             show_msg("{n}")

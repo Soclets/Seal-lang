@@ -1,5 +1,5 @@
 proc load_level[name: Text] -> Whole ! [not_found]
-    if name == "cave"
+    if name eq "cave"
         return 5
     else
         fail not_found

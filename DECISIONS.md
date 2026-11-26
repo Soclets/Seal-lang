@@ -1814,6 +1814,8 @@ language written in an editor (D7).
 
 **Tankun's words.** "It's Seal, lol", "It's supposed to be shorter, that overlap isn't even that hard".
 
+(Replaced by D158: `eq` and `not_eq`.)
+
 ## D60. A procedure that takes nothing has no brackets, and every call writes `()`
 
 2026-11-23.
@@ -4766,3 +4768,35 @@ goes with it; `proc`, `mut` and `elif` stay as they are.
 **Tankun's words.** "i kinda wanna `return` & `include` & `instead`, they just read better. And even I see `ret` as
 weird", then, asked "Should `return`, `include` and `instead` come back, replacing D144's `use` and D145's `ret` and
 `incl`?", the owner chose: "yea"
+
+## D158. `eq` and `not_eq` replace `==` and `!=`
+
+2026-11-26.
+
+**Chosen.** Seal compares with `eq` and `not_eq`, as Unio does (Unio D190), replacing D59's `==` and `!=`:
+
+```
+if p.name eq name
+    return Maybe.some[value: p]
+end
+while hp not_eq 0 and lives > 0
+    lives = _ - 1
+end
+```
+
+Every rule about comparing stays as it was (D95, D96, D125, Unio D184). With `==` gone, `=` is Seal's only equals sign,
+always making or changing a name.
+
+**Weighed.**
+- `==` and `!=`, as D59 kept them: shorter, and what most programmers type by reflex. The design session recommended
+  switching before checking D59, then told Tankun it would reverse their earlier call, made because Seal is meant to be
+  quicker to write.
+- Lua's `~=`. `~` already means approximately in Seal (`~0.1`, Unio D155), so `a ~= b` would read as "roughly equal".
+- Other languages' symbols for not equal, `<>`, `/=`, none of which two languages agree on.
+
+**Why this won.** Seal already writes `at_least`, `at_most`, `and`, `or` and `not` as words, so comparing by word
+completes the set; `=` and `==` can't be mixed up; and `!` keeps one job, the failure list.
+
+**Tankun's words.** "Let me see `eq` & `not_eq` replace `==` & `!=`", "`~=` looks more like approx equal, lol", "yea"
+(before the design session pointed out D59), then, asked "Should `eq` and `not_eq` replace `==` and `!=`, replacing
+D59?", the owner chose: "yea"

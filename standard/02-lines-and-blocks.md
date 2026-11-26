@@ -70,7 +70,7 @@ other indentation is refused, with the corrected line as the fix (D106).
 ## Spacing and comments
 
 - **Spacing is fixed,** as Unio's table has it (Unio's standard, chapter 2), with one space on each side of operators,
-  `->`, `!`, `==` and `!=` included, and none inside brackets; a mistake is refused with the corrected line as the fix
+  `->` and `!` included, and none inside brackets; a mistake is refused with the corrected line as the fix
   (D63, Unio D98, D100). The one exception is a parameter group's type, which has a space on each side of its `:`, as
   `[hp, amount : Whole]` (D88).
 - **`//` comments to the end of the line,** with one space before it after code, as `x = 1 // hi`; `x = 1// hi` is

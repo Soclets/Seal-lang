@@ -1,7 +1,7 @@
 proc load_level[name: Text] -> Whole ! [not_found, broken]
-    if name == "cave"
+    if name eq "cave"
         return 5
-    elif name == "ruin"
+    elif name eq "ruin"
         fail broken
     else
         fail not_found

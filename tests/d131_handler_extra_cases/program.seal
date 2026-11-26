@@ -1,7 +1,7 @@
 proc load_level[name: Text] -> Whole ! [not_found, broken]
-    if name == "cave"
+    if name eq "cave"
         return 5
-    elif name == "ruin"
+    elif name eq "ruin"
         fail broken
     else
         fail not_found
@@ -9,7 +9,7 @@ proc load_level[name: Text] -> Whole ! [not_found, broken]
 end
 
 proc load_save[slot: Text] -> Whole ! [not_found]
-    if slot == "slot1"
+    if slot eq "slot1"
         return 7
     else
         fail not_found

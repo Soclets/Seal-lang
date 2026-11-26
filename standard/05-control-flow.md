@@ -14,12 +14,12 @@ end
 
 - **No `:`** after `if`, `elif` or `else` (D9), **one `end`** for the whole `if` (D20).
 - **`elif`** is short for "else if" (D10, D40). Unio writes `else if`, and Seal's `elif` is a deliberate difference.
-- **A condition must be a `Bool`:** `if lives` is refused, with `if lives != 0` as the fix (D16, Unio D187).
+- **A condition must be a `Bool`:** `if lives` is refused, with `if lives not_eq 0` as the fix (D16, Unio D187).
 
 ## Comparisons and logic
 
-`==`, `!=`, `<`, `>`, `at_least` and `at_most` compare, and `and`, `or` and `not` combine (D22, Unio D17, D34). Unio
-now writes `eq` and `not_eq` (Unio D190); Seal keeps `==` and `!=` (D59). Comparisons on `Float`s are exact (Unio D184).
+`eq`, `not_eq`, `<`, `>`, `at_least` and `at_most` compare, and `and`, `or` and `not` combine (D22, D158, Unio D17,
+D34, D190). Comparisons on `Float`s are exact (Unio D184).
 
 Unio's standard, chapter 5, has the rules in full.
 
@@ -32,8 +32,8 @@ while tries < 7 and not won
 end
 ```
 
-`while` runs its body as long as its condition holds, and `break` leaves the loop (D22, Unio D19, D32). `==` and `!=`
-between two `Float`s are refused in a `while` condition (Unio D184).
+`while` runs its body as long as its condition holds, and `break` leaves the loop (D22, Unio D19, D32). `eq` and
+`not_eq` between two `Float`s are refused in a `while` condition (Unio D184).
 
 ## `for_each`
 

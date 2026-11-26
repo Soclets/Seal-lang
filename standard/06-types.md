@@ -25,8 +25,8 @@ examples in Seal's syntax (README).
   refused elsewhere (D115).
 - **A `Decimal` counts in tens,** so `0.1` is exactly 0.1. It holds 34 digits; past them it rounds, nearest with ties
   to even, and `/` rounds the same way. It never shows `~`, since what it shows is always exactly what it holds (D124).
-  It keeps its trailing zeros as IEEE decimal128 does, so `1.50 + 1.50` shows `3.00`; `==` compares amounts, so
-  `3.00 == 3.0` (D125). A `HugeDecimal` never rounds on `+`, `-` or
+  It keeps its trailing zeros as IEEE decimal128 does, so `1.50 + 1.50` shows `3.00`; `eq` compares amounts, so
+  `3.00 eq 3.0` (D125). A `HugeDecimal` never rounds on `+`, `-` or
   `*`, and its `/` gives the exact answer or stops, as `/` on a `Whole` does (D116, Unio D70, D155).
 - **Where it always fits, a number becomes the bigger type by itself:** a `Whole` into a `Decimal` or `HugeDecimal`,
   a `HugeWhole` into a `HugeDecimal`, and a `Decimal` into a `HugeDecimal`. Every other way is written with `be.` and
@@ -40,10 +40,10 @@ examples in Seal's syntax (README).
 - **`.split(by: t)` gives a `List<Text>`,** keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
 - **Splitting by empty text is refused while loading** wherever the empty text can be seen, as `split(by: "")`; one
   that only turns out empty while running is a failed check, as dividing by zero is (D89).
-- **`==` and `!=` compare two texts exactly,** character by character, with nothing normalised: `"Yes" != "yes"`;
-  `<` and `>` on text are refused for now, since text has no one right order (D64, D96).
-- **`==` and `!=` compare bigger values by their contents** (D95): records field by field; lists and arrays by length
-  and their items in order; `Dict`s by their keys, each with an equal value, whatever order they were added in; and
+- **`eq` and `not_eq` compare two texts exactly,** character by character, with nothing normalised:
+  `"Yes" not_eq "yes"`; `<` and `>` on text are refused for now, since text has no one right order (D64, D96).
+- **`eq` and `not_eq` compare bigger values by their contents** (D95): records field by field; lists and arrays by
+  length and their items in order; `Dict`s by their keys, each with an equal value, whatever order they were added in; and
   `one_of`s by their case and its values.
 - **Text is written in double quotes, and joined only by filling it in with braces,** as in `"{first} {last}"` (D16,
   D75, D77, Unio D21, D201). Seal has no operator for joining text: `&` is refused, and so is `+` on text, each with
