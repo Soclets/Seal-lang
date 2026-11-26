@@ -18,6 +18,7 @@ pub mod signature;
 pub mod syntax;
 pub mod text;
 pub mod vm;
+mod wide;
 
 pub use host::{
     Argument, Arguments, Called, DoorOptions, DoorResult, Doors, Error, Failures, FromSeal, IntoArgument, IntoDoor,

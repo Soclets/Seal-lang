@@ -11,10 +11,11 @@ use super::bytecode::{
     JoinPiece, Layout, ProcedureEntry, Register, number_operation,
 };
 use crate::check::tree::{
-    Block, Conversion, Expression, ExpressionKind, HandleFallback, Inside, PathStep, Procedure, Program, Rounding,
-    Statement, StatementKind, VariableId, VariableKind,
+    Block, Conversion, Expression, ExpressionKind, HandleFallback, Inside, NumberConversion, NumberHow, NumberType,
+    PathStep, Procedure, Program, Rounding, Statement, StatementKind, VariableId, VariableKind,
 };
 use crate::check::types::{Type, TypeId};
+use crate::decimal::Number;
 use crate::host::Value;
 use crate::message::{Message, Place};
 use crate::signature::DoorSignature;
@@ -355,8 +356,37 @@ impl<'p> Compiler<'p> {
         to: Register,
     ) {
         let type_id = left.type_id;
-        let (left, right) = (self.value(left), self.value(right));
+        // A `Whole` on the right of maths that keeps its sides in order is read as it is (Building rule 5).
+        let keeps_order =
+            !matches!(operator, BinaryOperator::Greater | BinaryOperator::AtLeast | BinaryOperator::Power);
+        let left = self.value(left);
+        let whole_right = if keeps_order { self.whole_operand(right) } else { None };
+        let right = match whole_right {
+            Some(register) => register,
+            None => self.value(right),
+        };
         self.place = whole.place;
+        if whole_right.is_some() {
+            let operation = match operator {
+                BinaryOperator::Add => number_operation::ADD,
+                BinaryOperator::Subtract => number_operation::SUBTRACT,
+                BinaryOperator::Multiply => number_operation::MULTIPLY,
+                BinaryOperator::Divide => number_operation::DIVIDE,
+                BinaryOperator::DivFloor => number_operation::DIVIDE_FLOOR,
+                BinaryOperator::DivTrunc => number_operation::DIVIDE_TRUNC,
+                BinaryOperator::RemFloor => number_operation::REMAINDER_FLOOR,
+                BinaryOperator::RemTrunc => number_operation::REMAINDER_TRUNC,
+                BinaryOperator::Equal => number_operation::EQUAL,
+                BinaryOperator::NotEqual => number_operation::NOT_EQUAL,
+                BinaryOperator::Less => number_operation::LESS,
+                BinaryOperator::AtMost => number_operation::AT_MOST,
+                _ => return self.internal("an operator in the wrong place"),
+            };
+            let kind = self.number_kind(type_id).unwrap_or(0);
+            let operation = kind * number_operation::TYPE + operation + number_operation::WHOLE_RIGHT;
+            self.emit(Instruction::NumberOperation { to, left, right, operation });
+            return;
+        }
         let (operation, left, right) = match operator {
             BinaryOperator::Add => (number_operation::ADD, left, right),
             BinaryOperator::Subtract => (number_operation::SUBTRACT, left, right),
@@ -378,6 +408,72 @@ impl<'p> Compiler<'p> {
             }
         };
         self.number_operation(operation, type_id, to, left, right);
+    }
+
+    /// The steps of `name = name op value op value …` on a big number, innermost first: each operation's code, with
+    /// its type, its right side, and its place. Nothing when the value isn't such a chain, or any right side reads the name.
+    fn update_steps<'e>(
+        &self,
+        variable: VariableId,
+        value: &'e Expression,
+    ) -> Option<Vec<(u8, &'e Expression, Place)>> {
+        let kind = self.number_kind(value.type_id)?;
+        let mut steps = Vec::new();
+        let mut current = value;
+        loop {
+            match &current.kind {
+                ExpressionKind::Variable(read) if *read == variable && !steps.is_empty() => break,
+                ExpressionKind::Binary { operator, left, right }
+                    if self.number_kind(current.type_id) == Some(kind) && !mentions(right, variable) =>
+                {
+                    let operation = match operator {
+                        BinaryOperator::Add => number_operation::ADD,
+                        BinaryOperator::Subtract => number_operation::SUBTRACT,
+                        BinaryOperator::Multiply => number_operation::MULTIPLY,
+                        BinaryOperator::Divide => number_operation::DIVIDE,
+                        BinaryOperator::DivFloor => number_operation::DIVIDE_FLOOR,
+                        BinaryOperator::DivTrunc => number_operation::DIVIDE_TRUNC,
+                        BinaryOperator::RemFloor => number_operation::REMAINDER_FLOOR,
+                        BinaryOperator::RemTrunc => number_operation::REMAINDER_TRUNC,
+                        _ => return None,
+                    };
+                    steps.push((kind * number_operation::TYPE + operation, right.as_ref(), current.place));
+                    current = left;
+                }
+                _ => return None,
+            }
+        }
+        steps.reverse();
+        Some(steps)
+    }
+
+    /// trace: Building rule 5. A `Whole` standing exactly for a big number on the right of its maths: a `Whole`
+    /// converted to the number's type, or a whole number written out. Gives the register holding the plain `Whole`;
+    /// nothing for anything else, or when compiling plainly.
+    fn whole_operand(&mut self, expression: &Expression) -> Option<Register> {
+        if self.plain {
+            return None;
+        }
+        match &expression.kind {
+            ExpressionKind::Convert {
+                conversion: Conversion::Number(NumberConversion { from: NumberType::Whole, how: NumberHow::Exact, .. }),
+                value,
+            } => Some(self.value(value)),
+            ExpressionKind::Number(number) => {
+                let whole = match number {
+                    Number::Huge(value) => value.to_i64(),
+                    Number::Decimal(value) if value.exponent == 0 && !(value.negative && value.coefficient == 0) => {
+                        i64::try_from(value.coefficient).ok().map(|whole| if value.negative { -whole } else { whole })
+                    }
+                    Number::HugeDecimal(value) if value.exponent == 0 => value.coefficient.to_i64(),
+                    _ => None,
+                }?;
+                let register = self.allocate();
+                self.load_whole(register, whole);
+                Some(register)
+            }
+            _ => None,
+        }
     }
 
     fn is_reference(&self, type_id: TypeId) -> bool {
@@ -1797,6 +1893,25 @@ impl<'p> Compiler<'p> {
             });
             return;
         }
+        // trace: D15, Building rule 5. `name = name op value op value …` on a big number changes the name's number
+        // where it is, one operation at a time, when nothing else holds it, as long as no value reads the name.
+        if !self.plain
+            && let Some(steps) = self.update_steps(variable, value)
+            && matches!(self.location(variable), Location::Register(_) | Location::Global(_))
+        {
+            self.change_in_place(variable, |compiler, target| {
+                // Each step points at its own maths, as it would were it worked out on its own (D17).
+                for (operation, right, place) in steps {
+                    let (right, whole) = match compiler.whole_operand(right) {
+                        Some(register) => (register, number_operation::WHOLE_RIGHT),
+                        None => (compiler.value(right), 0),
+                    };
+                    compiler.place = place;
+                    compiler.emit(Instruction::NumberUpdate { target, right, operation: operation + whole });
+                }
+            });
+            return;
+        }
         // `name = procedure(name)` hands the name's value over to the call and takes the call's value back, so
         // nothing is copied on the way in or out.
         if reference
@@ -2496,7 +2611,8 @@ impl<'p> Compiler<'p> {
                 }
                 self.out.numbers.push(number.clone());
                 self.emit(Instruction::LoadNumber { to, site });
-                true
+                // Made when the script loads and kept as long as it lives, so it's borrowed, as a text is.
+                false
             }
             ExpressionKind::Sqrt(value) if self.number_kind(expression.type_id).is_some() => {
                 let from = self.value(value);
@@ -3508,6 +3624,7 @@ fn mentions(expression: &Expression, variable: VariableId) -> bool {
         | ExpressionKind::Whole(_)
         | ExpressionKind::Float(_)
         | ExpressionKind::Bool(_)
+        | ExpressionKind::Number(_)
         | ExpressionKind::Text(_) => {}
         ExpressionKind::Member { receiver: inner, .. }
         | ExpressionKind::Convert { value: inner, .. }

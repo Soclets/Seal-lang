@@ -13,6 +13,7 @@ use std::cmp::Ordering;
 use crate::big::Big;
 use crate::check::tree::Rounding;
 use crate::maths::round_dyadic;
+use crate::wide::Wide;
 
 /// The most digits a `Decimal` keeps.
 pub const DIGITS: u64 = 34;
@@ -512,6 +513,24 @@ impl Decimal {
         {
             return Ok(Decimal { negative: sum < 0, coefficient: sum.unsigned_abs(), exponent: low.exponent });
         }
+        // Past an `i128`, the exact sum still fits 256 bits while the exponents are near.
+        if gap <= 38
+            && let Some(high_scaled) = Wide::from_u128(high.coefficient).times_ten_to(gap as u32)
+        {
+            let low_wide = Wide::from_u128(low.coefficient);
+            let (negative, magnitude) = if high.negative == low.negative {
+                (high.negative, high_scaled.plus(low_wide))
+            } else if high_scaled.compare(low_wide) == Ordering::Less {
+                (low.negative, Some(low_wide.minus(high_scaled)))
+            } else {
+                (high.negative, Some(high_scaled.minus(low_wide)))
+            };
+            if let Some(magnitude) = magnitude
+                && let Some(rounded) = round_wide(negative, magnitude, i64::from(low.exponent))
+            {
+                return Ok(rounded);
+            }
+        }
         Decimal::rounded(&self.exact().add(&other.exact()))
     }
 
@@ -537,6 +556,9 @@ impl Decimal {
             && (EXPONENT_MIN..=EXPONENT_MAX).contains(&exponent)
         {
             return Ok(Decimal { negative: negative && product != 0, coefficient: product, exponent: exponent as i32 });
+        }
+        if let Some(rounded) = round_wide(negative, Wide::product(self.coefficient, other.coefficient), exponent) {
+            return Ok(rounded);
         }
         round(negative, Big::from_u128(self.coefficient).multiply(&Big::from_u128(other.coefficient)), exponent, false)
     }
@@ -807,7 +829,7 @@ impl NumberRef<'_> {
     #[must_use]
     pub fn size(self) -> usize {
         match self {
-            NumberRef::Huge(value) => Number::Huge(value.clone()).size(),
+            NumberRef::Huge(value) => value.size(),
             NumberRef::Decimal(_) => 16,
             NumberRef::HugeDecimal(value) => value
                 .coefficient
@@ -856,6 +878,37 @@ impl From<PackedDecimal> for Decimal {
             exponent: value.exponent,
         }
     }
+}
+
+/// `round` for a magnitude of up to 256 bits, with nothing allocated: nothing when the answer would be near the ends
+/// of a `Decimal`'s exponents, where `round` takes over.
+fn round_wide(negative: bool, magnitude: Wide, exponent: i64) -> Option<Decimal> {
+    let dropped = magnitude.digits().saturating_sub(DIGITS as u32);
+    let mut exponent = exponent + i64::from(dropped);
+    if dropped > 38 || !(EXPONENT_MIN..=EXPONENT_MAX).contains(&exponent) {
+        return None;
+    }
+    if dropped == 0 {
+        let coefficient = magnitude.to_u128()?;
+        return Some(Decimal { negative: negative && coefficient != 0, coefficient, exponent: exponent as i32 });
+    }
+    let (quotient, remainder) = magnitude.divide_ten_to(dropped);
+    let mut coefficient = quotient.to_u128()?;
+    let divisor = *POWERS_OF_TEN.get(dropped as usize)?;
+    // Both are below 10^38, so twice the remainder fits a `u128`.
+    let twice = remainder * 2;
+    if twice > divisor || (twice == divisor && coefficient % 2 == 1) {
+        coefficient += 1;
+        if coefficient == POWERS_OF_TEN[DIGITS as usize] {
+            // Rounding up made 10^34, which is 10^33 one place up.
+            coefficient = POWERS_OF_TEN[DIGITS as usize - 1];
+            exponent += 1;
+            if exponent > EXPONENT_MAX {
+                return None;
+            }
+        }
+    }
+    Some(Decimal { negative, coefficient, exponent: exponent as i32 })
 }
 
 /// A magnitude rounded to a `Decimal`: to 34 digits and into the exponents it has, to the nearest, a tie to even.

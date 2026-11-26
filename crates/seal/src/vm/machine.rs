@@ -102,6 +102,9 @@ pub struct Machine {
     pub globals: Vec<u64>,
     /// The handles of the script's own texts, which live as long as it does.
     pub texts: Vec<u64>,
+    /// The handles of the numbers written in the script, made once when it loads and kept as long as it lives, so
+    /// using one makes nothing (Building rule 5).
+    pub numbers: Vec<u64>,
     /// Where a door's arguments are put for the call, kept from one call to the next.
     pub door_arguments: Vec<Value>,
 }
@@ -434,16 +437,13 @@ fn rare_instruction(
             join_pieces(registers, heap, compiled, to, site, appending).map_err(stop)?;
         }
         // trace: D115, D116
-        Instruction::LoadNumber { to, site } => {
-            let Some(number) = compiled.numbers.get(usize::from(site)) else {
-                return Err(broken("a number written out that isn't there", pc));
-            };
-            let handle = heap.new_number(number.clone()).map_err(|error| stop(Stop::from(error)))?;
-            set(registers, to, handle)?;
-        }
         Instruction::NumberOperation { to, left, right, operation } => {
             let made = super::numbers::operation(operation, registers, left, right, heap).map_err(stop)?;
             set(registers, to, made)?;
+        }
+        Instruction::NumberUpdate { target, right, operation } => {
+            let made = super::numbers::update(operation, registers, target, right, heap).map_err(stop)?;
+            set(registers, target, made)?;
         }
         Instruction::ConvertNumber { to, from, site } => {
             let Some(&(conversion, failure)) = compiled.number_conversions.get(usize::from(site)) else {
@@ -1414,6 +1414,11 @@ pub fn run(
                 Some(handle) => set!(to, *handle),
                 None => return Err(broken("a text that isn't there", pc)),
             },
+            // trace: D115, D116. Made when the script loaded, and borrowed here, as a text is.
+            Instruction::LoadNumber { to, site } => match machine.numbers.get(usize::from(site)) {
+                Some(handle) => set!(to, *handle),
+                None => return Err(broken("a number written out that isn't there", pc)),
+            },
             Instruction::LoadPlainCase { to, case } => set!(to, PLAIN_CASE | u64::from(case)),
             Instruction::GetGlobal { to, global } => match machine.globals.get(usize::from(global)) {
                 Some(value) => set!(to, *value),
@@ -1899,8 +1904,8 @@ pub fn run(
             | Instruction::TextToBool { .. }
             | Instruction::JoinPieces { .. }
             | Instruction::AppendPieces { .. }
-            | Instruction::LoadNumber { .. }
             | Instruction::NumberOperation { .. }
+            | Instruction::NumberUpdate { .. }
             | Instruction::ConvertNumber { .. } => {
                 match rare_instruction(instruction, registers, heap, compiled, pc, steps_left) {
                     Ok(Some(failed)) => failure = failed,

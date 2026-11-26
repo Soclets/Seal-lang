@@ -307,6 +307,10 @@ impl Script {
                 let handle = self.machine.heap.new_text(text, text.len())?;
                 self.machine.texts.push(handle);
             }
+            for number in &self.compiled.numbers {
+                let handle = self.machine.heap.new_number(number.clone())?;
+                self.machine.numbers.push(handle);
+            }
             Ok(())
         };
         if let Err(error) = set_up() {
@@ -821,6 +825,7 @@ impl Script {
             return Ok(());
         }
         let mut roots: Vec<u64> = self.machine.texts.clone();
+        roots.extend(&self.machine.numbers);
         for (slot, reference) in self.machine.globals.iter().zip(&self.compiled.global_references) {
             if *reference {
                 roots.push(*slot);

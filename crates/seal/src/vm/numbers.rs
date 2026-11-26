@@ -79,15 +79,106 @@ fn decimal_stop(error: NumberError, when: String) -> Stop {
 ///
 /// A failed check, the memory cap or the step budget being reached, or a bug in Seal.
 pub fn operation(code: u8, registers: &[u64], left: Register, right: Register, heap: &mut Heap) -> Result<u64, Stop> {
+    match worked_out(code, registers, left, right, heap)? {
+        Answer::Bool(flag) => Ok(u64::from(flag)),
+        Answer::Number(number) => {
+            heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
+            heap.new_number(number).map_err(Stop::from)
+        }
+    }
+}
+
+/// The number of an operation's type that a plain `Whole` stands for, when `right` holds one (`WHOLE_RIGHT`).
+fn whole_as(code: u8, whole: i64) -> Number {
+    match (code & !op::WHOLE_RIGHT) / op::TYPE {
+        0 => Number::Huge(Big::from_i64(whole)),
+        1 => Number::Decimal(Decimal::from_whole(whole)),
+        _ => Number::HugeDecimal(HugeDecimal::from_whole(whole)),
+    }
+}
+
+fn number_ref(number: &Number) -> NumberRef<'_> {
+    match number {
+        Number::Huge(value) => NumberRef::Huge(value),
+        Number::Decimal(value) => NumberRef::Decimal(*value),
+        Number::HugeDecimal(value) => NumberRef::HugeDecimal(value),
+    }
+}
+
+/// trace: D15, Building rule 5. Runs a `NumberUpdate`: `target = target op right`, giving the target's slot after.
+/// Adding to, taking from, or multiplying by a plain `Whole` a `HugeWhole` held by nothing else changes it where it
+/// is; any other operation's answer takes the old number's place when nothing else holds it.
+///
+/// # Errors
+///
+/// As [`operation`].
+pub fn update(code: u8, registers: &[u64], target: Register, right: Register, heap: &mut Heap) -> Result<u64, Stop> {
     let slot = |register: Register| {
         registers.get(usize::from(register)).copied().ok_or_else(|| internal("a register outside its frame"))
     };
+    let (target_slot, right_slot) = (slot(target)?, slot(right)?);
+    let whole_right = code & op::WHOLE_RIGHT != 0;
+    let operation = (code & !op::WHOLE_RIGHT) % op::TYPE;
+    let in_place = (code & !op::WHOLE_RIGHT) / op::TYPE == 0
+        && (matches!(operation, op::ADD | op::SUBTRACT) || (operation == op::MULTIPLY && whole_right))
+        && (whole_right || right_slot != target_slot);
+    if in_place && let Some((mut number, size)) = heap.take_number(target_slot) {
+        let right_size = if whole_right { 1 } else { heap.number(right_slot).map_or(1, pieces) };
+        let left_size = (size as u64 / 4).max(1);
+        // Adding or multiplying by a small number is linear, so that's what's paid.
+        let paid = afford(heap, left_size.saturating_add(right_size));
+        let changed = paid.and_then(|()| {
+            let Number::Huge(value) = number.as_mut() else { return Err(internal("a number of the wrong type")) };
+            if whole_right {
+                let whole = right_slot.cast_signed();
+                if operation == op::MULTIPLY {
+                    value.multiply_in_place(whole);
+                } else {
+                    value.add_in_place(&Big::from_i64(whole), operation == op::SUBTRACT);
+                }
+            } else {
+                let NumberRef::Huge(other) = heap.number(right_slot).map_err(Stop::from)? else {
+                    return Err(internal("a number of the wrong type"));
+                };
+                value.add_in_place(other, operation == op::SUBTRACT);
+            }
+            Ok(())
+        });
+        heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
+        let put = heap.put_number(target_slot, number, size).map_err(Stop::from);
+        changed?;
+        put?;
+        return Ok(target_slot);
+    }
+    match worked_out(code, registers, target, right, heap)? {
+        Answer::Bool(_) => Err(internal("a comparison as a change")),
+        Answer::Number(number) => {
+            heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
+            match heap.replace_number(target_slot, number).map_err(Stop::from)? {
+                None => Ok(target_slot),
+                Some(number) => {
+                    let made = heap.new_number(number).map_err(Stop::from)?;
+                    heap.release(target_slot, &[]);
+                    Ok(made)
+                }
+            }
+        }
+    }
+}
+
+/// Works out a `NumberOperation`'s answer, paying for the work first.
+fn worked_out(code: u8, registers: &[u64], left: Register, right: Register, heap: &mut Heap) -> Result<Answer, Stop> {
+    let slot = |register: Register| {
+        registers.get(usize::from(register)).copied().ok_or_else(|| internal("a register outside its frame"))
+    };
+    let whole_right = code & op::WHOLE_RIGHT != 0;
+    let code = code & !op::WHOLE_RIGHT;
     let operation = code % op::TYPE;
     // Everything here is at most quadratic in the numbers' sizes, so that's what's paid before starting.
     let size =
         |register: Register| -> u64 { slot(register).ok().and_then(|slot| heap.number(slot).ok()).map_or(1, pieces) };
-    let (left_size, right_size) =
-        (size(left), if matches!(operation, op::POWER | op::NEGATE | op::ABS | op::SQRT) { 1 } else { size(right) });
+    let plain_right = whole_right || matches!(operation, op::POWER | op::NEGATE | op::ABS | op::SQRT);
+    let (left_size, right_size) = (size(left), if plain_right { 1 } else { size(right) });
     let mut work = left_size.saturating_add(right_size).saturating_pow(2);
     if operation == op::POWER {
         let times = slot(right)?.cast_signed().unsigned_abs().min(u64::from(u32::MAX));
@@ -99,28 +190,23 @@ pub fn operation(code: u8, registers: &[u64], left: Register, right: Register, h
         };
     }
     afford(heap, work)?;
-    let answer = {
-        let heap: &Heap = heap;
-        let number = |register: Register| heap.number(slot(register)?).map_err(Stop::from);
-        let first = number(left)?;
-        let room = heap.room_left();
-        match operation {
-            op::NEGATE | op::ABS | op::SQRT => one(operation, first)?,
-            op::POWER => power(first, slot(right)?.cast_signed(), room)?,
-            op::CLAMP | op::LERP => {
-                let (second, third) = (number(right)?, number(right.wrapping_add(1))?);
-                three(operation, first, second, third)?
-            }
-            _ => two(operation, first, number(right)?, room)?,
+    let heap: &Heap = heap;
+    let number = |register: Register| heap.number(slot(register)?).map_err(Stop::from);
+    let first = number(left)?;
+    let room = heap.room_left();
+    Ok(match operation {
+        op::NEGATE | op::ABS | op::SQRT => one(operation, first)?,
+        op::POWER => power(first, slot(right)?.cast_signed(), room)?,
+        op::CLAMP | op::LERP => {
+            let (second, third) = (number(right)?, number(right.wrapping_add(1))?);
+            three(operation, first, second, third)?
         }
-    };
-    match answer {
-        Answer::Bool(flag) => Ok(u64::from(flag)),
-        Answer::Number(number) => {
-            heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
-            heap.new_number(number).map_err(Stop::from)
+        _ if whole_right => {
+            let whole = whole_as(code, slot(right)?.cast_signed());
+            two(operation, first, number_ref(&whole), room)?
         }
-    }
+        _ => two(operation, first, number(right)?, room)?,
+    })
 }
 
 /// An operation on one number.
@@ -296,6 +382,20 @@ pub enum Converted {
 /// The memory cap, or a bug in Seal.
 pub fn convert(conversion: NumberConversion, failure: u16, slot: u64, heap: &mut Heap) -> Result<Converted, Stop> {
     let fail = Ok(Converted::Failed(u32::from(failure)));
+    // A `Whole` becomes any of the three exactly, so it's made straight away, with no exact decimal on the way.
+    if conversion.from == NumberType::Whole {
+        let whole = slot.cast_signed();
+        let made = match conversion.to {
+            NumberType::Decimal => Some(Number::Decimal(Decimal::from_whole(whole))),
+            NumberType::Huge => Some(Number::Huge(Big::from_i64(whole))),
+            NumberType::HugeDecimal => Some(Number::HugeDecimal(HugeDecimal::from_whole(whole))),
+            _ => None,
+        };
+        if let Some(made) = made {
+            heap.work = heap.work.saturating_add((made.size() as u64 / 4).max(1));
+            return heap.new_number(made).map(Converted::Slot).map_err(Stop::from);
+        }
+    }
     if !matches!(conversion.from, NumberType::Whole | NumberType::Float | NumberType::Text) {
         let size = heap.number(slot).map_or(1, pieces);
         afford(heap, size.saturating_pow(2))?;

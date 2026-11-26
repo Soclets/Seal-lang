@@ -551,6 +551,14 @@ pub enum Instruction {
         right: Register,
         operation: u8,
     },
+    /// `target = target op right` on a `HugeWhole`, `Decimal` or `HugeDecimal`, with `operation` as
+    /// `NumberOperation` has it: changed where it is when nothing else holds it, or else made anew, the old one
+    /// released (Building rule 5, D15).
+    NumberUpdate {
+        target: Register,
+        right: Register,
+        operation: u8,
+    },
     /// A conversion into or out of a number type, as `number_conversions` at `site` says (D115, D116, D126).
     ConvertNumber {
         to: Register,
@@ -1127,4 +1135,7 @@ pub mod number_operation {
     pub const LERP: u8 = 19;
     /// What the type adds: a `HugeWhole` 0, a `Decimal` 1, a `HugeDecimal` 2, each times this.
     pub const TYPE: u8 = 32;
+    /// Added when `right` holds a plain `Whole`, standing for the same number of the operation's type, so it's never
+    /// made on the heap (Building rule 5).
+    pub const WHOLE_RIGHT: u8 = 128;
 }

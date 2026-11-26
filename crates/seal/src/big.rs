@@ -14,7 +14,96 @@ use std::fmt::Write as _;
 pub struct Big {
     negative: bool,
     /// Base 2^32 digits, least significant first, with no zeros at the top; empty for zero.
-    digits: Vec<u32>,
+    digits: Digits,
+}
+
+/// A `Big`'s digits: up to four held in place, so a number that fits 128 bits, as most of a script's do, is made
+/// with nothing allocated, and more in a list (Building rule 5). A number has one form only: four digits or fewer
+/// are always held in place.
+#[derive(Clone)]
+enum Digits {
+    Small { length: u8, digits: [u32; 4] },
+    Large(Vec<u32>),
+}
+
+impl Default for Digits {
+    fn default() -> Digits {
+        Digits::Small { length: 0, digits: [0; 4] }
+    }
+}
+
+impl Digits {
+    /// Digits with no zeros at the top, held in place when there are four or fewer.
+    fn from_vec(digits: Vec<u32>) -> Digits {
+        if digits.len() <= 4 {
+            let mut small = [0u32; 4];
+            small[..digits.len()].copy_from_slice(&digits);
+            Digits::Small { length: digits.len() as u8, digits: small }
+        } else {
+            Digits::Large(digits)
+        }
+    }
+
+    fn from_u128(value: u128) -> Digits {
+        let digits = [value as u32, (value >> 32) as u32, (value >> 64) as u32, (value >> 96) as u32];
+        let length = 4 - (value.leading_zeros() / 32) as u8;
+        Digits::Small { length, digits }
+    }
+
+    /// The value, when it's held in place.
+    fn small(&self) -> Option<u128> {
+        match self {
+            Digits::Small { digits, .. } => Some(
+                u128::from(digits[0])
+                    | (u128::from(digits[1]) << 32)
+                    | (u128::from(digits[2]) << 64)
+                    | (u128::from(digits[3]) << 96),
+            ),
+            Digits::Large(_) => None,
+        }
+    }
+
+    fn as_slice(&self) -> &[u32] {
+        match self {
+            Digits::Small { length, digits } => &digits[..usize::from(*length)],
+            Digits::Large(digits) => digits,
+        }
+    }
+
+    fn into_vec(self) -> Vec<u32> {
+        match self {
+            Digits::Small { .. } => self.as_slice().to_vec(),
+            Digits::Large(digits) => digits,
+        }
+    }
+}
+
+impl std::ops::Deref for Digits {
+    type Target = [u32];
+
+    fn deref(&self) -> &[u32] {
+        self.as_slice()
+    }
+}
+
+impl PartialEq for Digits {
+    fn eq(&self, other: &Digits) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for Digits {}
+
+impl std::hash::Hash for Digits {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
+    }
+}
+
+impl std::fmt::Debug for Digits {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_slice().fmt(formatter)
+    }
 }
 
 /// Adds two digit lists.
@@ -49,6 +138,68 @@ fn subtract_digits(left: &[u32], right: &[u32]) -> Vec<u32> {
     }
     trim(&mut out);
     out
+}
+
+/// Adds `other` into `digits`, in place, two digits at a time.
+fn add_into_vec(digits: &mut Vec<u32>, other: &[u32]) {
+    if digits.len() < other.len() {
+        digits.resize(other.len(), 0);
+    }
+    let (head, tail) = digits.split_at_mut(other.len());
+    let mut carry = false;
+    let mut pairs = head.chunks_exact_mut(2);
+    let mut theirs = other.chunks_exact(2);
+    for (pair, their) in (&mut pairs).zip(&mut theirs) {
+        let mine = u64::from(pair[0]) | (u64::from(pair[1]) << 32);
+        let added = u64::from(their[0]) | (u64::from(their[1]) << 32);
+        let (sum, first) = mine.overflowing_add(added);
+        let (sum, second) = sum.overflowing_add(u64::from(carry));
+        pair[0] = sum as u32;
+        pair[1] = (sum >> 32) as u32;
+        carry = first || second;
+    }
+    let mut carry = u64::from(carry);
+    for (digit, &their) in pairs.into_remainder().iter_mut().zip(theirs.remainder()) {
+        let sum = u64::from(*digit) + u64::from(their) + carry;
+        *digit = sum as u32;
+        carry = sum >> 32;
+    }
+    for digit in tail {
+        if carry == 0 {
+            break;
+        }
+        let sum = u64::from(*digit) + carry;
+        *digit = sum as u32;
+        carry = sum >> 32;
+    }
+    if carry != 0 {
+        digits.push(carry as u32);
+    }
+}
+
+/// Subtracts the smaller of `digits` and `other` from the bigger, in place in `digits`: `other` from `digits`, or
+/// `digits` from `other` when `reversed`.
+fn subtract_from_vec(digits: &mut Vec<u32>, other: &[u32], reversed: bool) {
+    if digits.len() < other.len() {
+        digits.resize(other.len(), 0);
+    }
+    let (head, tail) = digits.split_at_mut(other.len());
+    let mut borrow = 0u64;
+    for (digit, &theirs) in head.iter_mut().zip(other) {
+        let (big, small) = if reversed { (theirs, *digit) } else { (*digit, theirs) };
+        let difference = u64::from(big).wrapping_sub(u64::from(small)).wrapping_sub(borrow);
+        *digit = difference as u32;
+        borrow = difference >> 63;
+    }
+    // Only `digits` can be longer, and only when it's the bigger.
+    for digit in tail {
+        if borrow == 0 {
+            break;
+        }
+        let difference = u64::from(*digit).wrapping_sub(borrow);
+        *digit = difference as u32;
+        borrow = difference >> 63;
+    }
 }
 
 fn trim(digits: &mut Vec<u32>) {
@@ -121,7 +272,7 @@ fn toom_three(left: &[u32], right: &[u32]) -> Vec<u32> {
         .add(&second_term.shift_left(2 * shift))
         .add(&third_term.shift_left(3 * shift))
         .add(&at_infinity.shift_left(4 * shift));
-    product.digits
+    product.digits.into_vec()
 }
 
 /// Karatsuba's method: three half-size products instead of four, so its time grows as the length to the power 1.58
@@ -266,7 +417,7 @@ fn divide_by_reciprocal(dividend: &[u32], divisor: &[u32]) -> Option<(Vec<u32>, 
             quotient = quotient.add(&one);
             remainder = remainder.subtract(&divisor);
         } else {
-            return Some((quotient.digits, remainder.digits));
+            return Some((quotient.digits.into_vec(), remainder.digits.into_vec()));
         }
     }
     None
@@ -395,7 +546,7 @@ fn split_width(level: usize) -> usize {
 /// Writes a magnitude's decimal digits, padded with zeros to `width` when one is given.
 fn write_decimal(digits: &[u32], width: Option<usize>, powers: &mut Vec<Big>, text: &mut String) {
     if digits.len() <= SHORT_TEXT_DIGITS {
-        let short = Big { negative: false, digits: digits.to_vec() }.short_decimal();
+        let short = Big::from_parts(false, digits.to_vec()).short_decimal();
         let short = if width.is_some() && digits.is_empty() { String::new() } else { short };
         for _ in short.len()..width.unwrap_or(0) {
             text.push('0');
@@ -447,9 +598,7 @@ impl Big {
 
     #[must_use]
     pub fn from_u64(value: u64) -> Big {
-        let mut digits = vec![value as u32, (value >> 32) as u32];
-        trim(&mut digits);
-        Big { negative: false, digits }
+        Big::from_u128(u128::from(value))
     }
 
     #[must_use]
@@ -461,14 +610,17 @@ impl Big {
 
     #[must_use]
     pub fn from_u128(value: u128) -> Big {
-        let mut digits = vec![value as u32, (value >> 32) as u32, (value >> 64) as u32, (value >> 96) as u32];
-        trim(&mut digits);
-        Big { negative: false, digits }
+        Big { negative: false, digits: Digits::from_u128(value) }
+    }
+
+    /// A magnitude that fits 128 bits, with its sign, but never a negative zero.
+    fn from_magnitude(negative: bool, magnitude: u128) -> Big {
+        Big { negative: negative && magnitude != 0, digits: Digits::from_u128(magnitude) }
     }
 
     fn from_parts(negative: bool, mut digits: Vec<u32>) -> Big {
         trim(&mut digits);
-        Big { negative: negative && !digits.is_empty(), digits }
+        Big { negative: negative && !digits.is_empty(), digits: Digits::from_vec(digits) }
     }
 
     /// The number written in decimal digits, with a `-` in front when negative; nothing if it isn't one.
@@ -536,7 +688,7 @@ impl Big {
 
     #[must_use]
     pub fn negated(&self) -> Big {
-        Big::from_parts(!self.negative, self.digits.clone())
+        Big { negative: !self.negative && !self.digits.is_empty(), digits: self.digits.clone() }
     }
 
     #[must_use]
@@ -575,22 +727,90 @@ impl Big {
 
     #[must_use]
     pub fn add(&self, other: &Big) -> Big {
-        if self.negative == other.negative {
-            return Big::from_parts(self.negative, add_digits(&self.digits, &other.digits));
-        }
-        match compare_digits(&self.digits, &other.digits) {
-            Ordering::Less => Big::from_parts(other.negative, subtract_digits(&other.digits, &self.digits)),
-            _ => Big::from_parts(self.negative, subtract_digits(&self.digits, &other.digits)),
-        }
+        self.add_signed(other, other.negative)
     }
 
     #[must_use]
     pub fn subtract(&self, other: &Big) -> Big {
-        self.add(&other.negated())
+        self.add_signed(other, !other.negative && !other.is_zero())
+    }
+
+    /// `self` plus `other`'s magnitude with the sign given, so subtracting copies nothing to flip a sign.
+    fn add_signed(&self, other: &Big, other_negative: bool) -> Big {
+        if let (Some(left), Some(right)) = (self.digits.small(), other.digits.small()) {
+            if self.negative != other_negative {
+                return if left >= right {
+                    Big::from_magnitude(self.negative, left - right)
+                } else {
+                    Big::from_magnitude(other_negative, right - left)
+                };
+            }
+            if let Some(sum) = left.checked_add(right) {
+                return Big::from_magnitude(self.negative, sum);
+            }
+        }
+        if self.negative == other_negative {
+            return Big::from_parts(self.negative, add_digits(&self.digits, &other.digits));
+        }
+        match compare_digits(&self.digits, &other.digits) {
+            Ordering::Less => Big::from_parts(other_negative, subtract_digits(&other.digits, &self.digits)),
+            _ => Big::from_parts(self.negative, subtract_digits(&self.digits, &other.digits)),
+        }
+    }
+
+    /// trace: Building rule 5. `self + other`, or `self - other` when `subtract`, changing `self` where it is and
+    /// reusing its room, so a number that keeps growing by adding allocates only when it outgrows its room.
+    pub fn add_in_place(&mut self, other: &Big, subtract: bool) {
+        let other_negative = if subtract { !other.negative && !other.is_zero() } else { other.negative };
+        if self.digits.small().is_some() && other.digits.small().is_some() {
+            *self = self.add_signed(other, other_negative);
+            return;
+        }
+        let mut digits = std::mem::take(&mut self.digits).into_vec();
+        let mut negative = self.negative;
+        if negative == other_negative {
+            add_into_vec(&mut digits, &other.digits);
+        } else if compare_digits(&digits, &other.digits) == Ordering::Less {
+            subtract_from_vec(&mut digits, &other.digits, true);
+            negative = other_negative;
+        } else {
+            subtract_from_vec(&mut digits, &other.digits, false);
+        }
+        *self = Big::from_parts(negative, digits);
+    }
+
+    /// trace: Building rule 5. `self × factor`, changing `self` where it is, as Python's fast path for multiplying
+    /// by a small number does.
+    pub fn multiply_in_place(&mut self, factor: i64) {
+        let negative = self.negative != (factor < 0);
+        let by = factor.unsigned_abs();
+        if let Some(small) = self.digits.small()
+            && let Some(product) = small.checked_mul(u128::from(by))
+        {
+            *self = Big::from_magnitude(negative, product);
+            return;
+        }
+        let mut digits = std::mem::take(&mut self.digits).into_vec();
+        let mut carry = 0u128;
+        for digit in &mut digits {
+            let product = u128::from(*digit) * u128::from(by) + carry;
+            *digit = product as u32;
+            carry = product >> 32;
+        }
+        while carry != 0 {
+            digits.push(carry as u32);
+            carry >>= 32;
+        }
+        *self = Big::from_parts(negative, digits);
     }
 
     #[must_use]
     pub fn multiply(&self, other: &Big) -> Big {
+        if let (Some(left), Some(right)) = (self.digits.small(), other.digits.small())
+            && let Some(product) = left.checked_mul(right)
+        {
+            return Big::from_magnitude(self.negative != other.negative, product);
+        }
         Big::from_parts(self.negative != other.negative, multiply_digits(&self.digits, &other.digits))
     }
 
@@ -600,6 +820,12 @@ impl Big {
     pub fn divide_truncating(&self, other: &Big) -> Option<(Big, Big)> {
         if other.is_zero() {
             return None;
+        }
+        if let (Some(left), Some(right)) = (self.digits.small(), other.digits.small()) {
+            return Some((
+                Big::from_magnitude(self.negative != other.negative, left / right),
+                Big::from_magnitude(self.negative, left % right),
+            ));
         }
         let (quotient, remainder) = divide_digits(&self.digits, &other.digits);
         Some((Big::from_parts(self.negative != other.negative, quotient), Big::from_parts(self.negative, remainder)))
@@ -738,7 +964,7 @@ impl Big {
             return "0".to_owned();
         }
         let mut pieces = Vec::new();
-        let mut rest = self.digits.clone();
+        let mut rest = self.digits.to_vec();
         while !rest.is_empty() {
             let (quotient, remainder) = divide_small(&rest, 1_000_000_000);
             pieces.push(remainder);
@@ -824,6 +1050,40 @@ mod tests {
             assert_eq!(square.square_root_floor(), root, "{count} digits");
             assert_eq!(square.add(&root).add(&root).square_root_floor(), root, "{count} digits, just below the next");
             assert_eq!(square.subtract(&Big::from_u64(1)).square_root_floor(), root.subtract(&Big::from_u64(1)));
+        }
+    }
+
+    // trace: Building rule 5. Changing a number where it is gives what making a new one does, at every size and
+    // sign, held in place or not.
+    #[test]
+    fn changing_in_place_agrees_with_making_anew() {
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        for round in 0..3000u64 {
+            let sizes = [0usize, 1, 2, 3, 4, 5, 8, 33];
+            let pick = |seed: &mut u64| {
+                *seed ^= *seed << 13;
+                *seed ^= *seed >> 7;
+                *seed ^= *seed << 17;
+                *seed
+            };
+            let left_size = sizes[(pick(&mut seed) % 8) as usize];
+            let right_size = sizes[(pick(&mut seed) % 8) as usize];
+            let left = Big::from_parts(pick(&mut seed) % 2 == 0, random_digits(&mut seed, left_size));
+            let right = Big::from_parts(pick(&mut seed) % 2 == 0, random_digits(&mut seed, right_size));
+            let mut sum = left.clone();
+            sum.add_in_place(&right, false);
+            assert_eq!(sum, left.add(&right), "round {round}: {left:?} + {right:?}");
+            let mut difference = left.clone();
+            difference.add_in_place(&right, true);
+            assert_eq!(difference, left.subtract(&right), "round {round}: {left:?} - {right:?}");
+            let factor = match round % 4 {
+                0 => i64::MIN,
+                1 => i64::MAX,
+                _ => pick(&mut seed).cast_signed() >> (pick(&mut seed) % 64),
+            };
+            let mut product = left.clone();
+            product.multiply_in_place(factor);
+            assert_eq!(product, left.multiply(&Big::from_i64(factor)), "round {round}: {left:?} * {factor}");
         }
     }
 

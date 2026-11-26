@@ -73,7 +73,13 @@ pub struct Heap {
     pub work_allowance: u64,
     /// Freed short texts, emptied, whose room the next short texts reuse.
     spare_texts: Vec<String>,
+    /// Freed numbers' boxes, which the next numbers are made in, so working with numbers asks the system for less.
+    #[allow(clippy::vec_box)] // the boxes themselves are what's kept, to be reused
+    spare_numbers: Vec<Box<Number>>,
 }
+
+/// How many freed numbers' boxes are kept for reuse.
+const SPARE_NUMBERS: usize = 64;
 
 impl Heap {
     #[must_use]
@@ -247,8 +253,80 @@ impl Heap {
         let size = number.size();
         match number {
             Number::Decimal(decimal) => self.allocate(Object::Decimal(decimal.into()), size),
-            other => self.allocate(Object::Number(Box::new(other)), size),
+            other => {
+                let boxed = match self.spare_numbers.pop() {
+                    Some(mut spare) => {
+                        *spare = other;
+                        spare
+                    }
+                    None => Box::new(other),
+                };
+                self.allocate(Object::Number(boxed), size)
+            }
         }
+    }
+
+    /// trace: D15, Building rule 5. A number held by nothing else, taken out of its place to be changed there, with
+    /// what it costs now; nothing when it's shared, isn't a number kept in a box, or is taken already. It goes back
+    /// with [`Heap::put_number`].
+    pub fn take_number(&mut self, handle: u64) -> Option<(Box<Number>, usize)> {
+        let entry = self.entry_mut(handle)?;
+        if entry.holders != 1 || !matches!(entry.object, Object::Number(_)) {
+            return None;
+        }
+        let Object::Number(number) = std::mem::replace(&mut entry.object, Object::Taken) else { return None };
+        let size = number.size();
+        Some((number, size))
+    }
+
+    /// Puts back a number [`Heap::take_number`] took out, counting what it costs now in place of what it did.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the number grew past the script's cap (D14); it's put back all the same.
+    pub fn put_number(&mut self, handle: u64, number: Box<Number>, size_before: usize) -> Result<(), HeapError> {
+        let size = number.size();
+        if let Some(entry) = self.entry_mut(handle) {
+            entry.object = Object::Number(number);
+        }
+        if size >= size_before {
+            self.charge(size - size_before)
+        } else {
+            self.refund(size_before - size);
+            Ok(())
+        }
+    }
+
+    /// trace: D15, Building rule 5. Puts a new number in place of the one a handle leads to, when nothing else holds
+    /// it, keeping its place and box; gives the number back when it can't.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the new number takes the script past its cap (D14).
+    pub fn replace_number(&mut self, handle: u64, number: Number) -> Result<Option<Number>, HeapError> {
+        let Some(entry) = self.entry_mut(handle) else { return Ok(Some(number)) };
+        if entry.holders != 1 {
+            return Ok(Some(number));
+        }
+        let new_size = number.size();
+        let old_size = match (&mut entry.object, number) {
+            (Object::Decimal(packed), Number::Decimal(decimal)) => {
+                *packed = decimal.into();
+                new_size
+            }
+            (Object::Number(boxed), number) if !matches!(number, Number::Decimal(_)) => {
+                let old_size = boxed.size();
+                **boxed = number;
+                old_size
+            }
+            (_, number) => return Ok(Some(number)),
+        };
+        if new_size >= old_size {
+            self.charge(new_size - old_size)?;
+        } else {
+            self.refund(old_size - new_size);
+        }
+        Ok(None)
     }
 
     /// The number a handle leads to.
@@ -385,7 +463,13 @@ impl Heap {
                     self.work = self.work.saturating_add(dict.len() as u64);
                     dict.size()
                 }
-                Object::Number(number) => number.size(),
+                Object::Number(number) => {
+                    let size = number.size();
+                    if self.spare_numbers.len() < SPARE_NUMBERS {
+                        self.spare_numbers.push(number);
+                    }
+                    size
+                }
                 Object::Decimal(_) => 16,
             };
             self.refund(VALUE_COST.saturating_add(size));
