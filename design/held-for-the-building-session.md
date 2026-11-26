@@ -21,7 +21,12 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
   `is_alive(goblin)`, deserves its own refusal, "`is_alive` is a method of `Enemy`, so it's called on one, as
   `goblin.is_alive()`", not the general "no procedure named". Its two catches in `d164_methods` are fixed (my slips).
 
+- D172 to D174 are in DECISIONS.md: `for` counting loops, D171's bar kept with flat blocks, and no `fips204`: ML-DSA
+  comes from a SPARK project starting 2026-11-27, so D169 waits for it (its crate question is answered).
+
 ## Still to settle with Tankun
+
+- Tomorrow: the SPARK ML-DSA-44 project's repository, model and prompt (Opus 5.5 recommended; guides read first).
 
 - A method that changes its value, called on a field or a list item (D165 stops there).
 - A method that changes its value and can fail: what the lent variable holds after a failure.

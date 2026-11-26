@@ -5203,6 +5203,8 @@ better? Dih or SPINX", "What's the speed diff between Dih vs Ed", "Kilobytes, is
 asked "Should `.sealc` files be signable, with the host able to require a valid signature from its own public key,
 using Ed25519, checked once per file or bundle?", the owner chose: "No, use Dih"
 
+(Changed by D174: ML-DSA comes from a SPARK implementation of Seal's own, and D169 is built once its checking side is ready.)
+
 ## D170. No type-following verifier: `.sealc` safety rests on range checks, the VM's checks and signing
 
 2026-11-26.
@@ -5314,3 +5316,39 @@ On 2026-11-26 a `.sealc` patrolling script loaded in 0.92 µs, down from 2.1 µs
 
 **Tankun's words.** "2 to 3 days?", then, asked "Should D171 keep LuaJIT's compiled bytecode as the bar, with Seal Opus
 Claude rebuilding compiled scripts as flat blocks to reach it?", the owner chose: "yea"
+
+## D174. Seal's ML-DSA is its own, written and proven in SPARK; D169 waits for it
+
+2026-11-26.
+
+**Chosen.** Seal doesn't use an existing ML-DSA crate. ML-DSA-44, the size D169 uses, is implemented in SPARK, with
+its proofs, as a project of its own, started 2026-11-27 in a session of its own:
+- **Checking first,** the only part games run, then signing and key making, for `seal build` and `seal keygen`.
+- **Proven against a formal specification of FIPS 204,** aiming at SPARK's Platinum level, with that specification
+  reviewed against FIPS 204's prose, the one step no proof covers (as D138 notes).
+- **Optimized with what can be proven,** as Montgomery arithmetic and precomputed tables, without SIMD, aiming to be no
+  slower than `fips204`.
+- **Seal calls it across a small C boundary,** the `unsafe` that needs, in `seal-c`'s manner, to be settled with that
+  project.
+
+D169 is built once the checking side is ready; until then `.sealc` files aren't signed.
+
+**Weighed.**
+- `fips204`, as the building session and the design session recommended: pure Rust with no `unsafe` of its own,
+  tested against NIST's and Wycheproof's vectors, but not independently reviewed, and pulling in `zeroize`'s and
+  `getrandom`'s `unsafe`.
+- RustCrypto's `ml-dsa` (never audited, more `unsafe`) and `libcrux-ml-dsa` (its maths proven, but version 0.0.12 with
+  about 190 lines of `unsafe`).
+- Writing it in Rust without proofs: home-made cryptography, the thing the field warns against, since it fails
+  silently.
+
+**Why this won.** Proven code is the one answer to "not yet reviewed", and compiled through GNAT it runs at C's speed.
+
+**Tankun's words.** "How many LOC is that?", "What about make our own?", "Is that one reviewed?", "Why does that advice
+exist universally in that field?", "Can it be impl in SPARK Platinum? Just asking", "So, here's the thing. SPARK Plat,
+right? I have a free weekly reset card. So... Hm...", "Do what we need, yk? What ones does Seal need", "Why don't we
+cover that too?", "It should be faster at final product than Rocq, right?", "We should optimize it?", "Or could we just
+use that crate?", "If we impl it, what model(s)?", "Did Opus Claude do that already?", "No, i meant Opus Claude,
+Seal", then, asked "should Seal use `fips204` for ML-DSA, allowing `zeroize`'s and `getrandom`'s small amounts of
+`unsafe`, with a proven SPARK version left as an optional project?", the owner chose: "Nope, we're gonna impl the SPARK
+tomorrow"
