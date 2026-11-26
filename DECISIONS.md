@@ -5292,3 +5292,25 @@ end
 "Why not just use `for` there?", "No `in range[]`?", then, asked "Should counting be its own loop, `for i from 1 to 3`
 or `for i from 0 before size`, with an optional `step_by`, and `for_each` kept for going through items?", the owner
 chose: "yea"
+
+## D173. D171's bar stays LuaJIT's, reached by storing compiled scripts as flat blocks
+
+2026-11-26.
+
+**Chosen.** D171 keeps LuaJIT loading its own compiled bytecode as the bar for loading a `.sealc`. The building session
+reaches it by storing a compiled script as a few flat blocks of memory rather than about 25 separate lists, each one
+memory to ask for, which touches the compiler, the VM and every reader. If it truly can't get there in safe Rust, it
+says so with numbers, and Tankun decides then, as D150 did for fresh loading.
+
+On 2026-11-26 a `.sealc` patrolling script loaded in 0.92 µs, down from 2.1 µs, against LuaJIT's 0.28 µs, with about
+0.6 µs of Seal's in rebuilding those lists.
+
+**Weighed.**
+- Judging D171 as "at least four times faster than loading from text", 0.92 against 4.7 µs, with LuaJIT for reference,
+  as the building session and the design session recommended. The building session's estimate, two to three days, had
+  run long before: D140's rework and `fib` against LuaJIT's interpreter each came in within hours.
+
+**Why this won.** Seal is meant to be fast, and flat blocks may make running scripts quicker too.
+
+**Tankun's words.** "2 to 3 days?", then, asked "Should D171 keep LuaJIT's compiled bytecode as the bar, with Seal Opus
+Claude rebuilding compiled scripts as flat blocks to reach it?", the owner chose: "yea"
