@@ -766,7 +766,7 @@ impl Task {
         let mut slots = Vec::new();
         for (pc, base) in places {
             let Some(registers) = u32::try_from(pc).ok().and_then(|pc| compiled.pause_maps.get(pc)) else { continue };
-            for &register in registers {
+            for &register in &registers {
                 if let Some(slot) = self.stack.get(base + usize::from(register)) {
                     slots.push(*slot);
                 }

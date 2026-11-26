@@ -4,7 +4,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::doors::{Doors, Loaded};
+use super::doors::{Doors, Loaded, ScriptText};
 use super::script::{Error, Limits, Script};
 use crate::compile::file::{self, FileError, ToWrite};
 use crate::message::{Message, Messages, Place};
@@ -107,7 +107,7 @@ impl Script {
             Err(_) => return Err(refused(name, &FileError::Damaged("reading it went wrong"))),
         };
         let loaded = Loaded {
-            source: Arc::from(script.source),
+            source: ScriptText::InFile(script.block, script.source),
             compiled: Arc::new(script.compiled),
             name: Arc::from(script.name),
         };

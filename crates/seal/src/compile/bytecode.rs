@@ -1050,6 +1050,9 @@ pub struct PauseMaps {
     /// Each call's place, where its registers start in `registers`, and how many there are, by place.
     calls: Vec<(u32, u32, u32)>,
     registers: Vec<Register>,
+    /// For a script loaded from a `.sealc` file: the file's block, and where the maps start in it, already checked.
+    /// They're read only when a task is cancelled, so loading makes nothing for them (D173).
+    in_file: Option<(std::sync::Arc<[u8]>, usize)>,
 }
 
 impl PauseMaps {
@@ -1062,23 +1065,39 @@ impl PauseMaps {
         self.calls.insert(at, (place, start, count));
     }
 
-    /// The registers held at a call's place, when it can pause.
+    /// Maps left in a file's block at `at`, already checked, read when wanted.
     #[must_use]
-    pub fn get(&self, place: u32) -> Option<&[Register]> {
+    pub fn in_file(bytes: std::sync::Arc<[u8]>, at: usize) -> PauseMaps {
+        PauseMaps { in_file: Some((bytes, at)), ..PauseMaps::default() }
+    }
+
+    fn listed(&self, place: u32) -> Option<&[Register]> {
         let at = self.calls.binary_search_by_key(&place, |&(known, ..)| known).ok()?;
         let &(_, start, count) = self.calls.get(at)?;
         self.registers.get(start as usize..start as usize + count as usize)
     }
 
-    /// Every call's place and registers, in order of their places.
-    pub fn iter(&self) -> impl Iterator<Item = (u32, &[Register])> {
-        self.calls.iter().map(|&(place, ..)| (place, self.get(place).unwrap_or(&[])))
+    /// The maps read from the file's block, for a script loaded from one.
+    fn read(&self) -> Option<PauseMaps> {
+        let (bytes, at) = self.in_file.as_ref()?;
+        crate::compile::file::read_pause_maps(bytes.get(*at..)?)
     }
 
-    /// Room made for what's read from a file.
+    /// The registers held at a call's place, when it can pause.
     #[must_use]
-    pub fn with_capacity(calls: usize, registers: usize) -> PauseMaps {
-        PauseMaps { calls: Vec::with_capacity(calls), registers: Vec::with_capacity(registers) }
+    pub fn get(&self, place: u32) -> Option<Vec<Register>> {
+        match self.read() {
+            Some(read) => read.listed(place).map(<[Register]>::to_vec),
+            None => self.listed(place).map(<[Register]>::to_vec),
+        }
+    }
+
+    /// Every call's place and registers, in order of their places.
+    #[must_use]
+    pub fn all(&self) -> Vec<(u32, Vec<Register>)> {
+        let read = self.read();
+        let maps = read.as_ref().unwrap_or(self);
+        maps.calls.iter().map(|&(place, ..)| (place, maps.listed(place).unwrap_or(&[]).to_vec())).collect()
     }
 }
 

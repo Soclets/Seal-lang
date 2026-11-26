@@ -278,6 +278,15 @@ impl<'b> Reader<'b> {
     /// When the file ends, or the text isn't UTF-8.
     pub fn text_in_file(&mut self) -> Result<&'b str, FileError> {
         let length = self.count(1)?;
+        self.text_in_file_of(length)
+    }
+
+    /// A text of `length` bytes, its count already read.
+    ///
+    /// # Errors
+    ///
+    /// When the file ends, or the text isn't UTF-8.
+    pub fn text_in_file_of(&mut self, length: usize) -> Result<&'b str, FileError> {
         let bytes = self.take(length)?;
         std::str::from_utf8(bytes).map_err(|_| FileError::Damaged("a text that isn't UTF-8"))
     }
@@ -311,10 +320,12 @@ impl<'b> Reader<'b> {
     }
 }
 
-/// One script in a file, read back, its name and text as they are in the file.
+/// One script in a file, read back: its name as it is in the file, the block its text and compiled bytes are kept
+/// in, where its text is in that block, and what it compiled to (D173).
 pub struct FileScript<'b> {
     pub name: &'b str,
-    pub source: &'b str,
+    pub block: Arc<[u8]>,
+    pub source: std::ops::Range<usize>,
     pub compiled: Compiled,
 }
 
@@ -430,19 +441,22 @@ pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> R
     let range = found.ok_or_else(|| FileError::NotInFile(name.to_owned()))?;
     let mut input = Reader::new(bytes.get(range).ok_or(FileError::Damaged("a script past its end"))?);
     let written_name = input.text_in_file()?;
-    let source = input.text_in_file()?;
     if written_name != name {
         return Err(FileError::Damaged("a script that isn't what its index says"));
     }
-    // The compiled script's bytes, kept as one block, which what's needed only now and then is read from (D173).
+    // The script's text and compiled bytes, kept as one block, which what's needed only now and then is read from
+    // (D173).
     let blob: Arc<[u8]> = Arc::from(input.rest());
     let mut input = Reader::new(&blob);
+    let length = input.count(1)?;
+    let source = input.at..input.at + length;
+    input.text_in_file_of(length)?;
     let compiled = read_compiled(&mut input, &blob)?;
     if !input.done() {
         return Err(FileError::Damaged("bytes after a script"));
     }
     verify(&compiled, door_count).map_err(FileError::Unverified)?;
-    Ok(FileScript { name: written_name, source, compiled })
+    Ok(FileScript { name: written_name, block: blob, source, compiled })
 }
 
 // ---- the compiled script, field by field ----
@@ -530,11 +544,12 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
         out.u32(at);
         out.u32(offset.cast_unsigned());
     }
-    out.count(compiled.pause_maps.iter().count());
-    for (at, registers) in compiled.pause_maps.iter() {
+    let pauses = compiled.pause_maps.all();
+    out.count(pauses.len());
+    for (at, registers) in pauses {
         out.u32(at);
         out.count(registers.len());
-        for &register in registers {
+        for register in registers {
             out.u16(register);
         }
     }
@@ -664,17 +679,13 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
     for _ in 0..count {
         far_jumps.insert(input.u32()?, input.u32()?.cast_signed());
     }
-    let count = input.count(8)?;
-    let mut pause_maps = PauseMaps::with_capacity(count, count * 2);
-    let mut list = Vec::new();
-    for _ in 0..count {
-        let at = input.u32()?;
-        let registers = input.count(2)?;
-        list.clear();
-        for _ in 0..registers {
-            list.push(input.u16()?);
+    // trace: D173. Read only when a task is cancelled: checked here, making nothing, and left in the block.
+    let pause_at = input.at;
+    for _ in 0..input.count(8)? {
+        input.u32()?;
+        for _ in 0..input.count(2)? {
+            input.u16()?;
         }
-        pause_maps.insert(at, &list);
     }
     let built_in_failures = [input.u32()?, input.u32()?, input.u32()?];
     let types = TypeTable::read_file(input)?;
@@ -701,7 +712,7 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
         number_conversions,
         far_jumps,
         fused_places: kept_list(blob, kept.fused_places, read_fused_places),
-        pause_maps,
+        pause_maps: PauseMaps::in_file(Arc::clone(blob), pause_at),
         failure_names: kept_list(blob, kept.failure_names, read_failure_names),
         built_in_failures,
         types,
@@ -837,6 +848,23 @@ fn read_failure_name(input: &mut Reader) -> Result<std::borrow::Cow<'static, str
                 .ok_or(FileError::Damaged("a failure of Seal's own that isn't one"))?,
         ),
     })
+}
+
+/// Pause maps left in a file's block, already checked (D173).
+#[must_use]
+pub fn read_pause_maps(bytes: &[u8]) -> Option<PauseMaps> {
+    let mut input = Reader::new(bytes);
+    let mut maps = PauseMaps::default();
+    let mut list = Vec::new();
+    for _ in 0..input.count(8).ok()? {
+        let at = input.u32().ok()?;
+        list.clear();
+        for _ in 0..input.count(2).ok()? {
+            list.push(input.u16().ok()?);
+        }
+        maps.insert(at, &list);
+    }
+    Some(maps)
 }
 
 /// A list left in the file's block, at a place [`check_kept`] found.
@@ -1368,14 +1396,30 @@ pub fn verify(compiled: &Compiled, door_count: usize) -> Result<(), String> {
         return Err("its instructions and their places don't pair up".to_owned());
     }
     // Every procedure, and the top level, is a stretch of instructions from its entry to the next one's.
-    let mut starts: Vec<(u32, u32)> = compiled.entries.iter().map(|entry| (entry.entry, entry.frame_size)).collect();
+    // Kept on the thread between files, so verifying one makes nothing (D173).
+    thread_local! {
+        static STARTS: std::cell::Cell<Vec<(u32, u32)>> = const { std::cell::Cell::new(Vec::new()) };
+    }
+    let mut starts = STARTS.take();
+    starts.clear();
+    starts.extend(compiled.entries.iter().map(|entry| (entry.entry, entry.frame_size)));
     starts.push((compiled.top_level_entry, compiled.top_level_frame_size));
+    let checked = verify_procedures(compiled, door_count, &mut starts);
+    STARTS.set(starts);
+    checked
+}
+
+/// Each procedure's instructions, from its start to the next one's: registers, jumps and tables; then the tables
+/// themselves.
+#[allow(clippy::too_many_lines)] // each kind of check in turn
+fn verify_procedures(compiled: &Compiled, door_count: usize, starts: &mut Vec<(u32, u32)>) -> Result<(), String> {
+    let code_length = compiled.code.len();
     if compiled.entries.len() != compiled.procedures.count() {
         return Err("its procedures and their entries don't pair up".to_owned());
     }
     starts.sort_unstable();
     starts.dedup_by_key(|(start, _)| *start);
-    for &(start, frame) in &starts {
+    for &(start, frame) in starts.iter() {
         if start as usize >= code_length || frame == 0 || frame > u32::from(u16::MAX) {
             return Err(format!("a procedure starts at {start}, outside its instructions, or has no frame"));
         }

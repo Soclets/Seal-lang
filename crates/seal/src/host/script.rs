@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use super::convert::{Argument, Arguments, FromSeal, IntoSeal};
 use std::sync::Arc;
 
-use super::doors::{Doors, Loaded};
+use super::doors::{Doors, Loaded, ScriptText};
 use super::value::Value;
 use crate::check::check;
 use crate::compile::bytecode::{Compiled, CompiledProcedure, Crossing};
@@ -139,7 +139,7 @@ pub struct Script {
     name: Arc<str>,
     /// The script's text, for the lines its messages show, and what it compiled to. Both are shared with any
     /// other script loaded from the same text with the same doors.
-    source: Arc<str>,
+    source: ScriptText,
     compiled: Arc<Compiled>,
     doors: Doors,
     machine: Machine,
@@ -241,7 +241,11 @@ impl Script {
             Some(loaded) => Ok(Ok(loaded)),
             None => catch_unwind(AssertUnwindSafe(|| Self::prepare(name, source, doors, plain))).map(|prepared| {
                 prepared.map(|compiled| {
-                    let loaded = Loaded { source: source.into(), compiled: Arc::new(compiled), name: name.into() };
+                    let loaded = Loaded {
+                        source: ScriptText::Shared(source.into()),
+                        compiled: Arc::new(compiled),
+                        name: name.into(),
+                    };
                     if !plain {
                         doors.keep(loaded.clone());
                     }
@@ -325,7 +329,7 @@ impl Script {
     /// The script's text, as it was loaded.
     #[must_use]
     pub(crate) fn source_text(&self) -> &str {
-        &self.source
+        self.source.as_str()
     }
 
     /// What the script compiled to.
@@ -449,7 +453,7 @@ impl Script {
                 message
             }
         };
-        message.locate(&self.name, &self.source);
+        message.locate(&self.name, self.source.as_str());
         self.stopped = Some(message.clone());
         self.tasks.clear();
         self.machine = Machine::default();

@@ -198,10 +198,30 @@ struct Door {
     function: DoorFunction,
 }
 
+/// A script's text: shared with the other scripts loaded from it, or, for one loaded from a `.sealc` file, left in
+/// the file's block, already checked as UTF-8, until a message wants it (D173).
+#[derive(Clone)]
+pub(crate) enum ScriptText {
+    Shared(Arc<str>),
+    InFile(Arc<[u8]>, std::ops::Range<usize>),
+}
+
+impl ScriptText {
+    #[must_use]
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            ScriptText::Shared(text) => text,
+            ScriptText::InFile(bytes, range) => {
+                bytes.get(range.clone()).and_then(|bytes| std::str::from_utf8(bytes).ok()).unwrap_or("")
+            }
+        }
+    }
+}
+
 /// A script's source and what it compiled to, kept so that loading the same source again skips the work.
 #[derive(Clone)]
 pub(crate) struct Loaded {
-    pub(crate) source: Arc<str>,
+    pub(crate) source: ScriptText,
     pub(crate) compiled: Arc<Compiled>,
     /// The name it was last loaded under, shared with a script loaded under the same one.
     pub(crate) name: Arc<str>,
@@ -590,7 +610,7 @@ impl Doors {
     pub(crate) fn kept(&self, source: &str) -> Option<Loaded> {
         let mut kept = self.inner.kept.lock().ok()?;
         // Looked for from the most recently used, which is the likeliest to be loaded again.
-        let position = kept.iter().rposition(|loaded| *loaded.source == *source)?;
+        let position = kept.iter().rposition(|loaded| loaded.source.as_str() == source)?;
         // Moved to the end, as the most recently used, unless it's there already.
         if position + 1 != kept.len()
             && let Some(loaded) = kept.remove(position)
