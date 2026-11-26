@@ -201,14 +201,14 @@ fn say(message: &Message) {
     MESSAGES.with(|messages| messages.borrow_mut().push(said));
 }
 
-/// The host used the API wrongly: said, and `SEAL_HOST_MISTAKE` given.
+/// The host used the API wrongly: said, naming the function and what was wrong with its call, and
+/// `SEAL_HOST_MISTAKE` given. A host's programmer knows C, so it needs no `why:`.
 fn mistake(what: &str) -> seal_status {
-    let text = format!("the host used Seal's C API wrongly: {what}");
     let said = Said {
         kind: 6,
-        text: c_text(&format!("mistake: {text}\n")),
-        what: Some(c_text(&text)),
-        why: Some(c_text("this is a mistake in the program that uses Seal, not in a script.")),
+        text: c_text(&format!("mistake: {what}\n")),
+        what: Some(c_text(what)),
+        why: None,
         fix: None,
         when: None,
         file: None,
@@ -307,6 +307,47 @@ unsafe fn read_array<'a, T>(items: *const T, count: usize) -> Option<&'a [T]> {
     Some(unsafe { std::slice::from_raw_parts(items, count) })
 }
 
+/// A text parameter of `function`, or the host mistake naming it.
+///
+/// # Safety
+///
+/// As [`read_text`].
+unsafe fn text_in<'a>(function: &str, parameter: &str, text: *const c_char) -> Result<&'a str, seal_status> {
+    if text.is_null() {
+        return Err(mistake(&format!("`{function}`: `{parameter}` is null")));
+    }
+    // SAFETY: as the caller promises.
+    unsafe { read_text(text) }.ok_or_else(|| mistake(&format!("`{function}`: `{parameter}` isn't UTF-8")))
+}
+
+/// An array parameter of `function`, or the host mistake naming it.
+///
+/// # Safety
+///
+/// As [`read_array`].
+unsafe fn array_in<'a, T>(
+    function: &str,
+    parameter: &str,
+    counted_by: &str,
+    items: *const T,
+    count: usize,
+) -> Result<&'a [T], seal_status> {
+    // SAFETY: as the caller promises.
+    unsafe { read_array(items, count) }.ok_or_else(|| {
+        mistake(&format!("`{function}`: `{parameter}` is null, but `{counted_by}` says there are {count}"))
+    })
+}
+
+/// The host mistake of an answer's place that's null.
+fn nowhere(function: &str, parameter: &str, what: &str) -> seal_status {
+    mistake(&format!("`{function}`: `{parameter}` is null, so there's nowhere to write {what}"))
+}
+
+/// The host mistake of a handle that's freed or was never one.
+fn not_a_handle(function: &str, what: &str) -> seal_status {
+    mistake(&format!("`{function}`: a {what} handle that's freed, or was never one"))
+}
+
 /// Writes an answer where the host asked for it.
 ///
 /// # Safety
@@ -340,6 +381,26 @@ fn give(value: Value, lent: bool) -> seal_arg {
             let number = VALUES.with(|values| values.borrow_mut().insert(Held { value: other, lent, text: None }));
             plain(kind, number as u64)
         }
+    }
+}
+
+/// A kind as the header names it, for messages.
+fn kind_name(kind: seal_kind) -> &'static str {
+    match kind {
+        NOTHING => "`SEAL_NOTHING`",
+        WHOLE => "`SEAL_WHOLE`",
+        FLOAT => "`SEAL_FLOAT`",
+        BOOL => "`SEAL_BOOL`",
+        TEXT => "`SEAL_TEXT`",
+        HUGE_WHOLE => "`SEAL_HUGE_WHOLE`",
+        DECIMAL => "`SEAL_DECIMAL`",
+        HUGE_DECIMAL => "`SEAL_HUGE_DECIMAL`",
+        LIST => "`SEAL_LIST`",
+        MAYBE => "`SEAL_MAYBE`",
+        DICT => "`SEAL_DICT`",
+        RECORD => "`SEAL_RECORD`",
+        CASE => "`SEAL_CASE`",
+        _ => "a kind that isn't one",
     }
 }
 
@@ -391,11 +452,15 @@ fn receive(argument: seal_arg, take: bool) -> Result<Value, String> {
             })?;
             let value = value.ok_or_else(|| "a value handle that's freed, or was never one".to_owned())?;
             if kind_of(&value) != argument.kind {
-                return Err("an argument whose kind isn't its value's".to_owned());
+                return Err(format!(
+                    "a handle to {}, but its `kind` says {}",
+                    kind_name(kind_of(&value)),
+                    kind_name(argument.kind)
+                ));
             }
             value
         }
-        _ => return Err(format!("the kind {}, which isn't one", argument.kind)),
+        _ => return Err(format!("an argument of the kind {}, which isn't one", argument.kind)),
     })
 }
 
@@ -429,12 +494,13 @@ fn read_type(written: &str) -> Result<HostType, String> {
                     character == ',' && depth == 0
                 });
                 let (key, value) = split.map(|(at, _)| pair.split_at(at)).ok_or("a `Dict` with no `value:`")?;
-                let key = key.trim().strip_prefix("key:").ok_or("a `Dict`'s `key:`")?;
-                let value = value.trim_start_matches(',').trim().strip_prefix("value:").ok_or("a `Dict`'s `value:`")?;
+                let key = key.trim().strip_prefix("key:").ok_or("a `Dict` with no `key:`")?;
+                let value =
+                    value.trim_start_matches(',').trim().strip_prefix("value:").ok_or("a `Dict` with no `value:`")?;
                 HostType::Dict(Box::new(read_type(key)?), Box::new(read_type(value)?))
             } else {
                 return Err(format!(
-                    "`{written}` isn't a type a C door takes: Seal's own, and lists, `Maybe`s and `Dict`s of them"
+                    "`{written}`, which isn't a type a C door takes: Seal's own, and lists, `Maybe`s and `Dict`s of them"
                 ));
             }
         }
@@ -605,38 +671,44 @@ pub unsafe extern "C" fn seal_doors_add(
     host_data: *mut c_void,
 ) -> seal_status {
     guarded(|| {
+        const ADD: &str = "seal_doors_add";
         // SAFETY: the header's rules for every pointer, which the caller promises.
-        let (Some(name), Some(types), Some(result), Some(failures)) = (
-            unsafe { read_text(name) },
-            unsafe { read_array(value_types, count) },
-            unsafe { read_text(result_type) },
-            unsafe { read_array(failures, failure_count) },
-        ) else {
-            return mistake("`seal_doors_add` was given a null pointer or text that isn't UTF-8");
+        let read = unsafe {
+            (
+                text_in(ADD, "name", name),
+                array_in(ADD, "value_types", "count", value_types, count),
+                text_in(ADD, "result_type", result_type),
+                array_in(ADD, "failures", "failure_count", failures, failure_count),
+            )
         };
-        let Some(function) = function else { return mistake("`seal_doors_add` was given no function") };
+        let (name, types, result, failures) = match read {
+            (Ok(name), Ok(types), Ok(result), Ok(failures)) => (name, types, result, failures),
+            (Err(status), ..) | (_, Err(status), ..) | (_, _, Err(status), _) | (.., Err(status)) => return status,
+        };
+        let Some(function) = function else { return mistake("`seal_doors_add`: `function` is null") };
         let mut parameters = Vec::with_capacity(types.len());
-        for &written in types {
+        for (place, &written) in types.iter().enumerate() {
             // SAFETY: each is a NUL-ended string, as the header asks.
-            let Some(written) = (unsafe { read_text(written) }) else {
-                return mistake("a door's value type that's null or isn't UTF-8");
+            let written = match unsafe { text_in(ADD, &format!("value_types[{place}]"), written) } {
+                Ok(written) => written,
+                Err(status) => return status,
             };
             match read_type(written) {
                 Ok(host_type) => parameters.push(host_type),
-                Err(why) => return mistake(&why),
+                Err(why) => return mistake(&format!("`{ADD}`: `value_types[{place}]` is {why}")),
             }
         }
         let result = match read_type(result) {
             Ok(host_type) => host_type,
-            Err(why) => return mistake(&why),
+            Err(why) => return mistake(&format!("`{ADD}`: `result_type` is {why}")),
         };
         let mut failure_names = Vec::with_capacity(failures.len());
-        for &failure in failures {
+        for (place, &failure) in failures.iter().enumerate() {
             // SAFETY: as above.
-            let Some(failure) = (unsafe { read_text(failure) }) else {
-                return mistake("a door's failure that's null or isn't UTF-8");
-            };
-            failure_names.push(failure.to_owned());
+            match unsafe { text_in(ADD, &format!("failures[{place}]"), failure) } {
+                Ok(failure) => failure_names.push(failure.to_owned()),
+                Err(status) => return status,
+            }
         }
         let kinds: Vec<seal_kind> = parameters.iter().map(crossing_kind).collect();
         let kept = CDoor {
@@ -660,7 +732,7 @@ pub unsafe extern "C" fn seal_doors_add(
                 say(&message);
                 SEAL_REFUSED
             }
-            None => mistake("a doors handle that's freed, or was never one"),
+            None => not_a_handle("seal_doors_add", "doors"),
         }
     })
 }
@@ -678,17 +750,20 @@ pub unsafe extern "C" fn seal_doors_labels(
     count: usize,
 ) -> seal_status {
     guarded(|| {
+        const LABELS: &str = "seal_doors_labels";
         // SAFETY: the header's rules for every pointer.
-        let (Some(name), Some(labels)) = (unsafe { read_text(name) }, unsafe { read_array(labels, count) }) else {
-            return mistake("`seal_doors_labels` was given a null pointer or text that isn't UTF-8");
+        let read = unsafe { (text_in(LABELS, "name", name), array_in(LABELS, "labels", "count", labels, count)) };
+        let (name, labels) = match read {
+            (Ok(name), Ok(labels)) => (name, labels),
+            (Err(status), _) | (_, Err(status)) => return status,
         };
         let mut written = Vec::with_capacity(labels.len());
-        for &label in labels {
+        for (place, &label) in labels.iter().enumerate() {
             // SAFETY: as above.
-            let Some(label) = (unsafe { read_text(label) }) else {
-                return mistake("a label that's null or isn't UTF-8");
-            };
-            written.push(label);
+            match unsafe { text_in(LABELS, &format!("labels[{place}]"), label) } {
+                Ok(label) => written.push(label),
+                Err(status) => return status,
+            }
         }
         let labelled = DOORS.with(|table| {
             let mut table = table.borrow_mut();
@@ -701,8 +776,8 @@ pub unsafe extern "C" fn seal_doors_labels(
                 say(&message);
                 SEAL_REFUSED
             }
-            Some(None) => mistake("labels for a door that isn't open"),
-            None => mistake("a doors handle that's freed, or was never one"),
+            Some(None) => mistake(&format!("`seal_doors_labels`: there's no open door named `{name}`")),
+            None => not_a_handle("seal_doors_labels", "doors"),
         }
     })
 }
@@ -717,7 +792,7 @@ fn limits_of(limits: seal_limits) -> Limits {
     Limits { steps: limits.steps, memory: limits.memory }
 }
 
-fn hold_script(loaded: Result<Script, Error>, script: *mut *mut seal_script) -> seal_status {
+fn hold_script(function: &str, loaded: Result<Script, Error>, script: *mut *mut seal_script) -> seal_status {
     match loaded {
         Ok(loaded) => {
             let number = SCRIPTS.with(|table| table.borrow_mut().insert(Some(loaded)));
@@ -726,7 +801,7 @@ fn hold_script(loaded: Result<Script, Error>, script: *mut *mut seal_script) -> 
                 SEAL_OK
             } else {
                 SCRIPTS.with(|table| table.borrow_mut().remove(number));
-                mistake("nowhere to write the script's handle")
+                nowhere(function, "script", "the script's handle")
             }
         }
         Err(problem) => error(&problem),
@@ -748,15 +823,17 @@ pub unsafe extern "C" fn seal_script_load(
     script: *mut *mut seal_script,
 ) -> seal_status {
     guarded(|| {
+        const LOAD: &str = "seal_script_load";
         // SAFETY: the header's rules for every pointer.
-        let (Some(name), Some(bytes)) =
-            (unsafe { read_text(name) }, unsafe { read_array(source.cast::<u8>(), length) })
-        else {
-            return mistake("`seal_script_load` was given a null pointer, or a name that isn't UTF-8");
+        let read =
+            unsafe { (text_in(LOAD, "name", name), array_in(LOAD, "source", "length", source.cast::<u8>(), length)) };
+        let (name, bytes) = match read {
+            (Ok(name), Ok(bytes)) => (name, bytes),
+            (Err(status), _) | (_, Err(status)) => return status,
         };
-        let Ok(source) = std::str::from_utf8(bytes) else { return mistake("a script's text that isn't UTF-8") };
-        let Some(doors) = doors_of(doors) else { return mistake("a doors handle that's freed, or was never one") };
-        hold_script(Script::load(name, source, &doors, limits_of(limits)), script)
+        let Ok(source) = std::str::from_utf8(bytes) else { return mistake("`seal_script_load`: `source` isn't UTF-8") };
+        let Some(doors) = doors_of(doors) else { return not_a_handle(LOAD, "doors") };
+        hold_script(LOAD, Script::load(name, source, &doors, limits_of(limits)), script)
     })
 }
 
@@ -775,12 +852,15 @@ pub unsafe extern "C" fn seal_script_load_compiled(
     script: *mut *mut seal_script,
 ) -> seal_status {
     guarded(|| {
+        const LOAD: &str = "seal_script_load_compiled";
         // SAFETY: the header's rules for every pointer.
-        let (Some(bytes), Some(name)) = (unsafe { read_array(bytes, length) }, unsafe { read_text(name) }) else {
-            return mistake("`seal_script_load_compiled` was given a null pointer, or a name that isn't UTF-8");
+        let read = unsafe { (array_in(LOAD, "bytes", "length", bytes, length), text_in(LOAD, "name", name)) };
+        let (bytes, name) = match read {
+            (Ok(bytes), Ok(name)) => (bytes, name),
+            (Err(status), _) | (_, Err(status)) => return status,
         };
-        let Some(doors) = doors_of(doors) else { return mistake("a doors handle that's freed, or was never one") };
-        hold_script(Script::load_compiled(bytes, name, &doors, limits_of(limits)), script)
+        let Some(doors) = doors_of(doors) else { return not_a_handle(LOAD, "doors") };
+        hold_script(LOAD, Script::load_compiled(bytes, name, &doors, limits_of(limits)), script)
     })
 }
 
@@ -801,13 +881,21 @@ pub extern "C" fn seal_script_free(script: *mut seal_script) {
 
 /// Runs something on a script held by number, taken out of its place meanwhile, so a door can't run it again
 /// from inside the call.
-fn with_script(script: *const seal_script, run: impl FnOnce(&mut Script) -> seal_status) -> seal_status {
+fn with_script(
+    function: &str,
+    script: *const seal_script,
+    run: impl FnOnce(&mut Script) -> seal_status,
+) -> seal_status {
     let number = number_of(script);
     let taken = SCRIPTS.with(|table| table.borrow_mut().get_mut(number).map(Option::take));
     let mut held = match taken {
         Some(Some(held)) => held,
-        Some(None) => return mistake("a script called again from inside one of its own doors"),
-        None => return mistake("a script handle that's freed, or was never one"),
+        Some(None) => {
+            return mistake(&format!(
+                "`{function}`: the script is running, and was called again from one of its doors"
+            ));
+        }
+        None => return not_a_handle(function, "script"),
     };
     let status = run(&mut held);
     SCRIPTS.with(|table| {
@@ -819,7 +907,12 @@ fn with_script(script: *const seal_script, run: impl FnOnce(&mut Script) -> seal
 }
 
 /// How a call came back, written where the host asked.
-fn answer(called: Result<Called<Value>, Error>, result: *mut seal_arg, task: *mut u64) -> seal_status {
+fn answer(
+    (function, task_name): (&str, &str),
+    called: Result<Called<Value>, Error>,
+    result: *mut seal_arg,
+    task: *mut u64,
+) -> seal_status {
     match called {
         Ok(Called::Finished(value)) => {
             let given = give(value, false);
@@ -830,7 +923,7 @@ fn answer(called: Result<Called<Value>, Error>, result: *mut seal_arg, task: *mu
                 if !matches!(given.kind, WHOLE | FLOAT | BOOL | NOTHING) {
                     VALUES.with(|values| values.borrow_mut().remove(usize::try_from(given.bits).unwrap_or(0)));
                 }
-                mistake("nowhere to write the call's result")
+                nowhere(function, "result", "the result")
             }
         }
         Ok(Called::Paused(paused)) => {
@@ -838,7 +931,7 @@ fn answer(called: Result<Called<Value>, Error>, result: *mut seal_arg, task: *mu
             if unsafe { write(task, paused.to_bits()) } {
                 SEAL_PAUSED
             } else {
-                mistake("nowhere to write the paused task")
+                nowhere(function, task_name, "the paused task")
             }
         }
         Err(problem) => error(&problem),
@@ -862,39 +955,41 @@ pub unsafe extern "C" fn seal_script_call(
     task: *mut u64,
 ) -> seal_status {
     guarded(|| {
+        const CALL: &str = "seal_script_call";
         // SAFETY: the header's rules for every pointer.
-        let (Some(procedure), Some(given)) = (unsafe { read_text(procedure) }, unsafe { read_array(args, count) })
-        else {
-            return mistake("`seal_script_call` was given a null pointer, or a name that isn't UTF-8");
+        let read = unsafe { (text_in(CALL, "procedure", procedure), array_in(CALL, "args", "count", args, count)) };
+        let (procedure, given) = match read {
+            (Ok(procedure), Ok(given)) => (procedure, given),
+            (Err(status), _) | (_, Err(status)) => return status,
         };
-        let label_list = if labels.is_null() {
-            Vec::new()
+        let label_list: &[*const c_char] = if labels.is_null() {
+            &[]
         } else {
             // SAFETY: not null, so `count` labels, as the header says.
-            match unsafe { read_array(labels, count) } {
-                Some(list) => list.to_vec(),
-                None => return mistake("labels that aren't there"),
+            match unsafe { array_in(CALL, "labels", "count", labels, count) } {
+                Ok(list) => list,
+                Err(status) => return status,
             }
         };
         let mut arguments = Vec::with_capacity(given.len());
         for (place, &argument) in given.iter().enumerate() {
             let value = match receive(argument, false) {
                 Ok(value) => value,
-                Err(why) => return mistake(&why),
+                Err(why) => return mistake(&format!("`{CALL}`: `args[{place}]` is {why}")),
             };
             let label = match label_list.get(place).copied() {
                 Some(label) if !label.is_null() => {
                     // SAFETY: a NUL-ended string, as the header says.
-                    match unsafe { read_text(label) } {
-                        Some(label) => Some(label.to_owned()),
-                        None => return mistake("a label that isn't UTF-8"),
+                    match unsafe { text_in(CALL, &format!("labels[{place}]"), label) } {
+                        Ok(label) => Some(label.to_owned()),
+                        Err(status) => return status,
                     }
                 }
                 _ => None,
             };
             arguments.push(Argument { label, value });
         }
-        with_script(script, |held| answer(held.call_values(procedure, &arguments), result, task))
+        with_script(CALL, script, |held| answer((CALL, "task"), held.call_values(procedure, &arguments), result, task))
     })
 }
 
@@ -919,11 +1014,16 @@ pub unsafe extern "C" fn seal_script_resume(
             let argument = unsafe { value.read() };
             match receive(argument, false) {
                 Ok(value) => value,
-                Err(why) => return mistake(&why),
+                Err(why) => return mistake(&format!("`seal_script_resume`: `value` is {why}")),
             }
         };
-        with_script(script, |held| {
-            answer(held.resume_with_value(TaskId::from_bits(task), &given), result, paused_again)
+        with_script("seal_script_resume", script, |held| {
+            answer(
+                ("seal_script_resume", "paused_again"),
+                held.resume_with_value(TaskId::from_bits(task), &given),
+                result,
+                paused_again,
+            )
         })
     })
 }
@@ -932,7 +1032,7 @@ pub unsafe extern "C" fn seal_script_resume(
 #[unsafe(no_mangle)]
 pub extern "C" fn seal_script_cancel(script: *mut seal_script, task: u64) -> seal_status {
     guarded(|| {
-        with_script(script, |held| match held.cancel(TaskId::from_bits(task)) {
+        with_script("seal_script_cancel", script, |held| match held.cancel(TaskId::from_bits(task)) {
             Ok(()) => SEAL_OK,
             Err(problem) => error(&problem),
         })
@@ -967,20 +1067,27 @@ pub unsafe extern "C" fn seal_build(
     length: *mut usize,
 ) -> seal_status {
     guarded(|| {
+        const BUILD: &str = "seal_build";
         // SAFETY: the header's rules for every pointer.
-        let (Some(names), Some(sources)) = (unsafe { read_array(names, count) }, unsafe { read_array(sources, count) })
-        else {
-            return mistake("`seal_build` was given a null pointer");
+        let read = unsafe {
+            (array_in(BUILD, "names", "count", names, count), array_in(BUILD, "sources", "count", sources, count))
+        };
+        let (names, sources) = match read {
+            (Ok(names), Ok(sources)) => (names, sources),
+            (Err(status), _) | (_, Err(status)) => return status,
         };
         let mut scripts = Vec::with_capacity(count);
-        for (&name, &source) in names.iter().zip(sources) {
+        for (place, (&name, &source)) in names.iter().zip(sources).enumerate() {
             // SAFETY: each is a NUL-ended string, as the header says.
-            let (Some(name), Some(source)) = (unsafe { read_text(name) }, unsafe { read_text(source) }) else {
-                return mistake("a script's name or text that's null or isn't UTF-8");
+            let read = unsafe {
+                (text_in(BUILD, &format!("names[{place}]"), name), text_in(BUILD, &format!("sources[{place}]"), source))
             };
-            scripts.push((name, source));
+            match read {
+                (Ok(name), Ok(source)) => scripts.push((name, source)),
+                (Err(status), _) | (_, Err(status)) => return status,
+            }
         }
-        let Some(doors) = doors_of(doors) else { return mistake("a doors handle that's freed, or was never one") };
+        let Some(doors) = doors_of(doors) else { return not_a_handle(BUILD, "doors") };
         match seal::build(&scripts, &doors) {
             Ok(built) => {
                 let built = built.into_boxed_slice();
@@ -991,7 +1098,7 @@ pub unsafe extern "C" fn seal_build(
                     SEAL_OK
                 } else {
                     BYTES.with(|kept| kept.borrow_mut().retain(|kept| kept.as_ptr() != start));
-                    mistake("nowhere to write the bytes")
+                    nowhere(BUILD, if bytes.is_null() { "bytes" } else { "length" }, "the file")
                 }
             }
             Err(problem) => error(&problem),
@@ -1095,12 +1202,11 @@ pub extern "C" fn seal_message_width(index: usize) -> u32 {
 pub unsafe extern "C" fn seal_value_text(text: *const c_char, length: usize) -> *mut seal_value {
     guarded_handle(|| {
         // SAFETY: the header's rule for the pointer.
-        let Some(bytes) = (unsafe { read_array(text.cast::<u8>(), length) }) else {
-            mistake("`seal_value_text` was given a null pointer");
+        let Ok(bytes) = (unsafe { array_in("seal_value_text", "text", "length", text.cast::<u8>(), length) }) else {
             return None;
         };
         let Ok(text) = std::str::from_utf8(bytes) else {
-            mistake("a text that isn't UTF-8");
+            mistake("`seal_value_text`: `text` isn't UTF-8");
             return None;
         };
         Some(VALUES.with(|values| {
@@ -1118,8 +1224,7 @@ pub unsafe extern "C" fn seal_value_text(text: *const c_char, length: usize) -> 
 pub unsafe extern "C" fn seal_value_number(kind: seal_kind, written: *const c_char) -> *mut seal_value {
     guarded_handle(|| {
         // SAFETY: the header's rule for the pointer.
-        let Some(written) = (unsafe { read_text(written) }) else {
-            mistake("`seal_value_number` was given a null pointer, or text that isn't UTF-8");
+        let Ok(written) = (unsafe { text_in("seal_value_number", "written", written) }) else {
             return None;
         };
         let value = match kind {
@@ -1129,12 +1234,15 @@ pub unsafe extern "C" fn seal_value_number(kind: seal_kind, written: *const c_ch
             }
             HUGE_DECIMAL => HugeDecimal::from_text(written).map(Value::HugeDecimal),
             _ => {
-                mistake("`seal_value_number` makes a `HugeWhole`, `Decimal` or `HugeDecimal`");
+                mistake(&format!(
+                    "`seal_value_number`: `kind` is {kind}, but it makes only `SEAL_HUGE_WHOLE`, `SEAL_DECIMAL` or \
+                     `SEAL_HUGE_DECIMAL`; a plain number goes in a `seal_arg` itself"
+                ));
                 return None;
             }
         };
         let Some(value) = value else {
-            mistake("a number that isn't written as Seal writes one");
+            mistake(&format!("`seal_value_number`: `{written}` isn't a number written as a script writes one"));
             return None;
         };
         Some(VALUES.with(|values| values.borrow_mut().insert(Held { value, lent: false, text: None })))
@@ -1150,8 +1258,7 @@ pub unsafe extern "C" fn seal_value_number(kind: seal_kind, written: *const c_ch
 pub unsafe extern "C" fn seal_value_list(items: *const seal_arg, count: usize) -> *mut seal_value {
     guarded_handle(|| {
         // SAFETY: the header's rule for the pointer.
-        let Some(items) = (unsafe { read_array(items, count) }) else {
-            mistake("`seal_value_list` was given a null pointer");
+        let Ok(items) = (unsafe { array_in("seal_value_list", "items", "count", items, count) }) else {
             return None;
         };
         let mut list = Vec::with_capacity(items.len());
@@ -1159,7 +1266,7 @@ pub unsafe extern "C" fn seal_value_list(items: *const seal_arg, count: usize) -
             match receive(item, true) {
                 Ok(value) => list.push(value),
                 Err(why) => {
-                    mistake(&why);
+                    mistake(&format!("`seal_value_list`: `items[{}]` is {why}", list.len()));
                     return None;
                 }
             }
@@ -1186,7 +1293,7 @@ pub unsafe extern "C" fn seal_value_maybe(inner: *const seal_arg) -> *mut seal_v
             match receive(unsafe { inner.read() }, true) {
                 Ok(value) => Value::Maybe(Some(Box::new(value))),
                 Err(why) => {
-                    mistake(&why);
+                    mistake(&format!("`seal_value_maybe`: `inner` is {why}"));
                     return None;
                 }
             }
@@ -1219,10 +1326,10 @@ pub unsafe extern "C" fn seal_value_kind(value: *const seal_value, kind: *mut se
     guarded(|| {
         let Some(found) = VALUES.with(|values| values.borrow().get(number_of(value)).map(|held| kind_of(&held.value)))
         else {
-            return mistake("a value handle that's freed, or was never one");
+            return not_a_handle("seal_value_kind", "value");
         };
         // SAFETY: the caller promises room for a kind.
-        if unsafe { write(kind, found) } { SEAL_OK } else { mistake("nowhere to write the kind") }
+        if unsafe { write(kind, found) } { SEAL_OK } else { nowhere("seal_value_kind", "kind", "the kind") }
     })
 }
 
@@ -1247,7 +1354,7 @@ pub unsafe extern "C" fn seal_value_get_text(
                 Value::HugeWhole(big) => big.to_decimal(),
                 Value::Decimal(decimal) => decimal.to_text(),
                 Value::HugeDecimal(exact) => exact.to_text(),
-                _ => return Some(Err(())),
+                other => return Some(Err(kind_of(other))),
             };
             let kept = held.text.insert(c_text(&written));
             Some(Ok((kept.as_ptr(), written.len())))
@@ -1258,11 +1365,14 @@ pub unsafe extern "C" fn seal_value_get_text(
                 if unsafe { write(text, start) } && unsafe { write(length, size) } {
                     SEAL_OK
                 } else {
-                    mistake("nowhere to write the text")
+                    nowhere("seal_value_get_text", if text.is_null() { "text" } else { "length" }, "the text")
                 }
             }
-            Some(Err(())) => mistake("`seal_value_get_text` on a value that isn't a text or a big number"),
-            None => mistake("a value handle that's freed, or was never one"),
+            Some(Err(kind)) => mistake(&format!(
+                "`seal_value_get_text`: `value` is {}, which has no text; it reads a `SEAL_TEXT` or a big number",
+                kind_name(kind)
+            )),
+            None => not_a_handle("seal_value_get_text", "value"),
         }
     })
 }
@@ -1277,19 +1387,21 @@ pub unsafe extern "C" fn seal_value_count(value: *const seal_value, count: *mut 
     guarded(|| {
         let found = VALUES.with(|values| {
             values.borrow().get(number_of(value)).map(|held| match &held.value {
-                Value::List(items) | Value::Record(items) | Value::Case { fields: items, .. } => Some(items.len()),
-                Value::Dict(pairs) => Some(pairs.len()),
-                Value::Maybe(inner) => Some(usize::from(inner.is_some())),
-                _ => None,
+                Value::List(items) | Value::Record(items) | Value::Case { fields: items, .. } => Ok(items.len()),
+                Value::Dict(pairs) => Ok(pairs.len()),
+                Value::Maybe(inner) => Ok(usize::from(inner.is_some())),
+                other => Err(kind_of(other)),
             })
         });
         match found {
-            Some(Some(size)) => {
+            Some(Ok(size)) => {
                 // SAFETY: the caller promises room for a count.
-                if unsafe { write(count, size) } { SEAL_OK } else { mistake("nowhere to write the count") }
+                if unsafe { write(count, size) } { SEAL_OK } else { nowhere("seal_value_count", "count", "the count") }
             }
-            Some(None) => mistake("`seal_value_count` on a value with no items"),
-            None => mistake("a value handle that's freed, or was never one"),
+            Some(Err(kind)) => {
+                mistake(&format!("`seal_value_count`: `value` is {}, which has no items", kind_name(kind)))
+            }
+            None => not_a_handle("seal_value_count", "value"),
         }
     })
 }
@@ -1310,24 +1422,31 @@ pub unsafe extern "C" fn seal_value_item(
         let found = VALUES.with(|values| {
             values.borrow().get(number_of(value)).map(|held| match &held.value {
                 Value::List(items) | Value::Record(items) | Value::Case { fields: items, .. } => {
-                    items.get(position).cloned().ok_or(true)
+                    items.get(position).cloned().ok_or(Ok(items.len()))
                 }
-                Value::Dict(pairs) => {
-                    pairs.get(position).map(|(key, value)| Value::List(vec![key.clone(), value.clone()])).ok_or(true)
+                Value::Dict(pairs) => pairs
+                    .get(position)
+                    .map(|(key, value)| Value::List(vec![key.clone(), value.clone()]))
+                    .ok_or(Ok(pairs.len())),
+                Value::Maybe(inner) => {
+                    inner.as_deref().filter(|_| position == 0).cloned().ok_or(Ok(usize::from(inner.is_some())))
                 }
-                Value::Maybe(inner) => inner.as_deref().filter(|_| position == 0).cloned().ok_or(true),
-                _ => Err(false),
+                other => Err(Err(kind_of(other))),
             })
         });
         match found {
             Some(Ok(found)) => {
                 let given = give(found, false);
                 // SAFETY: the caller promises room for an argument.
-                if unsafe { write(item, given) } { SEAL_OK } else { mistake("nowhere to write the item") }
+                if unsafe { write(item, given) } { SEAL_OK } else { nowhere("seal_value_item", "item", "the item") }
             }
-            Some(Err(true)) => mistake("an item past the value's last"),
-            Some(Err(false)) => mistake("`seal_value_item` on a value with no items"),
-            None => mistake("a value handle that's freed, or was never one"),
+            Some(Err(Ok(count))) => mistake(&format!(
+                "`seal_value_item`: `position` is {position}, but `value` has {count} items, counted from 0"
+            )),
+            Some(Err(Err(kind))) => {
+                mistake(&format!("`seal_value_item`: `value` is {}, which has no items", kind_name(kind)))
+            }
+            None => not_a_handle("seal_value_item", "value"),
         }
     })
 }

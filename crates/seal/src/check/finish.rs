@@ -556,6 +556,65 @@ impl Checker<'_> {
         }
     }
 
+    /// trace: D166, D168. Refuses something a type parameter's value can't do: with no requirement, only what every
+    /// type can do; with `Number`, maths and ordering too; with a requirement listing methods, those methods.
+    pub(super) fn refuse_on_parameter(&mut self, subject: TypeId, place: Place, action: &str) {
+        let parameter = self.program.types.first_parameter(subject).unwrap_or(subject);
+        let name = self.program.types.written(parameter);
+        match self.program.types.requirement_of(parameter) {
+            None => self.refuse_why(
+                place,
+                format!("`{name}` has no requirement that allows {action}"),
+                &format!(
+                    "a type parameter with no requirement takes any type, so only what every type can do is allowed; \
+                     `<{name}: Number>` allows maths and ordering."
+                ),
+            ),
+            Some(super::types::NUMBER) => self.refuse_why(
+                place,
+                format!("`{name}` requires a `Number`, which doesn't allow {action}"),
+                "a `Number` allows maths and ordering, and a requirement listing methods allows those methods.",
+            ),
+            Some(requirement) => {
+                let required =
+                    self.program.types.requirement_names.get(requirement as usize).cloned().unwrap_or_default();
+                self.refuse_why(
+                    place,
+                    format!("`{name}` requires `{required}`, which doesn't allow {action}"),
+                    "a requirement allows the methods it lists, and nothing else that not every type can do.",
+                );
+            }
+        }
+    }
+
+    /// trace: D166. Refuses what a type parameter's value can't do, settling what it would have given; true when it
+    /// did.
+    fn refused_on_parameter(&mut self, pending: &Pending, kind: &Type, purpose: &str) -> bool {
+        let place = pending.place;
+        let on_parameter = match &pending.requirement {
+            Requirement::Member { .. } | Requirement::Indexable { .. } | Requirement::Iterable { .. } => {
+                matches!(kind, Type::Parameter(_))
+            }
+            Requirement::Comparable => false,
+            _ => self.program.types.has_parameter(pending.subject),
+        };
+        if on_parameter {
+            let action = match &pending.requirement {
+                Requirement::Member { name, .. } => format!("`.{name}`"),
+                _ => first_quoted(purpose),
+            };
+            self.refuse_on_parameter(pending.subject, place, &action);
+            match &pending.requirement {
+                Requirement::Member { result: open, .. }
+                | Requirement::Indexable { item: open }
+                | Requirement::Iterable { item: open } => self.program.types.settle_as_error(*open),
+                _ => {}
+            }
+            return true;
+        }
+        false
+    }
+
     #[allow(clippy::too_many_lines)] // one case per requirement
     fn discharge(&mut self, pending: &Pending) {
         let kind = self.program.types.get(pending.subject).clone();
@@ -579,21 +638,7 @@ impl Checker<'_> {
         {
             return;
         }
-        let on_parameter = match &pending.requirement {
-            Requirement::Member { .. } | Requirement::Indexable { .. } | Requirement::Iterable { .. } => {
-                matches!(kind, Type::Parameter(_))
-            }
-            Requirement::Comparable => false,
-            _ => self.program.types.has_parameter(pending.subject),
-        };
-        if on_parameter {
-            self.not_designed(place, format!("{purpose}, on {found}: what a type parameter can do"));
-            match &pending.requirement {
-                Requirement::Member { result: open, .. }
-                | Requirement::Indexable { item: open }
-                | Requirement::Iterable { item: open } => self.program.types.settle_as_error(*open),
-                _ => {}
-            }
+        if self.refused_on_parameter(pending, &kind, purpose) {
             return;
         }
         match &pending.requirement {
@@ -1116,5 +1161,14 @@ impl Checker<'_> {
         self.program.top_level_can_pause = top_level_pause.is_some();
         self.messages.append(&mut messages);
         let _ = ERROR;
+    }
+}
+
+/// The first part of a purpose written in backticks, as `` `+` `` in "`+` works on two numbers".
+fn first_quoted(purpose: &str) -> String {
+    let mut parts = purpose.split('`');
+    match (parts.next(), parts.next()) {
+        (Some(_), Some(quoted)) if !quoted.is_empty() => format!("`{quoted}`"),
+        _ => purpose.to_owned(),
     }
 }

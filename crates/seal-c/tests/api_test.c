@@ -143,6 +143,9 @@ static void test_calls(void) {
     size_t count = 0;
     CHECK(seal_value_count(result.as.value, &count) == SEAL_HOST_MISTAKE);
     CHECK(seal_message_count() == 1 && seal_message_kind_of(0) == SEAL_MISTAKE);
+    /* The message names the function and the parameter, so the host's programmer can find the line. */
+    CHECK(strcmp(seal_message_what(0), "`seal_value_count`: `value` is `SEAL_TEXT`, which has no items") == 0);
+    CHECK(seal_value_count(result.as.value, NULL) == SEAL_HOST_MISTAKE);
     seal_value_free(result.as.value);
     seal_value_free(name.as.value);
     /* A freed handle is refused, never followed, and so is one made up. */
@@ -150,6 +153,7 @@ static void test_calls(void) {
     CHECK(seal_value_get_text((seal_value *)(uintptr_t)0xdeadbeef, &text, &length) == SEAL_HOST_MISTAKE);
     seal_arg freed = {SEAL_TEXT, {.value = name.as.value}};
     CHECK(seal_script_call(script, "greet", NULL, &freed, 1, &result, &task) == SEAL_HOST_MISTAKE);
+    CHECK(strcmp(seal_message_what(0), "`seal_script_call`: `args[0]` is a value handle that's freed, or was never one") == 0);
 
     /* A failure on purpose: the script carries on. */
     seal_arg twelve = {SEAL_WHOLE, {.whole = 12}};

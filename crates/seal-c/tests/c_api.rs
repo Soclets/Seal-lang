@@ -4,10 +4,18 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The static library cargo built beside this test.
+/// The static library, built now beside this test, since `cargo test` builds only the Rust library.
 fn library() -> Option<PathBuf> {
     let test = std::env::current_exe().ok()?;
     let folder = test.parent()?.parent()?;
+    let mut build = Command::new(env!("CARGO"));
+    build.args(["build", "-q", "-j", "3", "-p", "seal-c", "--lib"]);
+    if folder.file_name().is_some_and(|name| name == "release") {
+        build.arg("--release");
+    }
+    if !build.status().is_ok_and(|status| status.success()) {
+        return None;
+    }
     let library = folder.join("libseal_c.a");
     library.exists().then_some(library)
 }

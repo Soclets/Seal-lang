@@ -433,11 +433,11 @@ fn d161_generic_procedures_fill_in_their_types_at_each_call() {
     assert_eq!(shows(from_result), ["nobody"]);
     let recursive = "proc count<?Item>[items: List<?Item>, n: Whole] -> Whole\n    if n eq 0\n        return items.len\n    else\n        return count(items, n - 1)\n    end\nend\nc = count([\"a\"], 3)\nshow_msg(\"{c}\")\n";
     assert_eq!(shows(recursive), ["1"]);
-    // Maths on a type parameter with no requirement waits on what one can require (D166).
+    // Maths on a type parameter with no requirement is refused (D166).
     let maths =
         "proc both<?Item>[a: ?Item, b: ?Item] -> ?Item\n    return a + b\nend\nx = both(1, 2)\nshow_msg(\"{x}\")\n";
     let refused = refusal(maths);
-    assert!(refused.contains("`+`") && refused.contains("what a type parameter can do"), "{refused}");
+    assert!(refused.contains("`?Item` has no requirement that allows `+`"), "{refused}");
     let unused = "proc keep<?Item, ?Other>[a: ?Item] -> ?Item\n    return a\nend\nx = keep(1)\nshow_msg(\"{x}\")\n";
     assert!(refusal(unused).contains("`?Other` isn't in `keep`'s parameters or result"), "{}", refusal(unused));
     let outside = "x: ?Item = 3\nshow_msg(\"{x}\")\n";

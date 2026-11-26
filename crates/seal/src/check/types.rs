@@ -507,6 +507,17 @@ impl TypeTable {
         }
     }
 
+    /// trace: D161. The first type parameter in a type, the type itself when it is one.
+    #[must_use]
+    pub fn first_parameter(&self, id: TypeId) -> Option<TypeId> {
+        match self.get(id) {
+            Type::Parameter(_) => Some(id),
+            Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => self.first_parameter(*item),
+            Type::Dict { key, value } => self.first_parameter(*key).or_else(|| self.first_parameter(*value)),
+            _ => None,
+        }
+    }
+
     /// trace: D161. Whether a type parameter is anywhere in the type.
     #[must_use]
     pub fn has_parameter(&self, id: TypeId) -> bool {

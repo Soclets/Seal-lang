@@ -775,10 +775,9 @@ impl<'a> Checker<'a> {
             return Self::error(place);
         };
         let value = self.expression(argument, None);
-        // trace: D161. Converting a type parameter's value is part of what a type parameter can do.
+        // trace: D166. Converting is something not every type can do.
         if self.program.types.has_parameter(value.type_id) {
-            let found = self.describe(value.type_id);
-            self.not_designed(value.place, format!("`{full}` on {found}: what a type parameter can do"));
+            self.refuse_on_parameter(value.type_id, value.place, &format!("`{full}`"));
             return Self::error(place);
         }
         if let Some(from) = self.big_number(value.type_id) {

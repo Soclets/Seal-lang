@@ -1237,7 +1237,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     requirement.name.place,
                     format!("`{name}` already names a type or a requirement"),
-                    NO_SHADOWING,
+                    "each name means one thing.",
                 );
                 continue;
             }
