@@ -1,0 +1,12 @@
+proc first<?Item>[items: List<?Item>] -> Maybe<?Item>
+    for_each item in items
+        return Maybe.some[value: item]
+    end
+    return Maybe.none
+end
+
+top = first([3, 12, 7]) ?? 0
+name = first(["Ann", "Bo"]) ?? "nobody"
+empty: List<Whole> = []
+nothing = first(empty) ?? -1
+show_msg("{top} {name} {nothing}")

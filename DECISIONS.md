@@ -4846,3 +4846,44 @@ spelling means one thing"'
 How?", "Wait, don't you have to write code first? For a macro to be real?", "What does that do?", "What? Both are sketchy?", "Wait, a macro would be one line?", "Don't macros also cover generics?", then, asked
 "Should Seal stay without macros or a comptime feature, with generic procedures decided separately later?", the owner
 chose: "yea, design generics now. Ask Cyborg"
+
+## D161. Generic procedures write `<?Item>` after their name, and calls never write the type
+
+2026-11-26.
+
+**Chosen.** Following Cyborg (its D234, D239, D241), with Seal's capitals:
+
+```
+proc first<?Item>[items: List<?Item>] -> Maybe<?Item>
+    for_each item in items
+        return Maybe.some[value: item]
+    end
+    return Maybe.none
+end
+
+top = first([3, 12, 7])
+```
+
+- **Type parameters go in `< >` right after the procedure's name,** as `<` `>` always say types (`List<Whole>`).
+- **Each is `?` and a capitalised name,** as `?Item` or `?Key`: capitalised since a type parameter is a type (D24), and
+  marked with `?` wherever it's used, so it can't be mistaken for a real type or clash with one.
+- **A call never writes the type.** It's worked out from the arguments, or from the type the result goes into, and
+  refused where nothing says it.
+- No ownership words, as Cyborg needs, since Seal's values are always copies (D15).
+
+What a type parameter must be able to do, generic records and `one_of`s, and how generics are compiled are decided
+separately.
+
+**Weighed.**
+- Plain capitalised names, as `<Item>` and `<T>`, as Luau, TypeScript, C#, Swift and Rust write them, which the design
+  session recommended for Luau users' sake and for `?` keeping one job. Tankun: `?` marks a generic, and Seal marks
+  special things where they're used, as `~`, `*`, `mut` and `unused` do.
+- Cyborg's lowercase `?item`. Seal's types are capitalised (D24).
+- `?` meaning two things, a type parameter before a name and passing a failure up after a call, as in Cyborg. They
+  stand in different places, so neither is mistaken for the other.
+
+**Why this won.** A reader sees at every use that a type is still to be filled in, and calls stay as short as ever.
+
+**Tankun's words.** "Cyborg uses `?` too", "It marks a generic, though", then, asked "Should a Seal generic procedure
+declare its type parameters as `?` plus a capitalised name in `< >` after its name, as `largest<?Item>`, with calls
+never writing the type?", the owner chose: "yea"

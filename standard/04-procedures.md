@@ -37,6 +37,31 @@ Seal has no contracts, `requires` or `ensures`, for now (D39).
 A procedure that takes nothing has no brackets, and every call writes `()`: `proc on_tick`, called as `on_tick()`
 (D60, Unio D4).
 
+## Generic procedures
+
+A procedure can work on any type, written as a type parameter in `< >` right after its name: `?` and a capitalised
+name, as `?Item`, marking a type that's filled in by each call (D161, from Cyborg D234 and D239):
+
+```
+proc first<?Item>[items: List<?Item>] -> Maybe<?Item>
+    for_each item in items
+        return Maybe.some[value: item]
+    end
+    return Maybe.none
+end
+
+top = first([3, 12, 7])           // ?Item is Whole
+name = first(["Ann", "Bo"])       // ?Item is Text
+```
+
+- **`?` marks the type parameter wherever it's used,** so it's never mistaken for a real type, as `~` marks an inexact
+  `Float` and `*` a handler that can jump.
+- **A call never writes the type:** it's worked out from the arguments, or from where the result goes, and refused
+  where nothing says it.
+
+**Not decided:** what a type parameter must be able to do, as being compared with `<`; generic records and `one_of`s;
+how generics are compiled.
+
 **Not decided:** parameter words for reading, changing or taking over (Unio D130).
 A procedure's failures: chapter 7.
 

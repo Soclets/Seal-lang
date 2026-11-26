@@ -1,0 +1,1 @@
+A generic procedure declares ?Item in < > after its name, and each call fills it in. D161, D38.
