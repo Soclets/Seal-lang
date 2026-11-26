@@ -12,7 +12,8 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 - D163 to D171 are in DECISIONS.md too: methods (D163 to D165), requirements (D166 to D168), signing with ML-DSA
   (D169), no type-following verifier (D170, its question answered), and a `.sealc` loading goal against `luajit -b`
   (D171).
-- Its 111 newer draft wordings (78cb5bc): the design session reviews them.
+- Its 111 newer draft wordings (78cb5bc): reviewed on 2026-11-26 in `design/wording-review-2026-11-26b.md`; not sent
+  yet.
 - D160 (no macros or comptime), D161 (generic procedures, `<?Item>`), D162 ("variable", mutable and immutable, in
   messages where they mean one) are in DECISIONS.md; it finds them by Building rule 10.
 
@@ -21,6 +22,12 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
   `goblin.is_alive()`", not the general "no procedure named". Its two catches in `d164_methods` are fixed (my slips).
 
 ## Still to settle with Tankun
+
+- A method that changes its value, called on a field or a list item (D165 stops there).
+- A method that changes its value and can fail: what the lent variable holds after a failure.
+- `mut` parameters outside methods (Unio D130's parameter words).
+- A host calling a method or a generic procedure by name.
+- Generics over units; generic records and `one_of`s.
 
 - A `Whole` with a unit into a `Float` with a unit of its group (asked; recommended yes, whenever exact).
 - Unit maths with no written form, as `px * px`, and maths on points beyond adding a span.
