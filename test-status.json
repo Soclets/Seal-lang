@@ -1,6 +1,6 @@
 {
   "passed": 28,
-  "failed": 0,
+  "failed": 1,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
     "d004_guessing_game": { "status": "pass" },
@@ -29,6 +29,7 @@
     "d149_brackets_before_to": { "status": "pass" },
     "d161_generic_procedures": { "status": "pass" },
     "d164_methods": { "status": "pass" },
-    "d165_mut_methods": { "status": "pass" }
+    "d165_mut_methods": { "status": "pass" },
+    "d166_number_requirement": { "status": "fail", "why": "exit status 1, expected 0" }
   }
 }
