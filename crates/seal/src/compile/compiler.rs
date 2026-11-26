@@ -3182,11 +3182,6 @@ impl<'p> Compiler<'p> {
         (size(body) <= 48).then_some(body)
     }
 
-    /// Lines a call's arguments up after the register its result comes back in, giving that register.
-    ///
-    /// A procedure takes its arguments over: each heap value it's given has a holder's count of its own, which the
-    /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
-    /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
     /// `if name < 2` and the like, a `Whole` against a small number, with a body that's only `return` of a name's plain
     /// value, nothing held to free: emitted as one `ReturnIfWholeSmall`, and true. False, emitting nothing, for any
     /// other `if`.
@@ -3250,6 +3245,11 @@ impl<'p> Compiler<'p> {
         Some((number, from, add, argument.place))
     }
 
+    /// Lines a call's arguments up after the register its result comes back in, giving that register.
+    ///
+    /// A procedure takes its arguments over: each heap value it's given has a holder's count of its own, which the
+    /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
+    /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
     fn arguments(&mut self, arguments: &[Expression], to_door: bool, moved: Option<VariableId>) -> Register {
         self.arguments_from(None, arguments, to_door, moved)
     }

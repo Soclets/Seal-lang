@@ -1,8 +1,10 @@
 # Bytecode files (D141), as proposed
 
 The building session's proposal for D141's file format, its verifier, and what verifying makes affordable, which
-D141 leaves to it. Nothing here is built yet: D141 builds it after the current work. Written 2026-11-25 by seal opus
-claude.
+D141 leaves to it. Written 2026-11-25 by seal opus claude, and built on 2026-11-26 (`compile/file.rs`,
+`host/compiled.rs`), with bundles and the cache that D153 and D154 added. Not built yet: following each register's kind
+through the instructions; what's built checks every number in range, and the VM checks every value's kind as it runs.
+PROGRESS.md's D141 entry says what's built.
 
 ## What a host and a game's build get
 
