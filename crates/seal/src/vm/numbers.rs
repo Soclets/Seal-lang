@@ -78,6 +78,7 @@ fn decimal_stop(error: NumberError, when: String) -> Stop {
 /// # Errors
 ///
 /// A failed check, the memory cap or the step budget being reached, or a bug in Seal.
+#[inline(never)]
 pub fn operation(code: u8, registers: &[u64], left: Register, right: Register, heap: &mut Heap) -> Result<u64, Stop> {
     match worked_out(code, registers, left, right, heap)? {
         Answer::Bool(flag) => Ok(u64::from(flag)),
@@ -112,6 +113,7 @@ fn number_ref(number: &Number) -> NumberRef<'_> {
 /// # Errors
 ///
 /// As [`operation`].
+#[inline(never)]
 pub fn update(code: u8, registers: &[u64], target: Register, right: Register, heap: &mut Heap) -> Result<u64, Stop> {
     let slot = |register: Register| {
         registers.get(usize::from(register)).copied().ok_or_else(|| internal("a register outside its frame"))
@@ -119,36 +121,47 @@ pub fn update(code: u8, registers: &[u64], target: Register, right: Register, he
     let (target_slot, right_slot) = (slot(target)?, slot(right)?);
     let whole_right = code & op::WHOLE_RIGHT != 0;
     let operation = (code & !op::WHOLE_RIGHT) % op::TYPE;
-    let in_place = (code & !op::WHOLE_RIGHT) / op::TYPE == 0
-        && (matches!(operation, op::ADD | op::SUBTRACT) || (operation == op::MULTIPLY && whole_right))
+    let kind = (code & !op::WHOLE_RIGHT) / op::TYPE;
+    // Adding, taking away, or multiplying by a number with few digits, of a `HugeWhole` or a `HugeDecimal`.
+    let in_place = kind != 1
+        && matches!(operation, op::ADD | op::SUBTRACT | op::MULTIPLY)
         && (whole_right || right_slot != target_slot);
-    if in_place && let Some((mut number, size)) = heap.take_number(target_slot) {
-        let right_size = if whole_right { 1 } else { heap.number(right_slot).map_or(1, pieces) };
-        let left_size = (size as u64 / 4).max(1);
-        // Adding or multiplying by a small number is linear, so that's what's paid.
-        let paid = afford(heap, left_size.saturating_add(right_size));
-        let changed = paid.and_then(|()| {
-            let Number::Huge(value) = number.as_mut() else { return Err(internal("a number of the wrong type")) };
-            if whole_right {
-                let whole = right_slot.cast_signed();
-                if operation == op::MULTIPLY {
-                    value.multiply_in_place(whole);
-                } else {
-                    value.add_in_place(&Big::from_i64(whole), operation == op::SUBTRACT);
-                }
-            } else {
-                let NumberRef::Huge(other) = heap.number(right_slot).map_err(Stop::from)? else {
-                    return Err(internal("a number of the wrong type"));
-                };
-                value.add_in_place(other, operation == op::SUBTRACT);
+    if in_place {
+        // Each of these is linear, so that's what's paid, before anything's changed.
+        let size = |slot: u64| heap.number(slot).map_or(1, pieces);
+        let work = size(target_slot).saturating_add(if whole_right { 1 } else { size(right_slot) });
+        afford(heap, work)?;
+        let other = (!whole_right).then_some(right_slot);
+        let whole = right_slot.cast_signed();
+        let subtract = operation == op::SUBTRACT;
+        let changed = heap.change_number(target_slot, other, |number, other| match (number, other) {
+            (Number::Huge(value), Some(Number::Huge(other))) if operation != op::MULTIPLY => {
+                value.add_in_place(other, subtract);
+                true
             }
-            Ok(())
+            (Number::Huge(value), None) if operation == op::MULTIPLY => {
+                value.multiply_in_place(whole);
+                true
+            }
+            (Number::Huge(value), None) => {
+                value.add_in_place(&Big::from_i64(whole), subtract);
+                true
+            }
+            (Number::HugeDecimal(value), Some(Number::HugeDecimal(other))) if operation == op::MULTIPLY => {
+                value.multiply_in_place(other)
+            }
+            (Number::HugeDecimal(value), Some(Number::HugeDecimal(other))) => value.add_in_place(other, subtract),
+            (Number::HugeDecimal(value), None) if operation == op::MULTIPLY => {
+                value.multiply_in_place(&HugeDecimal::from_whole(whole))
+            }
+            (Number::HugeDecimal(value), None) => value.add_in_place(&HugeDecimal::from_whole(whole), subtract),
+            _ => false,
         });
-        heap.work = heap.work.saturating_add((number.size() as u64 / 4).max(1));
-        let put = heap.put_number(target_slot, number, size).map_err(Stop::from);
-        changed?;
-        put?;
-        return Ok(target_slot);
+        if let Some(changed) = changed {
+            changed.map_err(Stop::from)?;
+            heap.work = heap.work.saturating_add(work);
+            return Ok(target_slot);
+        }
     }
     match worked_out(code, registers, target, right, heap)? {
         Answer::Bool(_) => Err(internal("a comparison as a change")),

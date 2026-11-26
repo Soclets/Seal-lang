@@ -437,14 +437,6 @@ fn rare_instruction(
             join_pieces(registers, heap, compiled, to, site, appending).map_err(stop)?;
         }
         // trace: D115, D116
-        Instruction::NumberOperation { to, left, right, operation } => {
-            let made = super::numbers::operation(operation, registers, left, right, heap).map_err(stop)?;
-            set(registers, to, made)?;
-        }
-        Instruction::NumberUpdate { target, right, operation } => {
-            let made = super::numbers::update(operation, registers, target, right, heap).map_err(stop)?;
-            set(registers, target, made)?;
-        }
         Instruction::ConvertNumber { to, from, site } => {
             let Some(&(conversion, failure)) = compiled.number_conversions.get(usize::from(site)) else {
                 return Err(broken("a number conversion that isn't there", pc));
@@ -1904,13 +1896,28 @@ pub fn run(
             | Instruction::TextToBool { .. }
             | Instruction::JoinPieces { .. }
             | Instruction::AppendPieces { .. }
-            | Instruction::NumberOperation { .. }
-            | Instruction::NumberUpdate { .. }
             | Instruction::ConvertNumber { .. } => {
                 match rare_instruction(instruction, registers, heap, compiled, pc, steps_left) {
                     Ok(Some(failed)) => failure = failed,
                     Ok(None) => {}
                     Err(stopped) => return Err(stopped),
+                }
+                count_work!();
+            }
+            // trace: D115, D116. Big numbers' maths, each in a small function of its own outside the loop.
+            Instruction::NumberOperation { to, left, right, operation } => {
+                heap.work_allowance = steps_left.saturating_mul(BULK_UNIT);
+                match super::numbers::operation(operation, registers, left, right, heap) {
+                    Ok(made) => set!(to, made),
+                    Err(stop) => return Err((stop, pc)),
+                }
+                count_work!();
+            }
+            Instruction::NumberUpdate { target, right, operation } => {
+                heap.work_allowance = steps_left.saturating_mul(BULK_UNIT);
+                match super::numbers::update(operation, registers, target, right, heap) {
+                    Ok(made) => set!(target, made),
+                    Err(stop) => return Err((stop, pc)),
                 }
                 count_work!();
             }

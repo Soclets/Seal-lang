@@ -266,35 +266,55 @@ impl Heap {
         }
     }
 
-    /// trace: D15, Building rule 5. A number held by nothing else, taken out of its place to be changed there, with
-    /// what it costs now; nothing when it's shared, isn't a number kept in a box, or is taken already. It goes back
-    /// with [`Heap::put_number`].
-    pub fn take_number(&mut self, handle: u64) -> Option<(Box<Number>, usize)> {
-        let entry = self.entry_mut(handle)?;
-        if entry.holders != 1 || !matches!(entry.object, Object::Number(_)) {
-            return None;
-        }
-        let Object::Number(number) = std::mem::replace(&mut entry.object, Object::Taken) else { return None };
-        let size = number.size();
-        Some((number, size))
-    }
-
-    /// Puts back a number [`Heap::take_number`] took out, counting what it costs now in place of what it did.
+    /// trace: D15, Building rule 5. Changes a `HugeWhole` or `HugeDecimal` held by nothing else where it is, with
+    /// the number in `other` to read when there's one, counting what it costs afterwards. `change` says whether it
+    /// could. Nothing when it couldn't, the target is shared or isn't one of those, or `other` is the target itself.
     ///
     /// # Errors
     ///
-    /// Fails when the number grew past the script's cap (D14); it's put back all the same.
-    pub fn put_number(&mut self, handle: u64, number: Box<Number>, size_before: usize) -> Result<(), HeapError> {
-        let size = number.size();
-        if let Some(entry) = self.entry_mut(handle) {
-            entry.object = Object::Number(number);
+    /// Fails when the number grew past the script's cap (D14).
+    pub fn change_number(
+        &mut self,
+        target: u64,
+        other: Option<u64>,
+        change: impl FnOnce(&mut Number, Option<&Number>) -> bool,
+    ) -> Option<Result<(), HeapError>> {
+        let target_index = usize::try_from(target).ok()?;
+        let other_index = match other {
+            Some(other) => Some(usize::try_from(other).ok().filter(|&index| index != target_index)?),
+            None => None,
+        };
+        let (entry, other_entry) = match other_index {
+            None => (self.entries.get_mut(target_index)?, None),
+            Some(other_index) if other_index < target_index => {
+                let (low, high) = self.entries.split_at_mut(target_index);
+                (high.first_mut()?, Some(low.get(other_index)?))
+            }
+            Some(other_index) => {
+                let (low, high) = self.entries.split_at_mut(other_index);
+                (low.get_mut(target_index)?, Some(high.first()?))
+            }
+        };
+        if entry.holders != 1 {
+            return None;
         }
-        if size >= size_before {
-            self.charge(size - size_before)
+        let Object::Number(number) = &mut entry.object else { return None };
+        let other_number = match other_entry.map(|entry| &entry.object) {
+            None => None,
+            Some(Object::Number(other)) => Some(other.as_ref()),
+            Some(_) => return None,
+        };
+        let before = number.size();
+        if !change(number, other_number) {
+            return None;
+        }
+        let after = number.size();
+        Some(if after >= before {
+            self.charge(after - before)
         } else {
-            self.refund(size_before - size);
+            self.refund(before - after);
             Ok(())
-        }
+        })
     }
 
     /// trace: D15, Building rule 5. Puts a new number in place of the one a handle leads to, when nothing else holds

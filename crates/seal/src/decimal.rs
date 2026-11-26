@@ -218,6 +218,36 @@ impl HugeDecimal {
         self.add(&other.negated())
     }
 
+    /// trace: Building rule 5. `self × other`, changing `self` where it is, when `other`'s digits fit an `i64`;
+    /// false, changing nothing, when they don't.
+    pub fn multiply_in_place(&mut self, other: &HugeDecimal) -> bool {
+        let Some(factor) = other.coefficient.to_i64() else { return false };
+        self.coefficient.multiply_in_place(factor);
+        self.exponent += other.exponent;
+        true
+    }
+
+    /// trace: Building rule 5. `self + other`, or `self - other` when `subtract`, changing `self` where it is, lined
+    /// up at the smaller exponent as `add` does; false, changing nothing, when lining `self` up would take more than
+    /// 18 places.
+    pub fn add_in_place(&mut self, other: &HugeDecimal, subtract: bool) -> bool {
+        if other.exponent >= self.exponent {
+            let gap = (other.exponent - self.exponent) as u64;
+            if gap == 0 {
+                self.coefficient.add_in_place(&other.coefficient, subtract);
+            } else {
+                self.coefficient.add_in_place(&other.coefficient.multiply(&ten_to(gap)), subtract);
+            }
+            return true;
+        }
+        let gap = (self.exponent - other.exponent) as usize;
+        let Some(&scale) = POWERS_OF_TEN.get(gap).filter(|_| gap <= 18) else { return false };
+        self.coefficient.multiply_in_place(scale as i64);
+        self.exponent = other.exponent;
+        self.coefficient.add_in_place(&other.coefficient, subtract);
+        true
+    }
+
     #[must_use]
     pub fn multiply(&self, other: &HugeDecimal) -> HugeDecimal {
         HugeDecimal::new(self.coefficient.multiply(&other.coefficient), self.exponent + other.exponent)
@@ -1003,6 +1033,38 @@ mod tests {
             shown(decimal("9999999999999999999999999999999999").add(&decimal("1"))),
             "10000000000000000000000000000000000"
         );
+    }
+
+    // trace: Building rule 5. A `HugeDecimal` changed where it is equals the one made anew, exponent and all.
+    #[test]
+    fn huge_decimals_changed_in_place_agree_with_making_anew() {
+        let values = ["0", "1", "-1", "0.05", "1.05", "-123.456", "99999999999999999999.9", "1e30", "-7e-25", "3"];
+        let read = |text: &str| {
+            let (negative, rest) = text.strip_prefix('-').map_or((false, text), |rest| (true, rest));
+            let (digits, exponent) = rest
+                .split_once('e')
+                .map_or((rest, 0), |(digits, exponent)| (digits, exponent.parse::<i64>().unwrap_or(0)));
+            let value = HugeDecimal::read(digits).unwrap_or_default();
+            let value = HugeDecimal::new(value.coefficient, value.exponent + exponent);
+            if negative { value.negated() } else { value }
+        };
+        for left in values {
+            for right in values {
+                let (a, b) = (read(left), read(right));
+                let mut sum = a.clone();
+                if sum.add_in_place(&b, false) {
+                    assert_eq!(sum, a.add(&b), "{left} + {right}");
+                }
+                let mut difference = a.clone();
+                if difference.add_in_place(&b, true) {
+                    assert_eq!(difference, a.subtract(&b), "{left} - {right}");
+                }
+                let mut product = a.clone();
+                if product.multiply_in_place(&b) {
+                    assert_eq!(product, a.multiply(&b), "{left} * {right}");
+                }
+            }
+        }
     }
 
     // trace: D116, D127
