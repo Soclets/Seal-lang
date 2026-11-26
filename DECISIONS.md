@@ -1741,6 +1741,8 @@ Seal has records inside records.
 
 (Changed by D142: goal 1 also has LuaJIT's interpreter, `luajit -joff`, as a bar; LuaJIT with its JIT is a reference.)
 
+(Changed by D171: loading a `.sealc` must beat LuaJIT loading its own compiled bytecode.)
+
 **Weighed.**
 - A list of optimizations, as Unio's D124 gave `Unlo\n`. It would be a guess at what matters before anything runs.
 - Benchmarks chosen by the building session. A goal whose test is picked by whoever has to meet it drifts towards
