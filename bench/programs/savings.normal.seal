@@ -1,0 +1,11 @@
+// trace: D116, D125, D155. Savings with interest compounding every day and a cent put in, in a `Decimal`, each step
+// rounded as decimal128 rounds. Counted in whole units at the end.
+proc run[n: Whole] -> Whole
+    mut savings: Decimal = 100.00
+    mut day = 0
+    while day < n
+        savings = savings * 1.00001 + 0.01
+        day = day + 1
+    end
+    return be.Whole.floor(savings) ?? 0
+end

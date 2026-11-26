@@ -1,0 +1,21 @@
+// trace: D115, D155. An idle game's numbers growing: gold earned every tick, with an upgrade bought whenever it's
+// affordable, each doubling what a tick earns and what the next upgrade costs. Counted by the digits of all the gold
+// ever earned, as the game would show it.
+proc run[n: Whole] -> Whole
+    mut gold: HugeWhole = 0
+    mut earned: HugeWhole = 0
+    mut rate: HugeWhole = 1
+    mut cost: HugeWhole = 10
+    mut tick = 0
+    while tick < n
+        gold = gold + rate
+        earned = earned + rate
+        if gold at_least cost
+            gold = gold - cost
+            rate = rate * 2
+            cost = cost * 2
+        end
+        tick = tick + 1
+    end
+    return be.Text(earned).len
+end

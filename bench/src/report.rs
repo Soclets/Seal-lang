@@ -92,13 +92,79 @@ const BENCHMARKS: [Benchmark; 7] = [
     },
 ];
 
-/// The new number types, timed on Seal alone (D115, D116): no other engine here has them. Each is a program, what
-/// it does, what `run` is given, and the answer it must give, checked against Python's own `decimal` and integers.
-const NUMBER_BENCHMARKS: [(&str, &str, i64, &str); 4] = [
-    ("money.normal", "`Decimal`: 1,000,000 prices summed with tax, then split three ways", 1_000_000, "6786395"),
-    ("money.float", "the same sums in `Float`s, as a yardstick", 1_000_000, "6786395"),
-    ("factorial.normal", "`HugeWhole`: 3000 factorial, 9,131 digits", 3000, "9131"),
-    ("interest.normal", "`HugeDecimal`: 2,000 years of exact 5% interest, 4,048 digits", 2000, "4048"),
+/// Python, with `gmpy2`, in a virtual environment of the benchmarks' own that `bench/run.sh` makes (D159).
+const PYTHON: &str = "target/bench-python/bin/python";
+
+/// One of D155's benchmarks of the big number types: its program, what it does, what `run` is given, the answer it
+/// must give, and whether Python's built-ins and `gmpy2` have a program for it (`NAME.normal.py`, `NAME.gmpy2.py`).
+struct NumberBenchmark {
+    name: &'static str,
+    title: &'static str,
+    argument: i64,
+    expected: &'static str,
+    python: bool,
+    gmpy2: bool,
+}
+
+/// trace: D155, D159. Fixed once written, as D57's are: more may be added, none swapped or dropped. `money.float` is
+/// a yardstick for what exactness costs, with no goal.
+const NUMBER_BENCHMARKS: [NumberBenchmark; 7] = [
+    NumberBenchmark {
+        name: "factorial.normal",
+        title: "`HugeWhole`: 3000 factorial, 9,131 digits",
+        argument: 3000,
+        expected: "9131",
+        python: true,
+        gmpy2: true,
+    },
+    NumberBenchmark {
+        name: "idle.normal",
+        title: "`HugeWhole`: an idle game's gold over 20,000 ticks, upgrades doubling it, 604 digits",
+        argument: 20_000,
+        expected: "604",
+        python: true,
+        gmpy2: true,
+    },
+    NumberBenchmark {
+        name: "money.normal",
+        title: "`Decimal`: 1,000,000 prices summed with tax, then split three ways",
+        argument: 1_000_000,
+        expected: "6786395",
+        python: true,
+        gmpy2: false,
+    },
+    NumberBenchmark {
+        name: "savings.normal",
+        title: "`Decimal`: 1,000,000 days of interest compounding, a cent put in each day",
+        argument: 1_000_000,
+        expected: "24226900",
+        python: true,
+        gmpy2: false,
+    },
+    NumberBenchmark {
+        name: "interest.normal",
+        title: "`HugeDecimal`: 2,000 years of exact 5% interest, 4,048 digits",
+        argument: 2000,
+        expected: "4048",
+        python: true,
+        gmpy2: false,
+    },
+    NumberBenchmark {
+        name: "money.huge",
+        title: "`HugeDecimal`: the money sums, kept exactly",
+        argument: 1_000_000,
+        expected: "6786395",
+        python: true,
+        gmpy2: false,
+    },
+    NumberBenchmark {
+        name: "money.float",
+        title: "the money sums in `Float`s, as a yardstick",
+        argument: 1_000_000,
+        expected: "6786395",
+        python: false,
+        gmpy2: false,
+    },
 ];
 
 /// The patrol benchmark's sizes: the Normal run, and the Purpose run, which isolates pausing in one script.
@@ -285,6 +351,21 @@ impl Report {
         let mut arguments: Vec<String> = engine.flags.iter().map(|flag| (*flag).to_owned()).collect();
         arguments.push(file.display().to_string());
         measure(engine.program, &arguments)
+    }
+
+    /// A Python program, `bench/programs/FILE.py`, with Python's driver after it, in the benchmarks' Python.
+    fn python_row(&self, file: &str, argument: i64) -> Result<Measured, String> {
+        let program = self.root.join(format!("bench/programs/{file}.py"));
+        let source = std::fs::read_to_string(&program).map_err(|_| format!("`{}` can't be read", program.display()))?;
+        let driver = std::fs::read_to_string(self.root.join("bench/drivers/driver.py"))
+            .map_err(|_| "the driver can't be read".to_owned())?
+            .replace("ARGUMENT", &argument.to_string())
+            .replace("WARMUPS", "2")
+            .replace("RUNS", &self.runs.to_string());
+        let run = self.scratch.join("run.py");
+        std::fs::write(&run, format!("{source}\n{driver}")).map_err(|error| error.to_string())?;
+        let python = self.root.join(PYTHON).display().to_string();
+        measure(&python, &["-I".to_owned(), run.display().to_string()])
     }
 
     /// How long a whole process takes to start, load a script and stop, running nothing: the cold load.
@@ -581,35 +662,74 @@ impl Report {
         }
     }
 
-    /// trace: D57, D115, D116. The new number types, timed, with their answers checked.
+    /// trace: D155, D159. The big number types on Seal, Python's built-ins and `gmpy2`, every answer checked.
     fn numbers(&mut self) {
-        let _ = writeln!(self.out, "\n## The new number types (D115, D116), Normal\n");
+        let _ = writeln!(self.out, "\n## The big number types against Python (D155, D159), Normal\n");
         let _ = writeln!(
             self.out,
-            "Timed on Seal alone, since Luau has neither, and D57 sets no goal for them; the `Float` row shows what \
-             exactness costs.\n"
+            "Python's built-ins are the bar: `int` for `HugeWhole`, and `decimal` for `Decimal` (set to decimal128's \
+             rules) and `HugeDecimal` (with room for every digit, so it's exact). `gmpy2`, Python's binding to GMP, is \
+             shown for reference, with no target; it has no decimal type, so it runs the `HugeWhole` programs only. \
+             The `Float` row shows what exactness costs.\n"
         );
-        let _ = writeln!(self.out, "| Program | Mean | Deviation | Least | Peak memory |");
-        let _ = writeln!(self.out, "|---|---|---|---|---|");
-        for (name, title, argument, expected) in NUMBER_BENCHMARKS {
-            let program = self.root.join(format!("bench/programs/{name}.seal"));
-            match self.seal_row(&self.seal, &program, argument) {
-                Ok(measured) if same_answer(&measured.result, expected) => {
-                    let peak = measured.peak.map_or_else(|| "?".to_owned(), bytes);
-                    let _ = writeln!(
-                        self.out,
-                        "| {title} | {} | {} | {} | {peak} |",
-                        seconds(mean(&measured.times)),
-                        seconds(deviation(&measured.times)),
-                        seconds(least(&measured.times))
-                    );
+        let _ = writeln!(
+            self.out,
+            "| Program | Seal mean | Seal deviation | Seal least | Seal peak memory | Python mean | Python least | `gmpy2` mean |"
+        );
+        let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|");
+        for benchmark in &NUMBER_BENCHMARKS {
+            let program = self.root.join(format!("bench/programs/{}.seal", benchmark.name));
+            let checked = |engine: &str, measured: Result<Measured, String>, problems: &mut Vec<String>| match measured
+            {
+                Ok(measured) if same_answer(&measured.result, benchmark.expected) => Some(measured),
+                Ok(measured) => {
+                    problems.push(format!(
+                        "`{}` on {engine} gave {}, not {}",
+                        benchmark.name, measured.result, benchmark.expected
+                    ));
+                    None
                 }
-                Ok(measured) => self.problems.push(format!("`{name}` gave {}, not {expected}", measured.result)),
-                Err(why) => self.problems.push(format!("`{name}`: {why}")),
+                Err(why) => {
+                    problems.push(format!("`{}` on {engine}: {why}", benchmark.name));
+                    None
+                }
+            };
+            let seal = self.seal_row(&self.seal, &program, benchmark.argument);
+            let seal = checked("Seal", seal, &mut self.problems);
+            let python =
+                if benchmark.python { Some(self.python_row(benchmark.name, benchmark.argument)) } else { None };
+            let python = python.and_then(|measured| checked("Python", measured, &mut self.problems));
+            let base = benchmark.name.split('.').next().unwrap_or(benchmark.name);
+            let gmpy2 = if benchmark.gmpy2 {
+                Some(self.python_row(&format!("{base}.gmpy2"), benchmark.argument))
+            } else {
+                None
+            };
+            let gmpy2 = gmpy2.and_then(|measured| checked("`gmpy2`", measured, &mut self.problems));
+            let time = |measured: &Option<Measured>, of: fn(&[f64]) -> f64| {
+                measured.as_ref().map_or_else(|| "–".to_owned(), |measured| seconds(of(&measured.times)))
+            };
+            let peak = seal.as_ref().and_then(|measured| measured.peak).map_or_else(|| "?".to_owned(), bytes);
+            let _ = writeln!(
+                self.out,
+                "| {} | {} | {} | {} | {peak} | {} | {} | {} |",
+                benchmark.title,
+                time(&seal, mean),
+                time(&seal, deviation),
+                time(&seal, least),
+                time(&python, mean),
+                time(&python, least),
+                time(&gmpy2, mean),
+            );
+            for (engine, measured) in [("Seal", &seal), ("Python", &python)] {
+                if let Some(measured) = measured {
+                    self.normal.insert((benchmark.name.to_owned(), engine.to_owned()), mean(&measured.times));
+                }
             }
         }
     }
 
+    #[allow(clippy::too_many_lines)] // one table, a row per goal and bar, in the order they're read
     fn goals(&self) -> String {
         let mut out = String::new();
         let time = |benchmark: &str, engine: &str| self.normal.get(&(benchmark.to_owned(), engine.to_owned())).copied();
@@ -677,6 +797,18 @@ impl Report {
                 );
             }
         }
+        // trace: D155, D159
+        for benchmark in NUMBER_BENCHMARKS.iter().filter(|benchmark| benchmark.python) {
+            let (seal, python) = (time(benchmark.name, "Seal"), time(benchmark.name, "Python"));
+            let _ = writeln!(
+                out,
+                "| D155. Faster than Python's built-ins | {} | {} | {} | {} |",
+                benchmark.title,
+                shown(seal),
+                shown(python),
+                verdict(seal, python, 1.0)
+            );
+        }
         for (name, limit, goal) in [
             ("fib", 1.0, "2. Faster than V8 `--jitless`"),
             ("nbody", 1.0, "2. Faster than V8 `--jitless`"),
@@ -739,6 +871,16 @@ fn version(program: &str, flag: &str) -> String {
         .unwrap_or_else(|| "?".to_owned())
 }
 
+/// What a line of Python prints, for the versions in the setup.
+fn python_says(python: &str, code: &str) -> String {
+    Command::new(python)
+        .args(["-I", "-c", code])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8_lossy(&output.stdout).lines().next().map(str::to_owned))
+        .unwrap_or_else(|| "?".to_owned())
+}
+
 fn system(name: &str) -> String {
     Command::new("sysctl")
         .args(["-n", name])
@@ -795,6 +937,8 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     if only.is_none() {
         report.checks();
+    }
+    if only.as_deref().is_none_or(|only| only == "numbers") {
         report.numbers();
     }
     // D57's fourth goal: a 10,000-line script checked and compiled in under 100 ms.
@@ -838,6 +982,14 @@ pub fn report(options: &[&str]) -> Result<String, String> {
         text,
         "- **Node:** `{}`, with `--jitless` (only Ignition, V8's bytecode interpreter) and without (V8's JITs on).",
         version(NODE, "--version")
+    );
+    let python = report.root.join(PYTHON).display().to_string();
+    let _ = writeln!(
+        text,
+        "- **Python:** `{}`, with `gmpy2` `{}` (on GMP), in `target/bench-python`, which `bench/run.sh` makes; Python's `decimal` is on libmpdec `{}`.",
+        version(&python, "--version"),
+        python_says(&python, "import gmpy2; print(gmpy2.version())"),
+        python_says(&python, "import decimal; print(decimal.__libmpdec_version__)")
     );
     let _ = writeln!(
         text,

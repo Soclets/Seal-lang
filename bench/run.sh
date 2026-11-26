@@ -4,6 +4,13 @@
 set -e
 cores=3
 
+# trace: D159. Python with `gmpy2`, for the big number types' bar and reference rows, in a virtual environment of the
+# benchmarks' own, made once.
+if [ ! -x target/bench-python/bin/python ]; then
+    python3 -m venv target/bench-python
+    target/bench-python/bin/pip install -q gmpy2
+fi
+
 # The usual build: the baseline CPU, no profile.
 cargo build -q -j "$cores" --release -p seal-bench
 
