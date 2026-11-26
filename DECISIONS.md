@@ -5352,3 +5352,32 @@ use that crate?", "If we impl it, what model(s)?", "Did Opus Claude do that alre
 Seal", then, asked "should Seal use `fips204` for ML-DSA, allowing `zeroize`'s and `getrandom`'s small amounts of
 `unsafe`, with a proven SPARK version left as an optional project?", the owner chose: "Nope, we're gonna impl the SPARK
 tomorrow"
+
+(Replaced by D175: Seal uses the `fips204` crate, and D169 is built now.)
+
+## D175. Seal uses the `fips204` crate for ML-DSA, replacing D174's SPARK project
+
+2026-11-26.
+
+**Chosen.** D169's signing uses `fips204` (IntegrityChain), a pure-Rust ML-DSA with no `unsafe` of its own, tested
+against NIST's ACVP vectors, Google's Wycheproof vectors and the CCTV tests, fuzzed and timing-measured, though not yet
+independently audited:
+- **Allowed by Tankun under Building rule 2:** the `unsafe` in its dependencies `zeroize` (wiping secret keys from
+  memory) and `getrandom` and `rand_core` (randomness for making keys). Checking a signature, the part games run, uses
+  none of them: `fips204`, `sha3` and `keccak` without its optional assembly are free of `unsafe`.
+- **ML-DSA-44,** with `seal keygen` making keys, `seal build --sign` signing, and the host requiring a signature, as the
+  building session proposed; its API and names are the building session's.
+- D169 is built now, not after a SPARK project.
+
+**Weighed.**
+- D174's own ML-DSA in SPARK, proven, started with Tankun's weekly reset. That reset goes to NginSeal instead, the
+  engine that puts Seal in real games; a proven ML-DSA can still replace `fips204` later, behind the same API.
+- RustCrypto's `ml-dsa` and `libcrux-ml-dsa`, as D174 weighed: never audited, or version 0.0.12, each with more
+  `unsafe`.
+
+**Why this won.** Signing works now, with the part games run free of `unsafe`, and the reset buys the engine Seal
+needs more.
+
+**Tankun's words.** "Or should we fuck SPARK crypto, and just save that card for Ngin?", then, asked "Should the card go
+to NginSeal, with D169's signing waiting until the SPARK checker is built on a later week?", the owner chose: "No, we
+should just use Rust's crate"
