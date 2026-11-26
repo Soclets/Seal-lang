@@ -892,15 +892,15 @@ impl Report {
                 );
             }
         }
-        // trace: D141, D171. Loading a compiled file, checks and all, is judged against LuaJIT loading its own bytecode,
-        // as `luajit -b` writes it.
+        // trace: D141, D171, D176. Loading a compiled file, checks and all, is met within twice LuaJIT's time for
+        // loading its own bytecode, as `luajit -b` writes it, which it doesn't check.
         let (seal, luajit) = (time("patrol.load_compiled", "Seal"), time("patrol.load_compiled", "LuaJIT `-joff`"));
         let _ = writeln!(
             out,
-            "| D171. Faster than LuaJIT loading its own bytecode | patrolling scripts, loading each from a compiled file of its own | {} | {} | {} |",
+            "| D171, D176. Within twice LuaJIT loading its own bytecode | patrolling scripts, loading each from a compiled file of its own | {} | {} | {} |",
             shown(seal),
             shown(luajit),
-            verdict(seal, luajit, 1.0),
+            verdict(seal, luajit, 2.0),
         );
         // trace: D152. A door call through C aims at a Rust door's speed; LuaJIT's C API is beside it.
         let (c, rust) = (time("doors.c", "Seal"), time("doors.rust", "Seal"));
