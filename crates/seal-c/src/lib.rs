@@ -492,56 +492,74 @@ unsafe impl Send for HostData {}
 // SAFETY: as above; Seal never reads through the pointer.
 unsafe impl Sync for HostData {}
 
-/// A C door, called as Seal calls a door: plain arguments as their bits, the rest lent as handles for the call.
-fn call_door(
+/// A C door as Seal keeps it: what the host opened it with, and each argument's kind, worked out once (D152).
+struct CDoor {
     function: unsafe extern "C" fn(*mut c_void, *const seal_arg, usize, *mut seal_arg) -> seal_status,
-    data: &HostData,
-    shape: &(Vec<HostType>, HostType, Vec<String>, bool),
-    bits: &[u64],
-    values: &mut [Value],
-) -> DoorAnswer {
-    let (parameters, result_type, failures, can_pause) = shape;
-    let mut arguments = Vec::with_capacity(parameters.len());
-    let mut lent = Vec::new();
-    for (place, parameter) in parameters.iter().enumerate() {
-        let kind = crossing_kind(parameter);
-        if matches!(kind, WHOLE | FLOAT | BOOL | NOTHING) {
-            arguments.push(plain(kind, bits.get(place).copied().unwrap_or(0)));
+    data: HostData,
+    kinds: Vec<seal_kind>,
+    /// Whether every argument crosses as its bits, so that nothing is lent and nothing taken back.
+    plain_only: bool,
+    result_type: HostType,
+    result_kind: seal_kind,
+    failures: Vec<String>,
+    can_pause: bool,
+}
+
+/// How many arguments a door call holds without making room for them.
+const ARGUMENTS_HELD: usize = 8;
+
+/// Whether a kind crosses as its bits, in the argument itself.
+fn crosses_plain(kind: seal_kind) -> bool {
+    matches!(kind, WHOLE | FLOAT | BOOL | NOTHING)
+}
+
+/// A C door, called as Seal calls a door: plain arguments as their bits, the rest lent as handles for the call.
+fn call_door(door: &CDoor, bits: &[u64], values: &mut [Value]) -> DoorAnswer {
+    let mut held = [plain(NOTHING, 0); ARGUMENTS_HELD];
+    let mut made = Vec::new();
+    let arguments: &mut [seal_arg] = if let Some(held) = held.get_mut(..door.kinds.len()) {
+        held
+    } else {
+        made.resize(door.kinds.len(), plain(NOTHING, 0));
+        &mut made
+    };
+    for (place, (argument, &kind)) in arguments.iter_mut().zip(&door.kinds).enumerate() {
+        *argument = if crosses_plain(kind) {
+            plain(kind, bits.get(place).copied().unwrap_or(0))
         } else {
-            let value = values.get_mut(place).map(std::mem::take).unwrap_or_default();
-            let argument = give(value, true);
-            lent.push(argument.bits);
-            arguments.push(argument);
-        }
+            give(values.get_mut(place).map(std::mem::take).unwrap_or_default(), true)
+        };
     }
     let mut result = plain(NOTHING, 0);
     // SAFETY: the host opened this door with this function, promising it takes these arguments: the host's data,
     // the arguments, valid for the call, their count, and where to write its result.
-    let status = unsafe { function(data.0, arguments.as_ptr(), arguments.len(), &raw mut result) };
+    let status = unsafe { (door.function)(door.data.0, arguments.as_ptr(), arguments.len(), &raw mut result) };
     // What was lent is taken back, whatever the door did with it.
-    VALUES.with(|values| {
-        let mut values = values.borrow_mut();
-        for number in lent {
-            values.remove(usize::try_from(number).unwrap_or(0));
-        }
-    });
+    if !door.plain_only {
+        VALUES.with(|values| {
+            let mut values = values.borrow_mut();
+            for argument in arguments.iter().filter(|argument| !crosses_plain(argument.kind)) {
+                values.remove(usize::try_from(argument.bits).unwrap_or(0));
+            }
+        });
+    }
     match status {
-        SEAL_OK => match crossing_kind(result_type) {
+        SEAL_OK => match door.result_kind {
             NOTHING => DoorAnswer::Plain(0),
             WHOLE => DoorAnswer::Plain(result.bits),
             FLOAT if f64::from_bits(result.bits).is_finite() => DoorAnswer::Plain(result.bits),
             FLOAT => DoorAnswer::Mistake("a C door gave a `Float` that's infinite or not a number".to_owned()),
             BOOL => DoorAnswer::Plain(u64::from(result.bits & 0xffff_ffff != 0)),
             _ => match receive(result, true) {
-                Ok(value) if fits(&value, result_type) => DoorAnswer::Value(value),
+                Ok(value) if fits(&value, &door.result_type) => DoorAnswer::Value(value),
                 Ok(_) => {
                     DoorAnswer::Mistake("a C door gave a value of another type than it was opened with".to_owned())
                 }
                 Err(why) => DoorAnswer::Mistake(format!("a C door gave {why}")),
             },
         },
-        SEAL_PAUSED if *can_pause => DoorAnswer::Pause,
-        SEAL_FAILED => match usize::try_from(result.bits).ok().and_then(|place| failures.get(place)) {
+        SEAL_PAUSED if door.can_pause => DoorAnswer::Pause,
+        SEAL_FAILED => match usize::try_from(result.bits).ok().and_then(|place| door.failures.get(place)) {
             Some(failure) => DoorAnswer::Failure(failure.clone()),
             None => DoorAnswer::Mistake("a C door failed with a failure it wasn't opened with".to_owned()),
         },
@@ -620,10 +638,19 @@ pub unsafe extern "C" fn seal_doors_add(
             };
             failure_names.push(failure.to_owned());
         }
+        let kinds: Vec<seal_kind> = parameters.iter().map(crossing_kind).collect();
+        let kept = CDoor {
+            function,
+            data: HostData(host_data),
+            plain_only: kinds.iter().all(|&kind| crosses_plain(kind)),
+            kinds,
+            result_kind: crossing_kind(&result),
+            result_type: result.clone(),
+            failures: failure_names.clone(),
+            can_pause: can_pause != 0,
+        };
         let shape = (parameters, result, failure_names, can_pause != 0);
-        let kept = shape.clone();
-        let data = HostData(host_data);
-        let door = move |bits: &[u64], values: &mut Vec<Value>| call_door(function, &data, &kept, bits, values);
+        let door = move |bits: &[u64], values: &mut Vec<Value>| call_door(&kept, bits, values);
         let added = DOORS.with(|table| {
             table.borrow_mut().get_mut(number_of(doors)).map(|doors| doors.add_raw(name, shape, door).map(|_| ()))
         });

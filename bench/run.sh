@@ -12,7 +12,7 @@ if [ ! -x target/bench-python/bin/python ]; then
 fi
 
 # The usual build: the baseline CPU, no profile.
-cargo build -q -j "$cores" --release -p seal-bench
+cargo build -q -j "$cores" --release -p seal-bench -p seal-c
 
 # Ceil.machine: the VM built for this exact CPU.
 RUSTFLAGS="-C target-cpu=native" cargo build -q -j "$cores" --release -p seal-bench --target-dir target/variants/machine

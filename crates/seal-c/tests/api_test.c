@@ -276,12 +276,14 @@ static int bench(long count) {
     seal_task task;
     double best = 1e9;
     for (int run = 0; run < 7; run++) {
+        the_game.hurt_total = 0;
         double started = seconds();
         if (seal_script_call(script, "run", NULL, &n, 1, &result, &task) != SEAL_OK) return 1;
         double took = seconds() - started;
         if (took < best) best = took;
     }
-    printf("door_call_each %.9f\n", best / (double)count);
+    printf("result %lld\n", (long long)the_game.hurt_total);
+    printf("door_call_each %.12f\n", best / (double)count);
     seal_script_free(script);
     seal_doors_free(doors);
     return 0;

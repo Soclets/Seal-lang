@@ -6,6 +6,7 @@
 //! seal-bench patrol COUNT ROUNDS                            the patrolling-scripts benchmark on Seal
 //! seal-bench load FILE                                      load a script and stop
 //! seal-bench lines COUNT                                    load a generated script of about COUNT lines
+//! seal-bench doors COUNT                                    COUNT calls of a Rust door from a script's loop
 //! ```
 //!
 //! Every result is checked for correctness before it's timed (D58): a wrong answer is reported as wrong, never as a
@@ -241,6 +242,34 @@ fn lines(count: usize) -> Result<String, String> {
     Ok(format!("lines {actual}\nbytes {}\nbest {best:.6}\nmean {mean:.6}\n", source.len()))
 }
 
+/// The door-call benchmark with a Rust door (D152): the loop `api_test.c` and the `LuaJIT` driver time through C, with
+/// the door written in Rust, which the C API aims to match. Prints the best of seven runs' time per call, and the
+/// total the calls added up, for checking.
+fn doors(count: usize) -> Result<String, String> {
+    let total = Arc::new(AtomicU64::new(0));
+    let mut doors = Doors::new();
+    let added = Arc::clone(&total);
+    doors
+        .add("damage", move |amount: i64, times: i64| {
+            added.fetch_add(amount.wrapping_mul(times).cast_unsigned(), Ordering::Relaxed);
+        })
+        .map_err(|message| message.to_string())?;
+    let source =
+        "proc run[n: Whole]\n    for_each round in range[from: 1, to: n]\n        damage(round, 2)\n    end\nend\n";
+    let mut script = Script::load("doors.seal", source, &doors, LIMITS).map_err(|error| error.to_string())?;
+    let count = i64::try_from(count).map_err(|_| "too many calls".to_owned())?;
+    let mut best = f64::MAX;
+    for _ in 0..7 {
+        total.store(0, Ordering::Relaxed);
+        let started = Instant::now();
+        script.call_values("run", &whole(count)).map_err(|error| error.to_string())?;
+        best = best.min(started.elapsed().as_secs_f64());
+    }
+    #[allow(clippy::cast_precision_loss)] // a count of calls, far below 2^52
+    let each = best / count as f64;
+    Ok(format!("result {}\ndoor_call_each {each:.12}\n", total.load(Ordering::Relaxed)))
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let text: Vec<&str> = arguments.iter().map(String::as_str).collect();
@@ -258,8 +287,9 @@ fn main() -> ExitCode {
                 Ok(format!("load {:.9}\n", started.elapsed().as_secs_f64()))
             }),
         ["lines", count] => lines(number(count)),
+        ["doors", count] => doors(number(count)),
         ["report", options @ ..] => report::report(options),
-        _ => Err("usage: seal-bench report | seal FILE ARGUMENT WARMUPS RUNS | patrol FILE COUNT ROUNDS | load FILE | lines COUNT".to_owned()),
+        _ => Err("usage: seal-bench report | seal FILE ARGUMENT WARMUPS RUNS | patrol FILE COUNT ROUNDS | load FILE | lines COUNT | doors COUNT".to_owned()),
     };
     match outcome {
         Ok(out) => {

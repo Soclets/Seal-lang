@@ -93,6 +93,12 @@ const BENCHMARKS: [Benchmark; 7] = [
 ];
 
 /// Python, with `gmpy2`, in a virtual environment of the benchmarks' own that `bench/run.sh` makes (D159).
+/// A program to run, and its arguments.
+type Run = (String, Vec<String>);
+
+/// How many door calls the door-call benchmark makes.
+const DOOR_CALLS: u64 = 1_000_000;
+
 const PYTHON: &str = "target/bench-python/bin/python";
 
 /// One of D155's benchmarks of the big number types: its program, what it does, what `run` is given, the answer it
@@ -664,6 +670,91 @@ impl Report {
         }
     }
 
+    /// A C program built with the system's compiler into the scratch folder, or why it wasn't.
+    fn build_c(&self, name: &str, sources: &[PathBuf], flags: &[&str]) -> Result<String, String> {
+        let program = self.scratch.join(name);
+        let built = Command::new("cc")
+            .arg("-O2")
+            .args(flags)
+            .args(sources)
+            .arg("-lm")
+            .arg("-o")
+            .arg(&program)
+            .output()
+            .map_err(|error| format!("`cc` didn't start: {error}"))?;
+        if !built.status.success() {
+            return Err(format!("`cc` didn't build {name}: {}", String::from_utf8_lossy(&built.stderr).trim()));
+        }
+        Ok(program.display().to_string())
+    }
+
+    /// trace: D136, D152. A script calling a host door in a loop, through Seal's C API and with a Rust door, beside
+    /// `LuaJIT`'s C API calling a C function from a Lua loop. Every engine's calls are added up and checked.
+    fn doors(&mut self) {
+        let _ = writeln!(self.out, "\n## Door calls through C (D136, D152), Purpose\n");
+        let _ = writeln!(
+            self.out,
+            "A loop calling a host door {} times, each call handing it two whole numbers it multiplies and adds \
+             to a total; the time is the best of seven runs, divided by the calls. Seal's door is written in C, through \
+             Seal's C API (`crates/seal-c/tests/api_test.c`), and in Rust, which the C API aims to match. `LuaJIT`'s is \
+             a C function registered with its C API, reading its numbers with `luaL_checkinteger`, as Seal's door checks \
+             their kinds (`bench/drivers/doors.luajit.c`). Luau's C library isn't installed here, so it has no row.\n",
+            grouped(DOOR_CALLS)
+        );
+        let _ = writeln!(self.out, "| Engine | Door written in | Each call | Notes |");
+        let _ = writeln!(self.out, "|---|---|---|---|");
+        let library = self.root.join("target/release/libseal_c.a");
+        let include = self.root.join("crates/seal-c/include");
+        let seal_c = self.build_c(
+            "doors-seal-c",
+            &[self.root.join("crates/seal-c/tests/api_test.c"), library],
+            &["-I", &include.display().to_string()],
+        );
+        let luajit = self.build_c(
+            "doors-luajit",
+            &[self.root.join("bench/drivers/doors.luajit.c"), PathBuf::from("/opt/homebrew/lib/libluajit-5.1.a")],
+            &["-I", "/opt/homebrew/include/luajit-2.1"],
+        );
+        let count = DOOR_CALLS.to_string();
+        let runs: [(&str, &str, &str, Result<Run, String>); 4] = [
+            ("Seal", "C", "doors.c", seal_c.map(|program| (program, vec!["bench".to_owned(), count.clone()]))),
+            ("Seal", "Rust", "doors.rust", Ok((self.seal.clone(), vec!["doors".to_owned(), count.clone()]))),
+            (
+                "LuaJIT `-joff`",
+                "C",
+                "doors.luajit_joff",
+                luajit.clone().map(|program| (program, vec!["joff".to_owned(), count.clone()])),
+            ),
+            (
+                "LuaJIT (JIT)",
+                "C",
+                "doors.luajit_jit",
+                luajit.map(|program| (program, vec!["jit".to_owned(), count.clone()])),
+            ),
+        ];
+        let expected = (DOOR_CALLS * (DOOR_CALLS + 1)).to_string();
+        for (engine, language, kept_as, run) in runs {
+            let measured = run.and_then(|(program, arguments)| measure(&program, &arguments));
+            match measured {
+                Ok(measured) if measured.result == expected => {
+                    let Some(&each) = measured.numbers.get("door_call_each") else { continue };
+                    self.normal.insert((kept_as.to_owned(), "Seal".to_owned()), each);
+                    let _ = writeln!(self.out, "| {engine} | {language} | {} | |", seconds(each));
+                }
+                Ok(measured) => {
+                    self.problems.push(format!(
+                        "door calls on {engine} in {language} added up to {}, not {expected}",
+                        measured.result
+                    ));
+                }
+                Err(why) => {
+                    self.problems.push(format!("door calls on {engine} in {language}: {why}"));
+                    let _ = writeln!(self.out, "| {engine} | {language} | ? | {why} |");
+                }
+            }
+        }
+    }
+
     /// trace: D155, D159. The big number types on Seal, Python's built-ins and `gmpy2`, every answer checked.
     fn numbers(&mut self) {
         let _ = writeln!(self.out, "\n## The big number types against Python (D155, D159), Normal\n");
@@ -807,6 +898,21 @@ impl Report {
             shown(seal),
             shown(luajit),
         );
+        // trace: D152. A door call through C aims at a Rust door's speed; LuaJIT's C API is beside it.
+        let (c, rust) = (time("doors.c", "Seal"), time("doors.rust", "Seal"));
+        let _ = writeln!(
+            out,
+            "| D152. A door call through C as fast as a Rust door | {} door calls from a loop | {} | a Rust door: {}; LuaJIT's C API: {} | {} |",
+            grouped(DOOR_CALLS),
+            shown(c),
+            shown(rust),
+            shown(time("doors.luajit_joff", "Seal")),
+            match (c, rust) {
+                (Some(c), Some(rust)) if rust > 0.0 =>
+                    format!("an aim, no target: {:.1}× a Rust door's time", c / rust),
+                _ => "?".to_owned(),
+            }
+        );
         // trace: D155, D159
         for benchmark in NUMBER_BENCHMARKS.iter().filter(|benchmark| benchmark.python) {
             let (seal, python) = (time(benchmark.name, "Seal"), time(benchmark.name, "Python"));
@@ -862,6 +968,19 @@ impl Report {
 
 /// Luau's version: its command prints none of its own, but says where the installed program lives, and that
 /// folder is named after the version.
+/// A count written with commas between its thousands.
+fn grouped(count: u64) -> String {
+    let digits = count.to_string();
+    let mut out = String::new();
+    for (place, digit) in digits.chars().enumerate() {
+        if place > 0 && (digits.len() - place).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 fn luau_version() -> String {
     version(LUAU, "--version")
         .split(['/', ' '])
@@ -950,6 +1069,9 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     if only.as_deref().is_none_or(|only| only == "numbers") {
         report.numbers();
+    }
+    if only.as_deref().is_none_or(|only| only == "doors") {
+        report.doors();
     }
     // D57's fourth goal: a 10,000-line script checked and compiled in under 100 ms.
     let lines = measure(&report.seal, &["lines".to_owned(), "10000".to_owned()]).ok();
