@@ -72,8 +72,9 @@ impl From<HeapError> for Stop {
 /// One call still running: where to go back to.
 #[derive(Clone, Copy, Debug)]
 pub struct Frame {
-    return_pc: u32,
-    base: u32,
+    // Kept at the width the loop works in, so a call and a return convert nothing.
+    return_pc: usize,
+    base: usize,
 }
 
 /// A paused task's door call, waiting for its value (D49).
@@ -762,7 +763,7 @@ impl Task {
     #[must_use]
     pub fn held_slots(&self, compiled: &Compiled) -> Vec<u64> {
         let mut places = vec![(self.pc, self.base)];
-        places.extend(self.frames.iter().map(|frame| (frame.return_pc as usize, frame.base as usize)));
+        places.extend(self.frames.iter().map(|frame| (frame.return_pc, frame.base)));
         let mut slots = Vec::new();
         for (pc, base) in places {
             let Some(registers) = u32::try_from(pc).ok().and_then(|pc| compiled.pause_maps.get(pc)) else { continue };
@@ -1745,10 +1746,7 @@ pub fn run(
                 if needed > stack.len() {
                     heap_try!(grow_stack(stack, heap, needed));
                 }
-                let (Ok(return_pc), Ok(old_base)) = (u32::try_from(pc), u32::try_from(base)) else {
-                    return Err(broken("a script too big to call into", pc));
-                };
-                frames.push(Frame { return_pc, base: old_base });
+                frames.push(Frame { return_pc: pc, base });
                 base = new_base;
                 pc = callee.entry as usize;
                 reframe!();
@@ -1771,10 +1769,7 @@ pub fn run(
                 if needed > stack.len() {
                     heap_try!(grow_stack(stack, heap, needed));
                 }
-                let (Ok(return_pc), Ok(old_base)) = (u32::try_from(pc), u32::try_from(base)) else {
-                    return Err(broken("a script too big to call into", pc));
-                };
-                frames.push(Frame { return_pc, base: old_base });
+                frames.push(Frame { return_pc: pc, base });
                 base = new_base;
                 pc = callee.entry as usize;
                 reframe!();
@@ -1784,8 +1779,8 @@ pub fn run(
                     let value = get!(from);
                     set!(0u16, value);
                     if let Some(frame) = frames.pop() {
-                        pc = frame.return_pc as usize;
-                        base = frame.base as usize;
+                        pc = frame.return_pc;
+                        base = frame.base;
                         reframe!();
                     } else {
                         task.pc = pc;
@@ -1804,8 +1799,8 @@ pub fn run(
                     None => return Err(overflow(left, "+", right, pc)),
                 }
                 if let Some(frame) = frames.pop() {
-                    pc = frame.return_pc as usize;
-                    base = frame.base as usize;
+                    pc = frame.return_pc;
+                    base = frame.base;
                     reframe!();
                 } else {
                     task.pc = pc;
@@ -1817,8 +1812,8 @@ pub fn run(
                 let value = get!(from);
                 set!(0u16, value);
                 if let Some(frame) = frames.pop() {
-                    pc = frame.return_pc as usize;
-                    base = frame.base as usize;
+                    pc = frame.return_pc;
+                    base = frame.base;
                     reframe!();
                 } else {
                     task.pc = pc;
@@ -1828,8 +1823,8 @@ pub fn run(
             }
             Instruction::ReturnNothing => {
                 if let Some(frame) = frames.pop() {
-                    pc = frame.return_pc as usize;
-                    base = frame.base as usize;
+                    pc = frame.return_pc;
+                    base = frame.base;
                     reframe!();
                 } else {
                     task.pc = pc;
@@ -1856,8 +1851,8 @@ pub fn run(
                 failure = u32::from(given);
                 match frames.pop() {
                     Some(frame) => {
-                        pc = frame.return_pc as usize;
-                        base = frame.base as usize;
+                        pc = frame.return_pc;
+                        base = frame.base;
                         reframe!();
                     }
                     None => return Ok(Outcome::Failed(failure)),
@@ -1865,8 +1860,8 @@ pub fn run(
             }
             Instruction::PassFailureUp => match frames.pop() {
                 Some(frame) => {
-                    pc = frame.return_pc as usize;
-                    base = frame.base as usize;
+                    pc = frame.return_pc;
+                    base = frame.base;
                     reframe!();
                 }
                 None => return Ok(Outcome::Failed(failure)),

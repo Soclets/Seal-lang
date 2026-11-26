@@ -989,14 +989,11 @@ pub enum Compare {
 impl Compare {
     #[must_use]
     pub fn holds(self, left: i64, right: i64) -> bool {
-        match self {
-            Compare::Equal => left == right,
-            Compare::NotEqual => left != right,
-            Compare::Less => left < right,
-            Compare::AtMost => left <= right,
-            Compare::Greater => left > right,
-            Compare::AtLeast => left >= right,
-        }
+        // Which of below, equal and above each comparison holds for, a bit each, in the order of `Compare`'s cases:
+        // looked up rather than branched on, since a base case's guard runs on every call (Building rule 5).
+        const HOLDS: [u8; 6] = [0b010, 0b101, 0b001, 0b011, 0b100, 0b110];
+        let at = u32::from(left >= right) + u32::from(left > right);
+        HOLDS.get(self as usize).is_some_and(|holds| holds >> at & 1 == 1)
     }
 }
 
