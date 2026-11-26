@@ -4819,3 +4819,30 @@ LuaJIT's JIT is (D150); installing it is part of Tankun's OK.
 
 **Tankun's words.** "Which Python math lib, though", then, asked "Should the prompt keep D155's built-ins as the bar,
 and add `gmpy2` as a reference row only?", the owner chose: "yea, make good prompt now?"
+
+## D160. No macros and no comptime; generic procedures are designed on their own
+
+2026-11-26.
+
+**Chosen.** Seal has no macros and no `comptime`-style code run while loading. What either would give is covered
+another way:
+- **Work done while loading** happens without syntax: mistakes refused where Seal can see them (D89), top-level number
+  names as type settings (D103), constants folded by the compiler, and harder optimizing in `seal build` (D141).
+- **Generic procedures**, a common reason for macros, as C's and Go's code generators faked them, get real generics,
+  designed as their own question.
+
+**Weighed.**
+- Macros, as Rust, C and Lisp have them. A call to a procedure promises what goes in and comes out; a macro's use
+  promises nothing until its definition, code that writes code, is read, and it can make names, rewrite what it wraps
+  or invent syntax, against the reason behind D71. Code run while loading would also need a second sandbox, its own
+  budget and caps (Building rule 1), and the language server would have to run it.
+- Comptime, as Zig has it. The same sandbox cost, for work games rarely need; Lua and Luau have neither.
+
+**Why this won.** What a script says is what it does, loading runs nothing a script wrote, and the real gap, generic
+procedures, gets a real answer.
+
+**Tankun's words.** "Should we have compile time stuff? Like macros or comptime?", "'That cuts against D71's "one
+spelling means one thing"'
+How?", "Wait, don't you have to write code first? For a macro to be real?", "What does that do?", "What? Both are sketchy?", "Wait, a macro would be one line?", "Don't macros also cover generics?", then, asked
+"Should Seal stay without macros or a comptime feature, with generic procedures decided separately later?", the owner
+chose: "yea, design generics now. Ask Cyborg"
