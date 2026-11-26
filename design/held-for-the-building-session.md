@@ -5,41 +5,7 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D158, in DECISIONS.md. D158: `eq` and `not_eq` replace `==` and `!=` (four tests). D157 takes back D144
-  and D145: `return`, `include` and `instead` again, in five
-  tests and `bench/programs/`. D155 is for later. D156: the licence files are in; each crate's `Cargo.toml` needs
-  `license = "Apache-2.0 WITH LLVM-exception"`. D151 and D152 answer its C API proposal's two questions, D153 its bytecode
-  proposal's two, and D154 adds a host-switched cache to D141. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
-  the benchmark programs in `bench/programs/` need the same spellings. D140 needs no message (the rework is done now, as it planned); D136, D138 and D141
-  are for after the current work; D142 (LuaJIT's interpreter as a bar) is part of the current work. LuaJIT is
-  installed through Homebrew.
-- Batch 1's "still open" 13, 14, 17 and 21 are already answered: D126, D127, D128 and D129. 16 is its own call.
-- Batch 2 and 3, readings the design session gives itself:
-  - A negative power of a `Whole` known only while running is a failed check, as D89 has it (built; right).
-  - A value with a unit shows as written, as `2500 ms` (D100; right).
-  - Its reading of D120's "can't be exact" (Whole only to a finer unit, Float any fixed ratio, rounded once) is right.
-  - D121's example was a slip, noted under it: `= 100.0 px.point`.
-  - D131: two included handlers that both have a case for a failure the call can't give don't handle it twice, since
-    neither case can run there.
-- Its D146 question: yes, a `for_each` block's note is `end \\ for_each`, naming the block by its opening keyword
-  (D102, D146).
-- Its readings after D143 to D149, reviewed by the design session, all confirmed:
-  - D146: `for` and `each` alone are plain names again; the note is `\\ for_each`.
-  - D147 on a `Dict` key: `_` reads the key as a lookup does, so it can fail with `missing`, written
-    `counts[key: w] = (_ ?? 0) + 1`; a bare `_ + 1` there is refused (D32). Positions and keys are worked out once,
-    before the value, as D147 says.
-  - Its two draft wordings, for `_` where nothing is changed and for D149, read well; they go with the wording review.
-- C API proposal, the design session's own notes: the value readers (`seal_value_get_whole` and the rest) have no
-  way to report a wrong kind; `seal_load_message()` keeps one shared last message, which breaks with scripts loading
-  on several threads at once (D49). An idea, its call (D57 lets it add benchmarks): a door-call row through the C API
-  against Luau's C API.
-- A timing it may want now, under rule 5: `f = _ * i` on a `HugeWhole` with a small `Whole`, 20,000 times, takes
-  about 175 ms against Python's 63 ms; Python multiplies by a small number in place, with a fast path.
-- Its refusal for D131's case says "this `otherwise`" even after `??`.
-- D135: check the benchmark programs in `bench/programs/` for `mut` names that are never changed.
-- An idea, its own call (D57): Unio's fib trick from `Beta++`, inlining a procedure with no side effects into itself
-  where its calls repeat, then merging them, so `fib(n - 1) + fib(n - 2)` becomes `2 × fib(n - 2) + fib(n - 3)`. It
-  costs analysis at load, so it may suit D141's ahead-of-time compiling best.
+All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to paste.
 
 ## Still to settle with Tankun
 
