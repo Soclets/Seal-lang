@@ -8,13 +8,13 @@ use crate::message::Message;
 use crate::syntax::tree as syntax;
 
 /// Why a handler is marked `*` where it's used (Unio D42, D129).
-const JUMP_MARK: &str = "a handler that can `ret`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
+const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
 
 /// The built-ins that can fail, which `handles [ … ]` can name (D101, D129).
 const FAILING_BUILT_INS: [&str; 6] =
     ["be.Whole", "be.Bool", "be.Float", "be.HugeWhole", "be.Decimal", "be.HugeDecimal"];
 
-/// Whether a block can leave the code around it by `ret` or `fail`, or by a `break` out of a loop around it
+/// Whether a block can leave the code around it by `return` or `fail`, or by a `break` out of a loop around it
 /// (D129). `loops` counts the loops entered inside it, whose `break`s stay inside.
 fn can_jump(block: &[syntax::Statement], loops: u32) -> bool {
     block.iter().any(|statement| match &statement.kind {
@@ -223,9 +223,9 @@ impl<'a> Checker<'a> {
         if jumps != using.jumps {
             // trace: Unio D42
             let what = if jumps {
-                format!("`::{member}` can `ret`, `break` or `fail`, so it's marked `::*{member}` where it's used")
+                format!("`::{member}` can `return`, `break` or `fail`, so it's marked `::*{member}` where it's used")
             } else {
-                format!("`::{member}` can't `ret`, `break` or `fail`, so it takes no `*`")
+                format!("`::{member}` can't `return`, `break` or `fail`, so it takes no `*`")
             };
             self.refuse_why(using.place, what, JUMP_MARK);
             return None;

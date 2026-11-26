@@ -5,10 +5,10 @@ one_of Tree
 end
 
 proc build[depth: Whole] -> Tree
-    if depth == 0
-        ret Tree.leaf
+    if depth eq 0
+        return Tree.leaf
     else
-        ret Tree.node[left: build(depth - 1), right: build(depth - 1)]
+        return Tree.node[left: build(depth - 1), right: build(depth - 1)]
     end
 end
 
@@ -18,5 +18,5 @@ proc run[rounds: Whole] -> Whole
         unused tree = build(10)
         made = made + 1
     end
-    ret made
+    return made
 end

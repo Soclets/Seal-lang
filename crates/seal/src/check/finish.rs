@@ -354,18 +354,22 @@ impl Visitor for HandlingChecker<'_> {
                 .with_why("every call that can fail is dealt with, by `?`, `??` or `otherwise`."),
             );
         }
-        if let ExpressionKind::Otherwise { call, cases, shared } = &expression.kind {
+        if let ExpressionKind::Otherwise { call, cases, shared, after_handle } = &expression.kind {
             let possible = self.facts.failures_of(call);
             let missing: Vec<FailureId> =
                 possible.iter().copied().filter(|failure| !cases.iter().any(|(case, _)| case == failure)).collect();
             if !missing.is_empty() {
-                // trace: Unio D40
-                self.messages.push(
-                    Message::refused(
-                        expression.place,
-                        format!("this `otherwise` has no `case` for {}", self.facts.names(&missing)),
+                // trace: Unio D40, D42, D131
+                let (what, why) = if *after_handle {
+                    (
+                        "this handler has no `case` for",
+                        "a handler used after `??` covers every failure the call can give.",
                     )
-                    .with_why("the cases cover every failure the call can give."),
+                } else {
+                    ("this `otherwise` has no `case` for", "the cases cover every failure the call can give.")
+                };
+                self.messages.push(
+                    Message::refused(expression.place, format!("{what} {}", self.facts.names(&missing))).with_why(why),
                 );
             }
             // trace: D131. A handler's case for a failure this call can't give is there for its other calls.
@@ -785,7 +789,7 @@ impl Checker<'_> {
                     self.refuse_why(
                         procedure_place,
                         format!("what `{name}` gives back can't be worked out from its body"),
-                        "a procedure's result comes from its `ret`s; where they can't say, it's written with `-> Type`.",
+                        "a procedure's result comes from its `return`s; where they can't say, it's written with `-> Type`.",
                     );
                 }
                 self.program.types.settle_as_error(result);

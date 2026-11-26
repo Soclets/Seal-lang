@@ -11,5 +11,5 @@ proc run[rounds: Whole] -> Whole
             counts[key: key] = (counts[key: key] ?? 0) + 1
         end
     end
-    ret (counts[key: "key500"] ?? 0) * 1000 + counts.len
+    return (counts[key: "key500"] ?? 0) * 1000 + counts.len
 end

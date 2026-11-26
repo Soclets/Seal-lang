@@ -10,5 +10,5 @@ proc run[rounds: Whole] -> Float
             total = total + value
         end
     end
-    ret total
+    return total
 end

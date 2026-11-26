@@ -764,7 +764,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         argument.place,
                         format!("there's no conversion from {found} to a `Bool`"),
-                        "a number is compared, as `n != 0`, for a `Bool`.",
+                        "a number is compared, as `n not_eq 0`, for a `Bool`.",
                     );
                     return Self::error(place);
                 }
@@ -805,7 +805,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         argument.place,
                         format!("there's no conversion from {written} to a `Bool`"),
-                        "`be.Bool` reads `\"true\"` or `\"false\"` from text; a number is compared, as `n != 0`, for a `Bool`.",
+                        "`be.Bool` reads `\"true\"` or `\"false\"` from text; a number is compared, as `n not_eq 0`, for a `Bool`.",
                     );
                     return Self::error(place);
                 }

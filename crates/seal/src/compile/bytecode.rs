@@ -468,7 +468,15 @@ pub enum Instruction {
     Return {
         from: Register,
     },
-    /// `ret left + right` with two `Whole`s: the sum goes in the first register, then the procedure returns.
+    /// `if left < right` with a small number, then `return from`, a name's plain value, as a base case's guard: returns
+    /// when the comparison holds, and otherwise carries on, counting the step the jump past the `return` would have.
+    ReturnIfWholeSmall {
+        from: Register,
+        left: Register,
+        right: i16,
+        compare: Compare,
+    },
+    /// `return left + right` with two `Whole`s: the sum goes in the first register, then the procedure returns.
     ReturnAddWhole {
         left: Register,
         right: Register,
@@ -497,8 +505,8 @@ pub enum Instruction {
     ClearFailure,
     /// `?? crash`: stops the script on the failure just given.
     Crash,
-    /// `==` on two bigger values, in `left` and the register after it, by their contents, of the type
-    /// `compared_types` lists at `site`; `equal` is false for `!=` (D95).
+    /// `eq` on two bigger values, in `left` and the register after it, by their contents, of the type
+    /// `compared_types` lists at `site`; `equal` is false for `not_eq` (D95).
     EqualValues {
         to: Register,
         left: Register,
@@ -958,6 +966,32 @@ pub struct DoorSite {
     pub result: Crossing,
 }
 
+/// How `ReturnIfWholeSmall` compares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Compare {
+    Equal,
+    NotEqual,
+    Less,
+    AtMost,
+    Greater,
+    AtLeast,
+}
+
+impl Compare {
+    #[must_use]
+    pub fn holds(self, left: i64, right: i64) -> bool {
+        match self {
+            Compare::Equal => left == right,
+            Compare::NotEqual => left != right,
+            Compare::Less => left < right,
+            Compare::AtMost => left <= right,
+            Compare::Greater => left > right,
+            Compare::AtLeast => left >= right,
+        }
+    }
+}
+
 /// A procedure, compiled.
 #[derive(Clone, Debug)]
 pub struct CompiledProcedure {
@@ -1031,7 +1065,7 @@ pub struct Compiled {
     /// The jumps too long for their instruction, by the instruction's place in `code`.
     pub far_jumps: HashMap<u32, i32>,
     /// For each instruction made of two, by its place in `code`, in order: the place of its first part, the maths,
-    /// which a failed check there points at. `places` has its second part's, the call's or the `ret`'s.
+    /// which a failed check there points at. `places` has its second part's, the call's or the `return`'s.
     pub fused_places: Vec<(u32, Place)>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
     /// owns there, to be freed if the task is cancelled (D54).

@@ -264,7 +264,7 @@ fn d17_a_failed_check_stops_the_script_at_its_exact_line() -> Result<(), Box<dyn
     let Err(Error::Stopped(message)) = script.call::<i64>("overflow", (2,)) else { panic!("the sum should overflow") };
     assert_eq!(
         message.text(),
-        "check failed: goblin.seal:57:9, line 57 column 9\n 57 |     ret n * 9223372036854775807\n    |         ^^^^^^^^^^^^^^^^^^^^^^^\n \
+        "check failed: goblin.seal:57:12, line 57 column 12\n 57 |     return n * 9223372036854775807\n    |            ^^^^^^^^^^^^^^^^^^^^^^^\n \
          what:    the result is too big for a `Whole`\n when:    `2 * 9223372036854775807`\n \
          why:     a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.\n"
     );
@@ -349,7 +349,7 @@ proc settle[count: Whole] -> Float
     for_each ball in balls
         total = total + ball.x * 0.5 + ball.v + be.Float(ball.hits)
     end
-    ret total
+    return total
 end
 ";
     let doors = Doors::new();

@@ -28,7 +28,7 @@ pub enum Keyword {
     Match,
     Case,
     Otherwise,
-    Use,
+    Instead,
     Ignore,
     Crash,
     Labels,
@@ -40,6 +40,9 @@ pub enum Keyword {
     And,
     Or,
     Not,
+    /// `eq` and `not_eq`, comparing (D158).
+    Eq,
+    NotEq,
     AtLeast,
     AtMost,
     Be,
@@ -64,14 +67,14 @@ impl Keyword {
             "in" => Keyword::In,
             "at" => Keyword::At,
             "proc" => Keyword::Proc,
-            "ret" => Keyword::Return,
+            "return" => Keyword::Return,
             "fail" => Keyword::Fail,
             "record" => Keyword::Record,
             "one_of" => Keyword::OneOf,
             "match" => Keyword::Match,
             "case" => Keyword::Case,
             "otherwise" => Keyword::Otherwise,
-            "use" => Keyword::Use,
+            "instead" => Keyword::Instead,
             "ignore" => Keyword::Ignore,
             "crash" => Keyword::Crash,
             "labels" => Keyword::Labels,
@@ -83,6 +86,8 @@ impl Keyword {
             "and" => Keyword::And,
             "or" => Keyword::Or,
             "not" => Keyword::Not,
+            "eq" => Keyword::Eq,
+            "not_eq" => Keyword::NotEq,
             "at_least" => Keyword::AtLeast,
             "at_most" => Keyword::AtMost,
             "be" => Keyword::Be,
@@ -115,14 +120,14 @@ impl Keyword {
             Keyword::In => "in",
             Keyword::At => "at",
             Keyword::Proc => "proc",
-            Keyword::Return => "ret",
+            Keyword::Return => "return",
             Keyword::Fail => "fail",
             Keyword::Record => "record",
             Keyword::OneOf => "one_of",
             Keyword::Match => "match",
             Keyword::Case => "case",
             Keyword::Otherwise => "otherwise",
-            Keyword::Use => "use",
+            Keyword::Instead => "instead",
             Keyword::Ignore => "ignore",
             Keyword::Crash => "crash",
             Keyword::Labels => "labels",
@@ -134,6 +139,8 @@ impl Keyword {
             Keyword::And => "and",
             Keyword::Or => "or",
             Keyword::Not => "not",
+            Keyword::Eq => "eq",
+            Keyword::NotEq => "not_eq",
             Keyword::AtLeast => "at_least",
             Keyword::AtMost => "at_most",
             Keyword::Be => "be",
@@ -147,8 +154,6 @@ impl Keyword {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Symbol {
     Equals,
-    EqualEqual,
-    NotEqual,
     Less,
     Greater,
     /// The `<` that opens a type's blanks, as in `List<Text>`.
@@ -186,8 +191,6 @@ impl Symbol {
     pub fn text(self) -> &'static str {
         match self {
             Symbol::Equals => "=",
-            Symbol::EqualEqual => "==",
-            Symbol::NotEqual => "!=",
             Symbol::Less | Symbol::TypeOpen => "<",
             Symbol::Greater | Symbol::TypeClose => ">",
             Symbol::Plus => "+",
@@ -846,8 +849,6 @@ impl<'a> Lexer<'a> {
                             }
                             break;
                         }
-                        ('=', Some('=')) => (Symbol::EqualEqual, 2),
-                        ('!', Some('=')) => (Symbol::NotEqual, 2),
                         ('|', Some('>')) => (Symbol::Slide, 2),
                         ('?', Some('?')) => (Symbol::QuestionQuestion, 2),
                         ('-', Some('>')) => (Symbol::Arrow, 2),
@@ -1222,9 +1223,9 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     if let TokenKind::Symbol(OpenRound | OpenSquare | Dot | TypeOpen | Negate | Symbol::Path) = before {
         return 0;
     }
-    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `incl`, the `::` stands apart.
+    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
     if matches!(after, TokenKind::Symbol(Symbol::Path)) {
-        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "incl"));
+        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "include"));
     }
     let touches_brackets = matches!(
         before,

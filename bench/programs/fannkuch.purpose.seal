@@ -15,5 +15,5 @@ proc run[rounds: Whole] -> Whole
             high = high - 1
         end
     end
-    ret items[offset: 0] * 100 + items[offset: 15]
+    return items[offset: 0] * 100 + items[offset: 15]
 end

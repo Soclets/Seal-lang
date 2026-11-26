@@ -1781,6 +1781,24 @@ pub fn run(
                 pc = callee.entry as usize;
                 reframe!();
             }
+            Instruction::ReturnIfWholeSmall { from, left, right, compare } => {
+                if compare.holds(whole!(left), i64::from(right)) {
+                    let value = get!(from);
+                    set!(0u16, value);
+                    if let Some(frame) = frames.pop() {
+                        pc = frame.return_pc as usize;
+                        base = frame.base as usize;
+                        reframe!();
+                    } else {
+                        task.pc = pc;
+                        task.base = base;
+                        return Ok(Outcome::Finished);
+                    }
+                } else {
+                    // Where the `if` jumped past its `return`, a step was counted (D14).
+                    step!();
+                }
+            }
             Instruction::ReturnAddWhole { left, right } => {
                 let (left, right) = (whole!(left), whole!(right));
                 match left.checked_add(right) {

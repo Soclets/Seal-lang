@@ -15,5 +15,5 @@ proc run[words: Whole] -> Whole
             most = count
         end
     end
-    ret counts.len * 1000000 + most
+    return counts.len * 1000000 + most
 end

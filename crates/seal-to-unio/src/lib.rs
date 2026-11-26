@@ -572,7 +572,7 @@ mod tests {
     // trace: D19
     #[test]
     fn d19_a_script_becomes_the_same_unio_program() {
-        let source = "mut tries = 0\nwhile tries != 3\n    tries = tries + 1\nend\nshow_msg(\"Tries: {tries}\")\n";
+        let source = "mut tries = 0\nwhile tries not_eq 3\n    tries = tries + 1\nend\nshow_msg(\"Tries: {tries}\")\n";
         let unio = translate(source, &test_host_doors());
         assert_eq!(
             unio,

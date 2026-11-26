@@ -1,11 +1,11 @@
 proc fib[n: Whole] -> Whole
     if n < 2
-        ret n
+        return n
     else
-        ret fib(n - 1) + fib(n - 2)
+        return fib(n - 1) + fib(n - 2)
     end
 end
 
 proc run[n: Whole] -> Whole
-    ret fib(n)
+    return fib(n)
 end

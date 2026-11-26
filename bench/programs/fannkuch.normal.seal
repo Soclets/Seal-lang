@@ -13,14 +13,14 @@ proc run[n: Whole] -> Whole
     mut r = n
     mut done = false
     while not done
-        while r != 1
+        while r not_eq 1
             count[offset: r - 1] = r
             r = r - 1
         end
         mut perm = perm1
         mut flips = 0
         mut k = perm[offset: 0]
-        while k != 0
+        while k not_eq 0
             mut low = 0
             mut high = k
             while low < high
@@ -36,7 +36,7 @@ proc run[n: Whole] -> Whole
         if flips > max_flips
             max_flips = flips
         end
-        if permutations rem.floor 2 == 0
+        if permutations rem.floor 2 eq 0
             checksum = checksum + flips
         else
             checksum = checksum - flips
@@ -44,7 +44,7 @@ proc run[n: Whole] -> Whole
         permutations = permutations + 1
         mut rotating = true
         while rotating
-            if r == n
+            if r eq n
                 done = true
                 rotating = false
             else
@@ -64,5 +64,5 @@ proc run[n: Whole] -> Whole
             end
         end
     end
-    ret checksum * 100 + max_flips
+    return checksum * 100 + max_flips
 end

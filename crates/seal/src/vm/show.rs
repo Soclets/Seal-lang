@@ -214,11 +214,11 @@ pub fn equal(
                 pending.push((left, right, *base));
                 true
             }
-            #[allow(clippy::float_cmp)] // `==` on floats is exact (Unio D184)
+            #[allow(clippy::float_cmp)] // `eq` on floats is exact (Unio D184)
             Type::Float => f64::from_bits(left) == f64::from_bits(right),
             Type::Whole | Type::Bool => left == right,
             Type::Text => left == right || heap.text(left)? == heap.text(right)?,
-            // trace: D125. Amounts are compared, so `3.00 == 3.0`.
+            // trace: D125. Amounts are compared, so `3.00 eq 3.0`.
             Type::HugeWhole | Type::Decimal | Type::HugeDecimal => {
                 let (left, right) = (heap.number(left)?, heap.number(right)?);
                 *work = work.saturating_add(left.size() as u64 / 8);

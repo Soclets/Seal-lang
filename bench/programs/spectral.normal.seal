@@ -1,5 +1,5 @@
 proc eval_a[i: Whole, j: Whole] -> Float
-    ret 1.0 / be.Float((i + j) * (i + j + 1) div.floor 2 + i + 1)
+    return 1.0 / be.Float((i + j) * (i + j + 1) div.floor 2 + i + 1)
 end
 
 proc times[u: List<Float>, size: Whole] -> List<Float>
@@ -11,7 +11,7 @@ proc times[u: List<Float>, size: Whole] -> List<Float>
         end
         out.add(sum)
     end
-    ret out
+    return out
 end
 
 proc times_transposed[u: List<Float>, size: Whole] -> List<Float>
@@ -23,7 +23,7 @@ proc times_transposed[u: List<Float>, size: Whole] -> List<Float>
         end
         out.add(sum)
     end
-    ret out
+    return out
 end
 
 proc run[size: Whole] -> Float
@@ -46,5 +46,5 @@ proc run[size: Whole] -> Float
         vbv = vbv + value * v[pos: i]
         vv = vv + v[pos: i] * v[pos: i]
     end
-    ret sqrt(vbv / vv)
+    return sqrt(vbv / vv)
 end

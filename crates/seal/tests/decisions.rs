@@ -44,7 +44,7 @@ fn d79_crash_on_a_maybe() {
 // trace: D80
 #[test]
 fn d80_instead_is_the_last_line_of_its_case() {
-    let script = "proc pick[n: Whole] -> Whole ! [low]\n    if n < 1\n        fail low\n    else\n        ret n\n    end\nend\nvalue = pick(0) otherwise\n    case low\n        use 1\n        show_msg(\"after\")\nend\nshow_msg(\"{value}\")\n";
+    let script = "proc pick[n: Whole] -> Whole ! [low]\n    if n < 1\n        fail low\n    else\n        return n\n    end\nend\nvalue = pick(0) otherwise\n    case low\n        instead 1\n        show_msg(\"after\")\nend\nshow_msg(\"{value}\")\n";
     assert!(refusal(script).contains("this line can never run"), "{}", refusal(script));
 }
 
@@ -66,14 +66,14 @@ fn d83_d86_d105_names_and_dictionaries() {
     );
     let by_place = format!("{stock}for_each count at pos place in stock\n    show_msg(\"{{count}} {{place}}\")\nend\n");
     assert!(refusal(&by_place).contains("for_each count at key place in stock"), "{}", refusal(&by_place));
-    let leaving = "proc first[event: Maybe<Whole>] -> Whole\n    match event\n        case some[value]\n            ret value\n        case none\n    end\n    ret 0\nend\nfound: Maybe<Whole> = Maybe.none\nn = first(found)\nshow_msg(\"{n}\")\n";
+    let leaving = "proc first[event: Maybe<Whole>] -> Whole\n    match event\n        case some[value]\n            return value\n        case none\n    end\n    return 0\nend\nfound: Maybe<Whole> = Maybe.none\nn = first(found)\nshow_msg(\"{n}\")\n";
     assert!(refusal(leaving).contains("follows a `match` that can leave"), "{}", refusal(leaving));
 }
 
 // trace: D87
 #[test]
 fn d87_arguments_go_in_their_declared_order() {
-    let heal = "proc heal[hp, amount, times : Whole] -> Whole\n    labels [amount as by, times as times]\n    ret hp + amount * times\nend\n";
+    let heal = "proc heal[hp, amount, times : Whole] -> Whole\n    labels [amount as by, times as times]\n    return hp + amount * times\nend\n";
     let wrong = format!("{heal}value = heal(10, times: 2, by: 5)\nshow_msg(\"{{value}}\")\n");
     assert!(refusal(&wrong).contains("value = heal(10, by: 5, times: 2)"), "{}", refusal(&wrong));
     let any = heal.replace("labels [", "labels.any_order [");
@@ -86,7 +86,7 @@ fn d89_to_d96_refusals() {
     assert!(
         refusal("words = \"a b\".split(by: \"\")\nshow_msg(\"{words}\")\n").contains("splits a text by an empty text")
     );
-    let running = "proc pieces[by: Text] -> List<Text>\n    ret \"a b\".split(by: by)\nend\nwords = pieces(\"\")\nshow_msg(\"{words}\")\n";
+    let running = "proc pieces[by: Text] -> List<Text>\n    return \"a b\".split(by: by)\nend\nwords = pieces(\"\")\nshow_msg(\"{words}\")\n";
     assert!(refusal(running).contains("check failed"), "{}", refusal(running));
     let partway = "record Shop\n    stock: List<Text>\nend\nmut shops: Dict<key: Text, value: Shop> = [\"north\": Shop[stock: []]]\nshops[key: \"north\"].stock.add(\"Key\")\nshow_msg(\"{shops}\")\n";
     assert!(refusal(partway).contains("through a `Dict`'s key"), "{}", refusal(partway));
@@ -97,7 +97,7 @@ fn d89_to_d96_refusals() {
 // trace: D95, D100
 #[test]
 fn d95_d100_bigger_values_compare_and_show_as_written() {
-    let script = "record Spot\n    x: Whole\n    y: Float\nend\na = Spot[x: 1, y: ~0.1]\nb = Spot[x: 1, y: ~0.1]\nsame = a == b\nstock: Dict<key: Text, value: Whole> = [\"a\": 1, \"b\": 2]\nagain: Dict<key: Text, value: Whole> = [\"b\": 2, \"a\": 1]\nalike = stock == again\nlist = [a, b]\nquote = \"say \\\"hi\\\" \\{x}{tab}\"\nquotes = [quote]\nshow_msg(\"{same} {alike} {list} {quotes}\")\n";
+    let script = "record Spot\n    x: Whole\n    y: Float\nend\na = Spot[x: 1, y: ~0.1]\nb = Spot[x: 1, y: ~0.1]\nsame = a eq b\nstock: Dict<key: Text, value: Whole> = [\"a\": 1, \"b\": 2]\nagain: Dict<key: Text, value: Whole> = [\"b\": 2, \"a\": 1]\nalike = stock eq again\nlist = [a, b]\nquote = \"say \\\"hi\\\" \\{x}{tab}\"\nquotes = [quote]\nshow_msg(\"{same} {alike} {list} {quotes}\")\n";
     assert_eq!(shows(script), ["true true [Spot[x: 1, y: ~0.1], Spot[x: 1, y: ~0.1]] [\"say \\\"hi\\\" \\{x}{tab}\"]"]);
 }
 
@@ -136,15 +136,15 @@ fn d103_d104_settings_and_defaults_from_plain_values() {
 }
 
 /// Two procedures that fail as the handler tests' handlers expect.
-const LOADERS: &str = "proc load_level[name: Text] -> Whole ! [not_found, broken]\n    if name == \"forest\"\n        fail not_found\n    elif name == \"swamp\"\n        fail broken\n    else\n        ret 7\n    end\nend\n\nproc load_save[slot: Text] -> Whole ! [not_found, broken]\n    if slot == \"slot1\"\n        fail not_found\n    elif slot == \"slot2\"\n        fail broken\n    else\n        ret 2\n    end\nend\n\n";
+const LOADERS: &str = "proc load_level[name: Text] -> Whole ! [not_found, broken]\n    if name eq \"forest\"\n        fail not_found\n    elif name eq \"swamp\"\n        fail broken\n    else\n        return 7\n    end\nend\n\nproc load_save[slot: Text] -> Whole ! [not_found, broken]\n    if slot eq \"slot1\"\n        fail not_found\n    elif slot eq \"slot2\"\n        fail broken\n    else\n        return 2\n    end\nend\n\n";
 
-const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_save]\n    ::start_over\n        case not_found\n            use 1\n        case broken\n            use 1\n    end \\\\ ::start_over\n    ::start_at[level: Whole]\n        labels [level as level]\n        case not_found\n            use level\n        case broken\n            use level\n    end\n    ::give_up\n        case not_found\n            ret\n        case broken\n            ret\n    end\nend \\\\ group.handler level_failed\n\n";
+const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_save]\n    ::start_over\n        case not_found\n            instead 1\n        case broken\n            instead 1\n    end \\\\ ::start_over\n    ::start_at[level: Whole]\n        labels [level as level]\n        case not_found\n            instead level\n        case broken\n            instead level\n    end\n    ::give_up\n        case not_found\n            return\n        case broken\n            return\n    end\nend \\\\ group.handler level_failed\n\n";
 
 // trace: D97, D98, D110, Unio D42, D43, D44
 #[test]
 fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
     let script = format!(
-        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? ::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? ::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    incl ::start_over\nend\nd = load_level(\"swamp\") otherwise\n    incl ::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
+        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? ::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? ::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include ::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include ::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
     );
     assert_eq!(shows(&script), ["1 3 7 9", "after"]);
 }
@@ -161,7 +161,8 @@ fn d110_handler_refusals() {
     );
     let one_line = refusal(&with("a = load_level(\"x\") otherwise level_failed::start_over"));
     assert!(one_line.contains("a = load_level(\"x\") ?? level_failed::start_over"), "{one_line}");
-    let twice = with("a = load_level(\"x\") otherwise\n    incl ::start_over\n    case broken\n        use 2\nend");
+    let twice =
+        with("a = load_level(\"x\") otherwise\n    include ::start_over\n    case broken\n        instead 2\nend");
     assert!(refusal(&twice).contains("handled twice"), "{}", refusal(&twice));
     let second = GROUP.replace("group.handler level_failed", "group.handler save_failed");
     let both = format!("{LOADERS}{GROUP}{second}a = load_level(\"x\") ?? ::start_over\nshow_msg(\"{{a}}\")\n");
@@ -172,7 +173,7 @@ fn d110_handler_refusals() {
 // trace: D107, D128
 #[test]
 fn d107_d128_ranged_numbers_are_checked_where_values_land() {
-    let script = "mut hp: Whole[min.clamp: 0, max.clamp: 100] = 100\nhp = hp - 150\nlow = hp\nhp = hp + 500\nrecord Stats\n    level: Whole[min.clamp: 1, max.clamp: 10]\nend\nstats = Stats[level: 50]\nproc volume[v: Whole[min.clamp: 0, max.clamp: 100]] -> Whole\n    ret v\nend\nloud = volume(170)\nshow_msg(\"{low} {hp} {stats.level} {loud}\")\n";
+    let script = "mut hp: Whole[min.clamp: 0, max.clamp: 100] = 100\nhp = hp - 150\nlow = hp\nhp = hp + 500\nrecord Stats\n    level: Whole[min.clamp: 1, max.clamp: 10]\nend\nstats = Stats[level: 50]\nproc volume[v: Whole[min.clamp: 0, max.clamp: 100]] -> Whole\n    return v\nend\nloud = volume(170)\nshow_msg(\"{low} {hp} {stats.level} {loud}\")\n";
     assert_eq!(shows(script), ["0 100 10 100"]);
     let hard = "mut gold: Whole[min: 0] = 10\nproc spend[amount: Whole]\n    gold = gold - amount\nend\nspend(20)\nshow_msg(\"{gold}\")\n";
     assert!(refusal(hard).contains("this value is below its type's `min: 0`"), "{}", refusal(hard));
@@ -292,7 +293,7 @@ fn d115_huge_whole_never_overflows() {
 
 #[test]
 fn d116_d119_d124_d125_decimals_are_exact_and_keep_their_places() {
-    let script = "mut gold: Decimal = 0.0\nprice: Decimal = 4.99\ngold = gold + price * 3\nhalf = 0.5 + gold\na: Decimal = 1.50\nb = a + 1.50\nsame = b == 3.0\nten: Decimal = 10.0\nthird = ten / 3\nshow_msg(\"{gold} {half} {b} {same} {third} {third, places: 2}\")\n";
+    let script = "mut gold: Decimal = 0.0\nprice: Decimal = 4.99\ngold = gold + price * 3\nhalf = 0.5 + gold\na: Decimal = 1.50\nb = a + 1.50\nsame = b eq 3.0\nten: Decimal = 10.0\nthird = ten / 3\nshow_msg(\"{gold} {half} {b} {same} {third} {third, places: 2}\")\n";
     assert_eq!(shows(script), ["14.97 15.47 3.00 true 3.333333333333333333333333333333333 3.33"]);
     assert!(refusal("x: Decimal = ~0.1\nshow_msg(\"{x}\")\n").contains("takes no `~`"));
     assert!(refusal("x: Decimal = 1.5\ny: Float = 2.0\nz = x + y\nshow_msg(\"{z}\")\n").contains("can't mix"));
@@ -332,21 +333,37 @@ fn d127_operations_on_the_new_number_types() {
 // trace: D107, D115, D120
 #[test]
 fn d115_a_huge_whole_takes_units_and_limits() {
-    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    ret v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold to cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
+    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    return v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold to cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
     assert_eq!(shows(script), ["1000 7 10 450 cents 450 true"]);
     assert!(refusal("h: HugeWhole[min: 0] = -5\nshow_msg(\"{h}\")\n").contains("below its type's `min: 0`"));
     assert!(refusal("d: Decimal[min: 0] = 5\nshow_msg(\"{d}\")\n").contains("isn't decided yet"));
 }
 
-// trace: D145, D146
+// trace: D146, D157, D158
 #[test]
-fn d145_d146_ret_and_for_each_are_the_keywords() {
-    let script = "proc twice[n: Whole] -> Whole\n    ret n * 2\nend\nmut total = 0\nfor_each n in [1, 2]\n    total = total + twice(n)\nend\nshow_msg(\"{total}\")\n";
-    assert_eq!(shows(script), ["6"]);
+fn d146_d157_d158_return_for_each_and_eq_are_the_words() {
+    let script = "proc twice[n: Whole] -> Whole\n    return n * 2\nend\nmut total = 0\nfor_each n in [1, 2]\n    if n not_eq 2\n        total = total + twice(n)\n    end\nend\nsame = total eq 2\nshow_msg(\"{total} {same}\")\n";
+    assert_eq!(shows(script), ["2 true"]);
     // `for` and `each` alone are names, now that `for_each` is one keyword.
     assert_eq!(shows("for = 1\neach = 2\nshow_msg(\"{for} {each}\")\n"), ["1 2"]);
-    let old = "proc one -> Whole\n    return 1\nend\n";
+    // `ret`, `incl` and `use` are plain names again.
+    assert_eq!(shows("ret = 1\nincl = 2\nuse = 3\nshow_msg(\"{ret} {incl} {use}\")\n"), ["1 2 3"]);
+    let old = "proc one -> Whole\n    ret 1\nend\n";
     assert!(refusal(old).contains("comes after the end of this line's statement"), "{}", refusal(old));
+    assert!(!refusal("a = 1\nb = a == 1\n").is_empty());
+    assert!(!refusal("a = 1\nb = a != 1\n").is_empty());
+    let failing = "proc pick[n: Whole] -> Whole ! [low]\n    if n < 0\n        fail low\n    else\n        return n\n    end\nend\nv = pick(-1) otherwise\n    case low\n        instead 7\nend\nshow_msg(\"{v}\")\n";
+    assert_eq!(shows(failing), ["7"]);
+}
+
+// trace: D131, Unio D42
+#[test]
+fn d131_a_handler_missing_a_case_after_question_marks_is_named_as_a_handler() {
+    let script = "proc load[name: Text] -> Whole ! [not_found, broken]\n    if name eq \"cave\"\n        fail not_found\n    elif name eq \"ruin\"\n        fail broken\n    else\n        return 3\n    end\nend\n\ngroup.handler load_failed\n    handles [load]\n    ::start_over\n        case not_found\n            instead 1\n    end\nend\n\nlevel = load(\"cave\") ?? ::start_over\nshow_msg(\"{level}\")\n";
+    assert!(refusal(script).contains("this handler has no `case` for `broken`"), "{}", refusal(script));
+    let included =
+        script.replace("load(\"cave\") ?? ::start_over", "load(\"cave\") otherwise\n    include ::start_over\nend");
+    assert!(refusal(&included).contains("this `otherwise` has no `case` for `broken`"), "{}", refusal(&included));
 }
 
 // trace: D147
@@ -355,7 +372,7 @@ fn d147_underscore_reads_what_the_change_changes() {
     let name = "mut score = 5\nscore = _ * _ + 1\nshow_msg(\"{score}\")\n";
     assert_eq!(shows(name), ["26"]);
     // A position is worked out once, before the value, so `bump` growing the list doesn't move it.
-    let once = "mut g = [3]\nproc bump -> Whole\n    g.add(9)\n    ret 1\nend\ng[pos: g.len] = bump() + _\nshow_msg(\"{g}\")\n";
+    let once = "mut g = [3]\nproc bump -> Whole\n    g.add(9)\n    return 1\nend\ng[pos: g.len] = bump() + _\nshow_msg(\"{g}\")\n";
     assert_eq!(shows(once), ["[4, 9]"]);
     // A key's value is read as a lookup is, so it may be missing.
     let counts = "mut d: Dict<key: Text, value: Whole> = [:]\nd[key: \"a\"] = (_ ?? 0) + 1\nd[key: \"a\"] = (_ ?? 0) + 1\nn = d[key: \"a\"] ?? 0\nshow_msg(\"{n}\")\n";
@@ -381,10 +398,10 @@ fn d148_d149_measuring_is_written_to_and_maths_before_it_is_bracketed() {
 // trace: D17. A check failing in an instruction made of two points at its maths, as it did when they were two.
 #[test]
 fn d17_a_fused_instruction_points_at_its_maths() {
-    let call = "proc down[n: Whole] -> Whole\n    if n < -9223372036854775806\n        ret n\n    else\n        ret down(n - 3)\n    end\nend\na = down(-9223372036854775800)\nshow_msg(\"{a}\")\n";
-    assert!(refusal(call).contains("test.seal:5:18"), "{}", refusal(call));
-    let sum = "proc add[a: Whole, b: Whole] -> Whole\n    ret a + b\nend\nc = add(9223372036854775807, 1)\nshow_msg(\"{c}\")\n";
-    assert!(refusal(sum).contains("test.seal:2:9"), "{}", refusal(sum));
+    let call = "proc down[n: Whole] -> Whole\n    if n < -9223372036854775806\n        return n\n    else\n        return down(n - 3)\n    end\nend\na = down(-9223372036854775800)\nshow_msg(\"{a}\")\n";
+    assert!(refusal(call).contains("test.seal:5:21"), "{}", refusal(call));
+    let sum = "proc add[a: Whole, b: Whole] -> Whole\n    return a + b\nend\nc = add(9223372036854775807, 1)\nshow_msg(\"{c}\")\n";
+    assert!(refusal(sum).contains("test.seal:2:12"), "{}", refusal(sum));
 }
 
 // trace: D115, D107. A `HugeWhole`'s limits may be past a `Whole`'s range.

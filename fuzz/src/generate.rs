@@ -496,7 +496,7 @@ impl Generator {
                                 Kind::Maybe,
                             ])
                             .unwrap_or(&Kind::WholeList);
-                        let operator = if self.random.chance(1, 2) { "==" } else { "!=" };
+                        let operator = if self.random.chance(1, 2) { "eq" } else { "not_eq" };
                         let left = self.read_name(kind).unwrap_or_else(|| self.value(kind, 1));
                         let right = self.read_name(kind).unwrap_or_else(|| self.value(kind, 1));
                         format!("{} {operator} {}", Self::bracketed(left), Self::bracketed(right))
@@ -508,7 +508,7 @@ impl Generator {
                     }
                     // Two texts compared exactly (D64); Unio leaves comparing text open, so only Seal's dialect has it.
                     7 if self.seal() => {
-                        let operator = if self.random.chance(1, 2) { "==" } else { "!=" };
+                        let operator = if self.random.chance(1, 2) { "eq" } else { "not_eq" };
                         format!(
                             "{} {operator} {}",
                             self.operand(Kind::Text, level - 1),
@@ -517,7 +517,7 @@ impl Generator {
                     }
                     0..=2 => {
                         let operator =
-                            *self.random.pick(&["==", "!=", "<", ">", "at_least", "at_most"]).unwrap_or(&"<");
+                            *self.random.pick(&["eq", "not_eq", "<", ">", "at_least", "at_most"]).unwrap_or(&"<");
                         format!(
                             "{} {operator} {}",
                             self.operand(Kind::Whole, level - 1),
@@ -680,7 +680,7 @@ impl Generator {
         }
     }
 
-    /// A value as one side of `==`: anything that isn't a single word gets brackets.
+    /// A value as one side of `eq`: anything that isn't a single word gets brackets.
     /// Numbers with units, worked with and measured back into a plain number with `in` (D111 to D113, D120 to
     /// D123).
     fn measured(&mut self, kind: Kind) -> String {
@@ -1360,7 +1360,7 @@ impl Generator {
                         } else {
                             self.line(&format!("{call} otherwise"));
                             self.depth += 1;
-                            self.line("incl low_failed::note");
+                            self.line("include low_failed::note");
                             self.depth -= 1;
                             self.end("otherwise");
                         }
@@ -1448,7 +1448,7 @@ impl Generator {
         self.end("for_each");
     }
 
-    #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `ret`, written in order
+    #[allow(clippy::too_many_lines)] // a procedure's first line, its body and its `return`, written in order
     fn procedure(&mut self) {
         let name = format!(
             "{}_{}",
@@ -1572,11 +1572,11 @@ impl Generator {
         }
         let returned = result.map(|kind| self.value(kind, 2));
         self.depth -= 1;
-        // Names the body made are shown before the `ret`, inside the body.
+        // Names the body made are shown before the `return`, inside the body.
         self.depth += 1;
         self.close_scope();
         if let Some(returned) = returned {
-            self.line(&format!("ret {returned}"));
+            self.line(&format!("return {returned}"));
         }
         if fails {
             self.depth -= 1;
@@ -1602,7 +1602,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            ret 1\n        case node[left, right]\n            ret 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
         }
         // trace: D123. Now and then a unit group of the script's own.
         if self.seal() && self.random.chance(1, 3) {
@@ -1624,7 +1624,7 @@ impl Generator {
         if self.seal() && !failing.is_empty() {
             let _ = write!(
                 self.out,
-                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            use 0\n    end\n    ::with[value: Whole]\n        case too_low\n            use value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
+                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            instead 0\n    end\n    ::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
                 failing.join(", ")
             );
             self.handlers = true;
@@ -1652,14 +1652,14 @@ pub const VOCABULARY: [&str; 79] = [
     "in",
     "at",
     "proc",
-    "ret",
+    "return",
     "fail",
     "record",
     "one_of",
     "match",
     "case",
     "otherwise",
-    "use",
+    "instead",
     "ignore",
     "crash",
     "labels",
@@ -1705,7 +1705,7 @@ pub const VOCABULARY: [&str; 79] = [
     "\"hi\"",
     "\"{x}\"",
     "=",
-    "==",
+    "eq",
     "<",
     ">",
     "+",

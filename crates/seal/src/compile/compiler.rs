@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 
 use super::bytecode::{
-    Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction, JoinPiece,
-    Layout, ProcedureEntry, Register, number_operation,
+    Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction,
+    JoinPiece, Layout, ProcedureEntry, Register, number_operation,
 };
 use crate::check::tree::{
     Block, Conversion, Expression, ExpressionKind, HandleFallback, Inside, PathStep, Procedure, Program, Rounding,
@@ -47,7 +47,7 @@ struct Function {
     /// The registers holding heap values this frame must free: names it made and values not yet handed on.
     held: Vec<Register>,
     loops: Vec<Loop>,
-    /// Where an `use` puts its value, innermost `otherwise` last.
+    /// Where an `instead` puts its value, innermost `otherwise` last.
     use_targets: Vec<Register>,
     /// A name being handed over whole to the call being compiled, and the register it lives in: for now its
     /// value is the callee's, so this frame neither frees it nor lists it as held.
@@ -545,7 +545,7 @@ impl<'p> Compiler<'p> {
         }
     }
 
-    /// Frees everything held since `mark` on a way out, such as `break` or `ret`, leaving the list as it is for
+    /// Frees everything held since `mark` on a way out, such as `break` or `return`, leaving the list as it is for
     /// the code that follows on other ways.
     fn release_on_exit(&mut self, mark: usize, except: Option<Register>) {
         let held: Vec<Register> = self.function.held.get(mark..).unwrap_or(&[]).to_vec();
@@ -713,7 +713,7 @@ impl<'p> Compiler<'p> {
             }
             self.emit(Instruction::ReturnNothing);
         } else {
-            // Checking made sure every way through ends in a `ret` or a `fail`.
+            // Checking made sure every way through ends in a `return` or a `fail`.
             self.emit(Instruction::Unreachable);
         }
         let failures =
@@ -1570,6 +1570,12 @@ impl<'p> Compiler<'p> {
             StatementKind::Evaluate(expression) => {
                 self.value(expression);
             }
+            StatementKind::If { branches, otherwise } if self.guard_return(branches) => {
+                // The guard and its `return` were one instruction; what's left is the rest of the `if`.
+                if let Some(body) = otherwise {
+                    self.block(body);
+                }
+            }
             StatementKind::If { branches, otherwise } => {
                 let mut ends = Vec::new();
                 let count = branches.len();
@@ -1719,7 +1725,7 @@ impl<'p> Compiler<'p> {
                 // value a procedure gives back goes, so it returns with nothing copied: `ReturnNothing` leaves that
                 // register as it is.
                 if !reference && !matches!(value.kind, ExpressionKind::Variable(_)) {
-                    // `ret a + b` with two `Whole`s, neither written as a number, adds and returns in one
+                    // `return a + b` with two `Whole`s, neither written as a number, adds and returns in one
                     // instruction.
                     if let ExpressionKind::Binary { operator: BinaryOperator::Add, left, right, .. } = &value.kind
                         && matches!(self.kind(left.type_id), Type::Whole)
@@ -1764,7 +1770,7 @@ impl<'p> Compiler<'p> {
             }
             StatementKind::Use(value) => {
                 let Some(&target) = self.function.use_targets.last() else {
-                    self.internal("an `use` outside an `otherwise`");
+                    self.internal("an `instead` outside an `otherwise`");
                     return;
                 };
                 self.held_into(value, target);
@@ -2986,6 +2992,44 @@ impl<'p> Compiler<'p> {
     /// A procedure takes its arguments over: each heap value it's given has a holder's count of its own, which the
     /// procedure frees when it's done (D15). `moved` is a name handed over whole, with no count taken, because its
     /// statement gives it a new value straight after. A door only reads its arguments, so they're lent to it.
+    /// `if name < 2` and the like, a `Whole` against a small number, with a body that's only `return` of a name's plain
+    /// value, nothing held to free: emitted as one `ReturnIfWholeSmall`, and true. False, emitting nothing, for any
+    /// other `if`.
+    fn guard_return(&mut self, branches: &[(Expression, Block)]) -> bool {
+        use BinaryOperator::{AtLeast, AtMost, Equal, Greater, Less, NotEqual};
+        let [(condition, body)] = branches else { return false };
+        let [Statement { kind: StatementKind::Return(Some(value)), .. }] = body.as_slice() else { return false };
+        let ExpressionKind::Variable(variable) = value.kind else { return false };
+        let ExpressionKind::Binary { operator, left, right, .. } = &condition.kind else { return false };
+        let compare = match operator {
+            Equal => Compare::Equal,
+            NotEqual => Compare::NotEqual,
+            Less => Compare::Less,
+            AtMost => Compare::AtMost,
+            Greater => Compare::Greater,
+            AtLeast => Compare::AtLeast,
+            _ => return false,
+        };
+        let Some(small) = small_whole(right) else { return false };
+        let plain_whole = matches!(self.kind(left.type_id), Type::Whole) && self.number_kind(left.type_id).is_none();
+        if !plain_whole
+            || self.is_reference(value.type_id)
+            || !self.function.held.is_empty()
+            || self.function.moved_register.is_some()
+            || !matches!(self.function.locations.get(&variable), Some(Location::Register(_)))
+            || !matches!(left.kind, ExpressionKind::Variable(compared)
+                if matches!(self.function.locations.get(&compared), Some(Location::Register(_))))
+        {
+            return false;
+        }
+        // Both are names in registers, so reading them emits nothing, and the instruction keeps the place the
+        // comparison's jump had, where a step that runs out is shown.
+        let left = self.value(left);
+        let from = self.value(value);
+        self.emit(Instruction::ReturnIfWholeSmall { from, left, right: small, compare });
+        true
+    }
+
     /// A call's one argument written as a `Whole` plus or minus a small number, as `fib(n - 1)`: the procedure's
     /// number, the register the `Whole` is in, worked out here, the small number, and the maths' place. Nothing
     /// when the call isn't of that shape, so it's made as usual.

@@ -1,9 +1,9 @@
 // Purpose: calls. A procedure calls itself `depth` deep, 20,000 times over, and does nothing else.
 proc down[depth: Whole] -> Whole
-    if depth == 0
-        ret 0
+    if depth eq 0
+        return 0
     else
-        ret 1 + down(depth - 1)
+        return 1 + down(depth - 1)
     end
 end
 
@@ -12,5 +12,5 @@ proc run[depth: Whole] -> Whole
     for_each unused round in range[from: 1, to: 20000]
         total = total + down(depth)
     end
-    ret total
+    return total
 end

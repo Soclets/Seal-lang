@@ -350,8 +350,8 @@ impl BinaryOperator {
             BinaryOperator::RemFloor => "rem.floor",
             BinaryOperator::RemTrunc => "rem.trunc",
             BinaryOperator::Join => "&",
-            BinaryOperator::Equal => "==",
-            BinaryOperator::NotEqual => "!=",
+            BinaryOperator::Equal => "eq",
+            BinaryOperator::NotEqual => "not_eq",
             BinaryOperator::Less => "<",
             BinaryOperator::Greater => ">",
             BinaryOperator::AtLeast => "at_least",
@@ -489,7 +489,7 @@ pub enum ExpressionKind<'a> {
     Otherwise {
         call: Box<Expression<'a>>,
         cases: Vec<OtherwiseCase<'a>>,
-        /// The handlers brought in with `incl` (Unio D43).
+        /// The handlers brought in with `include` (Unio D43).
         includes: Vec<HandlerUse<'a>>,
     },
     /// `start |> step |> step |> step` (Unio D5, D128).

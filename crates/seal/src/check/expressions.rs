@@ -1199,7 +1199,7 @@ impl<'a> Checker<'a> {
                     };
                     let shared = cases.iter().map(|(failure, _)| *failure).collect();
                     return Expression {
-                        kind: ExpressionKind::Otherwise { call: Box::new(checked), cases, shared },
+                        kind: ExpressionKind::Otherwise { call: Box::new(checked), cases, shared, after_handle: true },
                         type_id,
                         place,
                     };
@@ -1260,7 +1260,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// `call otherwise` and its cases, with any handlers it brings in with `incl` (D37, Unio D40, D43, D186).
+    /// `call otherwise` and its cases, with any handlers it brings in with `include` (D37, Unio D40, D43, D186).
     fn otherwise(
         &mut self,
         call: &syntax::Expression<'a>,
@@ -1314,13 +1314,18 @@ impl<'a> Checker<'a> {
             return Self::error(place);
         }
         Expression {
-            kind: ExpressionKind::Otherwise { call: Box::new(checked), cases: checked_cases, shared },
+            kind: ExpressionKind::Otherwise {
+                call: Box::new(checked),
+                cases: checked_cases,
+                shared,
+                after_handle: false,
+            },
             type_id,
             place,
         }
     }
 
-    /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `use`, `ret`, `break` or
+    /// One `case` of an `otherwise` or a handler, checked where it's used: it ends in `instead`, `return`, `break` or
     /// `fail`, or simply ends after a call that gives nothing (Unio D40, D186). `before` are the lines that make the
     /// handler's parameters from its arguments, run before the case's own.
     pub(super) fn case_block(
@@ -1338,7 +1343,7 @@ impl<'a> Checker<'a> {
         if gives_nothing && ends_with_use {
             self.refuse_why(
                 body.last().map_or(case.failure.place, |last| last.place),
-                "this call gives nothing, so there's no value to give `use`",
+                "this call gives nothing, so there's no value to give `instead`",
                 "after a call that gives nothing, a case may just end.",
             );
         } else if !gives_nothing && !ends_with_use && !Self::block_leaves(&body) && failable {
@@ -1346,7 +1351,7 @@ impl<'a> Checker<'a> {
             self.refuse_why(
                 case.failure.place,
                 format!("the case `{}` can reach its end without giving a value", case.failure.text),
-                "each case ends with `use` and a value, `ret`, `break` or `fail`.",
+                "each case ends with `instead` and a value, `return`, `break` or `fail`.",
             );
         }
         let mut whole = before;

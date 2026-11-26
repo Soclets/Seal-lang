@@ -23,7 +23,7 @@ proc energy[bodies: List<Body>] -> Float
             end
         end
     end
-    ret total
+    return total
 end
 
 proc advance[bodies: List<Body>, dt: Float] -> List<Body>
@@ -51,7 +51,7 @@ proc advance[bodies: List<Body>, dt: Float] -> List<Body>
         a.z = a.z + dt * a.vz
         moved[pos: i] = a
     end
-    ret moved
+    return moved
 end
 
 proc run[steps: Whole] -> Float
@@ -89,5 +89,5 @@ proc run[steps: Whole] -> Float
         bodies = advance(bodies, ~0.01)
         step = step + 1
     end
-    ret energy(bodies)
+    return energy(bodies)
 end

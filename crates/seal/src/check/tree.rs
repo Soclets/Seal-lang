@@ -468,6 +468,8 @@ pub enum ExpressionKind {
         call: Box<Expression>,
         cases: Vec<(FailureId, Block)>,
         shared: Vec<FailureId>,
+        /// Whether it was written as `?? handler`, with no `otherwise` block, so a message speaks of the handler.
+        after_handle: bool,
     },
     /// `list.add(value)`, with a position when one is given. Fails with `full` when the list has `len.max`
     /// (Unio D80, D168).

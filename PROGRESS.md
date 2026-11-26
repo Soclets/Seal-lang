@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D151 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D159 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -66,11 +66,25 @@ checker, compiler or VM.
 - [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
   and sent to the design session.
 
+## Plan from 2026-11-26 (seal opus claude): D152 to D159
+
+From the prompt in `design/seal-next-prompt.md`, in this order, each step committed and pushed:
+
+- [x] **C15. Catching up.** D157's `return`, `include` and `instead`; D158's `eq` and `not_eq` as keywords, with `==`
+  and `!=` gone; D156's licence on every crate (set once in the workspace); D131's missing case after `??` worded
+  as the handler's; D135 checked on `bench/programs/` (nothing to change).
+- [ ] **C16. Big numbers against Python (D155, D159).** Fixed benchmarks for `HugeWhole`, `Decimal` and
+  `HugeDecimal`, Python's `int` and `decimal` as the bar, `gmpy2` for reference; then faster than Python on each.
+- [ ] **C17. `.sealc` files (D141, D153, D154).** `seal build`, bundles, loading by name, the verifier, the cache;
+  fuzzing damaged files; a loading row with `luajit -b` beside it.
+- [ ] **C18. The C API (D136, D151, D152).** `seal-c`, a C test program under AddressSanitizer, fuzzing through it, a
+  door-call row with Luau's C API beside it.
+
 ## Decisions built since D58
 
 Each arrived while building; each is built, tested, fuzzed and pushed.
 
-- **D59** `==` and `!=` kept: nothing to change.
+- **D59** `==` and `!=` kept: nothing to change. (Replaced by D158's `eq` and `not_eq`.)
 - **D60** A procedure that takes nothing has no brackets and is called with `()`, by the script and by the host.
 - **D61** Unread parameters and `for each` names take `unused`; a `case` takes out only the values it reads.
 - **D62** A `mut` name is changed through any depth of fields and places, with `.add` or `.remove` at the end. Each
@@ -202,8 +216,8 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D142** LuaJIT's interpreter, `luajit -joff`, is measured as goal 1's second bar, and LuaJIT's JIT for reference.
   It runs the Luau programs as they are. Not met yet: `fib(32)` and loading each patrolling script from its own text.
 - **D143** Already built so: the new test passed as it came.
-- **D144, D145, D146** `instead` is written `use`, `return` `ret`, `include` `incl`, and `for each` `for_each`, one
-  keyword; `for` and `each` alone aren't keywords any more. The Unio translator writes Unio's words. A `for_each`
+- **D144, D145, D146** `for each` is written `for_each`, one keyword; `for` and `each` alone aren't keywords any
+  more. (D144's `use` and D145's `ret` and `incl` were taken back by D157.) The Unio translator writes Unio's words. A `for_each`
   block's `end` note is `\\ for_each`, as the design session answered.
 - **D147** `_` on the right of an `=` that changes something is its current value. A name's `_` reads the name; a
   part's reads the part through the same way in, with every position and key worked out once under a hidden name
@@ -223,6 +237,10 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D150** Loading a script from a text of its own is judged against Luau alone; `bench/RESULTS.md` shows LuaJIT's
   time beside it for reference.
 - **D151** The C API gives every message whole and in parts; `crates/seal-c/PROPOSAL.md` names the functions.
+- **D156** Every crate is under Apache-2.0 WITH LLVM-exception, set once in the workspace's `Cargo.toml`.
+- **D157, D158** `return`, `include` and `instead` again, and `eq` and `not_eq` as keywords in place of `==` and
+  `!=`, which no longer read as one symbol. `ret`, `incl` and `use` are plain names again. Messages, the fuzzer and
+  `bench/programs/` use the new words; the Unio translator already wrote Unio's.
 - **D115** A `HugeWhole`'s limits may be past a `Whole`'s range: such an edge is kept once in the type table's big
   edges, so equal limits are one type, and it's checked, clamped to and shown as any edge is.
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
@@ -415,12 +433,12 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 Refusals, failed checks and stops whose wording no decision gives, drafted in Unio's layout (Unio D54): `what:` says
 what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole line, `fix:` stands in place of `what:`
-(Unio D101), as for indentation, spacing, a `ret`'s header or a `mut` that goes; those are marked.
+(Unio D101), as for indentation, spacing, a `return`'s header or a `mut` that goes; those are marked.
 
-374 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-25, after D144 to D149's new words; the 3 marked **(new today)** weren't in this morning's list, which replaced the list of 2026-11-23: `fmt`'s and `&`'s
-are gone with them (D75, D77), and so are the named closers' (D102). The 156 marked **(new)** weren't in the
-earlier list: units, handlers, ranged numbers, the maths built-ins, the new number types, D135's `mut` and the rest
-built since. `{…}` stands for what the message fills in.
+375 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26. The design session is reviewing
+the list as of 384d500; the 14 marked **(changed 2026-11-26)** differ from it, almost all only by D157's and D158's
+words (`return`, `instead`, `not_eq`); two are D115's limits past a `Whole`'s range, and one is new: a handler used after `??` that misses a case is named as a
+handler, not an `otherwise`. `{…}` stands for what the message fills in.
 
 **`crates/seal/src/check/calls.rs`**
 
@@ -437,15 +455,15 @@ built since. `{…}` stands for what the message fills in.
 - refused: there's no procedure or door named `{word}`
 - refused: `{word}` has no narrowing `.{narrowing}`
   - why: `{word}` takes an angle in `rads`, `degs` or `turns`, as `{word}(90 degs)`, or a plain `Float` in radians.
-- refused: `{word}` takes a `Float`, but this is {found} **(new)**
+- refused: `{word}` takes a `Float`, but this is {found}
   - why: angles and `lerp` work on `Float`s; a number written with a point, as `2.0`, is a `Float`.
-- refused: `{word}` takes values of one type, but this is {right} and the first is {left} **(new)**
+- refused: `{word}` takes values of one type, but this is {right} and the first is {left}
   - why: `Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`.
-- refused: `{word}` takes an angle, but this is {found} **(new)**
+- refused: `{word}` takes an angle, but this is {found}
   - why: an angle is in `rads`, `degs` or `turns`, or a plain `Float` in radians.
-- refused: `{word}` takes values of one type, but this is {right} and the first is {left} **(new)**
+- refused: `{word}` takes values of one type, but this is {right} and the first is {left}
   - why: the two are `Float`s of one unit group, or both plain.
-- not designed yet: a `clamp` whose `low:` is more than its `high:` isn't decided yet **(new)**
+- not designed yet: a `clamp` whose `low:` is more than its `high:` isn't decided yet
 - refused: `{word}` is only ever one of its kinds
   - why: `{word}`'s narrowings are {}.
 - refused: `{word}` has no narrowing `.{narrowing}`
@@ -466,29 +484,29 @@ built since. `{…}` stands for what the message fills in.
 - refused: `{name}` takes {} argument{}, but this call gives {}
 - refused: `be` is narrowed by the type the value becomes, as in `be.Whole`
   - why: `be.Type(value)` converts a value to a type.
-- refused: there's no conversion to `{target}` **(new)**
+- refused: there's no conversion to `{target}`
   - why: `be` converts to `Text`, `Whole`, `Float` and `Bool`; other values are built as they're written.
 - refused: there's no `{full}`
   - why: `be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
-- refused: there's no conversion from {found} to a `Bool` **(new)**
-  - why: a number is compared, as `n != 0`, for a `Bool`.
-- refused: this is already a `{target}`, so `be.{target}` does nothing **(new)**
+- refused: there's no conversion from {found} to a `Bool`
+  - why: a number is compared, as `n not_eq 0`, for a `Bool`.
+- refused: this is already a `{target}`, so `be.{target}` does nothing
   - why: converting a value to the type it already is, is refused.
-- refused: there's no conversion from {written} to a `Bool` **(new)**
-  - why: `be.Bool` reads `"true"` or `"false"` from text; a number is compared, as `n != 0`, for a `Bool`.
-- refused: there's no conversion from {written} to a `Float` **(new)**
+- refused: there's no conversion from {written} to a `Bool`
+  - why: `be.Bool` reads `"true"` or `"false"` from text; a number is compared, as `n not_eq 0`, for a `Bool`.
+- refused: there's no conversion from {written} to a `Float`
   - why: `be.Float` turns a `Whole` into a `Float`.
 - refused: `{full}` takes a `Float`, but this is {written}
   - why: `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` say how a `Float`'s fraction goes.
 - refused: `be.Whole` on a `Float` says how the fraction goes
   - why: the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
-- refused: there's no conversion from {written} to a `Whole` **(new)**
+- refused: there's no conversion from {written} to a `Whole`
   - why: `be.Whole` reads a `Whole` from text, and turns a `Float` into one with `.floor`, `.trunc`, `.ceil`, `.nearest` or `.nearest.even`.
 - refused: {found} has no method `has`
 - refused: `.has` takes `key:` and its value
 - refused: `{name}` splits a text, but this is {found}
 - refused: `{name}` takes `by:` and the text to split at
-- refused: this splits a text by an empty text **(new)**
+- refused: this splits a text by an empty text
   - why: an empty text is never found between two pieces; `for_each` goes through a text's characters, as `for_each letter in name`.
 - refused: {found} has no method `{}`
 - refused: `.add` takes the item, then `pos:` or `offset:` when it goes at a place
@@ -497,13 +515,13 @@ built since. `{…}` stands for what the message fills in.
 - refused: `.remove` takes `key:` and its value
 - refused: an `Array` has no `.{}`
   - why: an array holds exactly its length, so nothing is added or taken away; its items can still change.
-- not built yet: working out a type from a later line (D5), which this `.{}` needs, isn't built yet **(new)**
+- not built yet: working out a type from a later line (D5), which this `.{}` needs, isn't built yet
 
 **`crates/seal/src/check/expressions.rs`**
 
 - refused: `{digits}` is too big for a `Whole`
   - why: a `Whole` goes up to 9223372036854775807.
-- refused: `_` is the value of what an `=` changes, and nothing is changed here **(new today)**
+- refused: `_` is the value of what an `=` changes, and nothing is changed here
   - why: on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.
 - refused: a `{name}` is built with `[ ]`, naming every field
   - why: a record is built as `Name[field: value]`.
@@ -521,17 +539,17 @@ built since. `{…}` stands for what the message fills in.
   - why: a failure at the top level is handled on the spot, with `??` or `otherwise`.
 - refused: `?` follows something that can't fail
   - why: `?` passes a failure up, so it goes after a call that can fail.
-- refused: a unit stands right after its number, as `2 secs`, or in a type, as `Float[unit: secs]` **(new)**
+- refused: a unit stands right after its number, as `2 secs`, or in a type, as `Float[unit: secs]`
   - why: a unit says what a number counts, so it goes with one.
-- refused: `places:` takes a whole number written out, but this is `{places}` **(new)**
+- refused: `places:` takes a whole number written out, but this is `{places}`
   - why: `places:` says how many digits a `Float` shows after its point, as `{speed, places: 2}`.
-- refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name **(new)**
+- refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name
   - why: `to` in braces measures a name in one of its group's units, as `{total to secs}`.
-- refused: `{{inside}}` isn't a name with its fields and facts **(new)**
+- refused: `{{inside}}` isn't a name with its fields and facts
   - why: braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.
 - refused: there's no name `{first}` here
   - why: a name in braces is checked when the script loads; a brace shown as it is, is written `\{`.
-- refused: `places:` shows a `Float` to so many digits, but this is {found} **(new)**
+- refused: `places:` shows a `Float` to so many digits, but this is {found}
   - why: `places:` is only for a `Float`, which otherwise shows every digit it needs.
 - refused: `{text}` is too big for a `Float`
   - why: a `Float` goes up to about 10 to the 308.
@@ -541,7 +559,7 @@ built since. `{…}` stands for what the message fills in.
   - why: a `~` marks a `Float` that's only close to what's written.
 - refused: `{name}` is marked `unused`, so it can't be read
   - why: `unused` marks a name that's never read on purpose.
-- refused: `{name}` fills in braces in text, so it's written `"{{name}}"` **(new)**
+- refused: `{name}` fills in braces in text, so it's written `"{{name}}"`
   - why: `{newln}` and `{tab}` give a line break and a tab inside text; the text holding just one is written `"{newln}"`.
 - refused: `{name}` is a procedure, and a call writes `( )`
   - why: every call writes `( )`, even with nothing inside.
@@ -550,7 +568,7 @@ built since. `{…}` stands for what the message fills in.
 - refused: {quoted} can't mix a `Whole` and a `Float`
   - why: `Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`, and a number written with a point, as `2.0`, is a `Float`.
 - refused: {quoted} has {left_text} on its left, but {right_text} on its right
-- refused: a `Whole` raised to a negative power isn't a whole number **(new)**
+- refused: a `Whole` raised to a negative power isn't a whole number
   - why: a `Whole`'s power is 0 or more; `be.Float(…)` gives `Float`s, whose powers can be negative.
 - refused: `{path}` is a procedure, and a call writes `( )`
   - why: `( )` calls a procedure; `[ ]` holds or describes values.
@@ -590,23 +608,23 @@ built since. `{…}` stands for what the message fills in.
   - why: after a call that gives nothing, a failure is dealt with by `?? ignore`.
 - refused: `?? ignore` follows a call that gives a value
   - why: with the failure ignored there'd be no value to carry on with; `?? ignore` goes after a call that gives nothing.
-- refused: a handler deals with a call's failures, and a `Maybe` isn't a failure **(new)**
+- refused: a handler deals with a call's failures, and a `Maybe` isn't a failure
   - why: a `Maybe` is given a value to use when it's `none`, as `?? 0`, or `?? crash` when it can't be `none`.
-- refused: `?? ignore` would leave nothing in place of a `Maybe` that's `none` **(new)**
+- refused: `?? ignore` would leave nothing in place of a `Maybe` that's `none`
   - why: a `Maybe` is given a value to use when it's `none`, as `?? 0`, or `?? crash` when it can't be `none`; `?? ignore` goes after a call that gives nothing.
-- not built yet: working out a type from a later line (D5), which this `??` needs, isn't built yet **(new)**
+- not built yet: working out a type from a later line (D5), which this `??` needs, isn't built yet
 - refused: `??` follows something that can't fail and isn't a `Maybe`
   - why: `??` deals with a failure, or gives a fallback when a `Maybe` is `none`.
 - refused: `otherwise` follows something that can't fail
   - why: `otherwise` handles each failure of the call before it.
-- refused: the failure `{name}` is handled twice **(new)**
+- refused: the failure `{name}` is handled twice
   - why: an `otherwise` handles each failure once, with its own `case` or an included handler's.
 - refused: the failure `{}` is handled twice
   - why: an `otherwise` has one `case` for each failure.
-- refused: this call gives nothing, so there's no value to give `use`
+- refused: this call gives nothing, so there's no value to give `instead` **(changed 2026-11-26)**
   - why: after a call that gives nothing, a case may just end.
 - refused: the case `{}` can reach its end without giving a value
-  - why: each case ends with `use` and a value, `ret`, `break` or `fail`.
+  - why: each case ends with `instead` and a value, `return`, `break` or `fail`.
 - refused: this slide is a chain of {calls}, and one or two calls are written as calls
   - why: a chain of three or more calls is a slide; a shorter one is written with `( )`, as in `show_msg(be.Text(n))`.
 
@@ -616,52 +634,54 @@ built since. `{…}` stands for what the message fills in.
   - why: every call that can fail is dealt with, by `?`, `??` or `otherwise`.
 - refused: this `otherwise` has no `case` for {}
   - why: the cases cover every failure the call can give.
+- refused: this handler has no `case` for {} **(changed 2026-11-26)**
+  - why: a handler used after `??` covers every failure the call can give.
 - refused: this `otherwise` has a `case` for {}, which the call can't fail with
   - why: the call can fail with {}.
 - refused: `{called}` can change `{name}`, which this `for_each` is going through
 - refused: this can pause, while a `for_each` is going through the top-level name `{name}`
 - refused: {purpose}, but this is {found}
-- refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most` **(new)**
+- refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most`
   - why: text has no one right order: by character codes `"Zebra"` comes before `"apple"`, and alphabetical order differs between languages.
 - refused: this is already a `Text`, so `be.Text` does nothing
   - why: converting a value to the type it already is, is refused.
 - refused: a `Dict`'s value is reached with `key:`
 - refused: this is {found}, but {} is {wanted}
 - refused: what `{name}` gives back can't be worked out from its body
-  - why: a procedure's result comes from its `ret`s; where they can't say, it's written with `-> Type`.
+  - why: a procedure's result comes from its `return`s; where they can't say, it's written with `-> Type`.
 - refused: this value's type can't be worked out
 - refused: `{name}`'s type can't be worked out
-- refused: `{}` can fail with {}, but its header doesn't say so (shown with a `fix:` line) **(new)**
-- refused: `{}`'s written failures don't match: {body} (shown with a `fix:` line) **(new)**
+- refused: `{}` can fail with {}, but its header doesn't say so (shown with a `fix:` line)
+- refused: `{}`'s written failures don't match: {body} (shown with a `fix:` line)
 - refused: this pauses, and the top level can't pause
   - why: the host waits for loading to finish; a pause belongs in a procedure the host calls.
 
 **`crates/seal/src/check/handlers.rs`**
 
-- refused: the handler group `{}` is declared twice **(new)**
+- refused: the handler group `{}` is declared twice
   - why: each handler group is declared once.
-- refused: `{}` is already a top-level name, so a handler group can't be named `{}` **(new)**
-- refused: the handler `::{}` is listed twice in `{}` **(new)**
+- refused: `{}` is already a top-level name, so a handler group can't be named `{}`
+- refused: the handler `::{}` is listed twice in `{}`
   - why: each handler in a group has a name of its own.
-- refused: there's no procedure or door named `{full}` for `{}` to handle **(new)**
-- refused: `{full}` can't fail, so `{}` has nothing to handle for it **(new)**
+- refused: there's no procedure or door named `{full}` for `{}` to handle
+- refused: `{full}` can't fail, so `{}` has nothing to handle for it
   - why: `handles [ … ]` names the procedures, doors and built-ins that can fail, whose failures the group's handlers deal with.
-- refused: there's no handler group named `{}` **(new)**
-- refused: `::{member}` could be {} **(new)**
+- refused: there's no handler group named `{}`
+- refused: `::{member}` could be {}
   - why: when two groups that handle the call both have the handler, the group is written, as `group::name`.
-- refused: `{}` has no handler `::{member}` **(new)**
+- refused: `{}` has no handler `::{member}`
   - why: `{}`'s handlers are {}.
-- not designed yet: a handler used inside its own cases isn't decided yet **(new)**
-- refused: `{}` isn't one of `::{member}`'s parameters **(new)**
-- refused: `{}` isn't one of `::{member}`'s labels **(new)**
+- not designed yet: a handler used inside its own cases isn't decided yet
+- refused: `{}` isn't one of `::{member}`'s parameters
+- refused: `{}` isn't one of `::{member}`'s labels
 - refused: the failure `{}` is handled twice
   - why: a handler has one `case` for each failure.
-- refused: `{}` is never used **(new)**
+- refused: `{}` is never used
   - why: a handler's parameter that's never read on purpose is marked, as `unused {}`.
 
 **`crates/seal/src/check/mod.rs`**
 
-- refused: `{}` is one of the host's types, so the script can't declare it **(new)**
+- refused: `{}` is one of the host's types, so the script can't declare it
   - why: the host opens its own types for a script, which uses them by name, as it uses a door.
 - refused: `{}` is one of Seal's own types, so a script can't declare it
   - why: each type has one meaning.
@@ -669,28 +689,30 @@ built since. `{…}` stands for what the message fills in.
   - why: each type is declared once.
 - refused: the case `{}` is listed twice
   - why: each case is listed once.
-- refused: `{}` has no cases, so no value of it could exist **(new)**
+- refused: `{}` has no cases, so no value of it could exist
   - why: a `one_of`'s value is exactly one of its cases, listed one per line.
 - refused: the field `{}` is listed twice
   - why: each field is listed once.
 - refused: `{}`'s field `{field}` holds {found}, with no way for a value to end
 - refused: every case of `{}` holds more that can't end, so no value of it could end
-- refused: `{}` has no setting `{setting}` **(new)**
+- refused: `{}` has no setting `{setting}`
   - why: a number's settings are its limits: `min:`, `max:`, `min.clamp:` and `max.clamp:`.
-- refused: the {edge} edge is written twice **(new)**
+- refused: the {edge} edge is written twice
   - why: each edge is written once, with `min:` or `min.clamp:`, and `max:` or `max.clamp:`.
-- refused: this number's lowest edge is above its highest **(new)**
+- refused: this number's lowest edge is above its highest
   - why: a ranged number's `min` is at most its `max`, so some value fits.
-- refused: `{name}` isn't a top-level name made from a number written out, with no `mut` **(new)**
+- refused: `{name}` isn't a top-level name made from a number written out, with no `mut`
   - why: a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.
-- refused: this number's limit is {wanted} written out **(new)**
+- refused: this number's limit is a `HugeWhole` written out **(changed 2026-11-26)**
   - why: a number's limits are known while loading, and are of its own type.
-- refused: this is {side} its type's `{word}: {}` **(new)**
+- refused: this number's limit is {wanted} written out
+  - why: a number's limits are known while loading, and are of its own type.
+- refused: this is {side} its type's `{word}: {shown}` **(changed 2026-11-26)**
   - why: a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.
 - refused: `{digits}` is too big for a `Whole`
-- refused: a type's setting is a whole number known while loading, never a calculation or a call **(new)**
+- refused: a type's setting is a whole number known while loading, never a calculation or a call
   - why: a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.
-- not designed yet: units and limits on a `{name}` isn't decided yet **(new)**
+- not designed yet: units and limits on a `{name}` isn't decided yet
 - refused: `{name}` has no setting `{setting}`
 - refused: `{setting}` can't be less than 0
 - refused: `{setting}` is written twice
@@ -703,13 +725,13 @@ built since. `{…}` stands for what the message fills in.
 - refused: there's no type named `{name}`
 - refused: a `Float` can't be a `Dict`'s key
   - why: two neighbouring floats that print alike would be different keys.
-- not designed yet: {written} as a `Dict`'s key isn't decided yet **(new)**
+- not designed yet: {written} as a `Dict`'s key isn't decided yet
 - refused: `{}` is a narrowing, so it's declared inside a `fam.proc` block
   - why: a word and its kinds are declared together.
 - refused: `{}` isn't `{}` or a kind of it
   - why: each member of a family is the word itself, or reads as "a Y kind of X" for its name `X.Y`.
-- refused: `{word}` is one of Seal's own words, so a procedure can't be named `{word}` **(new)**
-- refused: `{word}` is one of the host's doors, so a procedure can't be named `{word}` **(new)**
+- refused: `{word}` is one of Seal's own words, so a procedure can't be named `{word}`
+- refused: `{word}` is one of the host's doors, so a procedure can't be named `{word}`
 - refused: the procedure `{name}` is declared twice
 - refused: two parameters are named `{}`
   - why: each parameter has a name of its own.
@@ -721,19 +743,19 @@ built since. `{…}` stands for what the message fills in.
   - why: only a labelled parameter can have a default.
 - refused: this default is {found}, but `{}` is {wanted}
 - refused: `{}` has two defaults
-- refused: a default is a value written out plainly, never a calculation or a call **(new)**
+- refused: a default is a value written out plainly, never a calculation or a call
   - why: a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or a top-level name made from one with no `mut`.
 - refused: `{name}` is reached here before the top level has made it
-- refused: a name can't be `all` **(new)**
+- refused: a name can't be `all`
   - why: `[all: value]` always means a list or array whose every item starts as `value`, so `all` can't name anything else.
 - refused: `{word}` is already {taken_by}, so nothing else can be named `{word}`
 - refused: `{}` is already a top-level name, so {what} can't be named `{}`
 - refused: the case `{}` has no value `{}`
   - why: a case's values come out by name.
-- refused: the case `{}`'s values are taken out in the order they're declared: `{}` **(new)**
+- refused: the case `{}`'s values are taken out in the order they're declared: `{}`
   - why: a case's values come out in the order its type declares them, skipping any that aren't read.
 - refused: `{}` already exists, so it can't be made again
-- refused: `{name}` is never changed, so it isn't `mut` **(new)**
+- refused: `{name}` is never changed, so it isn't `mut`
   - why: `mut` marks a name that changes; one that never does is made without it.
 - refused: `{name}` is never used
 - refused: `{name}` is never used
@@ -744,15 +766,15 @@ built since. `{…}` stands for what the message fills in.
   - why: an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out.
 - refused: `{name}` is never used
   - why: a `case` takes out only the values it reads.
-- refused: `{}` gives a value, but it can reach its `end` without a `ret`
-  - why: when any `ret` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.
-- refused: this `ret` is the procedure's last line, where the procedure ends anyway
-  - why: a bare `ret` leaves a procedure early.
-- refused: `{}` says it gives {wanted}, but it has no `ret` with a value
-  - why: a procedure's result comes from its `ret`s.
+- refused: `{}` gives a value, but it can reach its `end` without a `return` **(changed 2026-11-26)**
+  - why: when any `return` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.
+- refused: this `return` is the procedure's last line, where the procedure ends anyway **(changed 2026-11-26)**
+  - why: a bare `return` leaves a procedure early.
+- refused: `{}` says it gives {wanted}, but it has no `return` with a value **(changed 2026-11-26)**
+  - why: a procedure's result comes from its `return`s.
 - refused: this line can never run
 - refused: this line follows an `if` that can leave
-- refused: this line follows a `match` that can leave **(new)**
+- refused: this line follows a `match` that can leave
 - refused: this line works out {found}, but nothing uses it
   - why: a line that only works out a value does nothing; keep the value under a name, or give it to a `mut` name with `=`.
 - refused: this call gives {found}, but nothing uses it
@@ -760,14 +782,14 @@ built since. `{…}` stands for what the message fills in.
 - refused: this `break` isn't inside a loop
   - why: `break` leaves the innermost loop it's in.
 - refused: `fail` hands a failure to a caller, and the top level has none
-- refused: this `use` isn't inside an `otherwise` case
-  - why: `use` gives the value an `otherwise` case carries on with.
+- refused: this `instead` isn't inside an `otherwise` case **(changed 2026-11-26)**
+  - why: `instead` gives the value an `otherwise` case carries on with.
 - refused: this is {found}, but {role} is {wanted_text}
 - refused: `{word}` checks a `Bool`, but this is {found}
   - why: a number or text doesn't stand for true or false; compare it{hint}.
 - refused: `{}` between two `Float`s in a `while` condition
   - why: a `Float` that changes each pass rarely lands exactly on a value, so the loop could never stop; `<`, `>`, `at_least` or `at_most` say "until it reaches".
-- refused: `{kind}` leaves out what it holds, and the value doesn't show it **(new)**
+- refused: `{kind}` leaves out what it holds, and the value doesn't show it
   - why: a written type leaves out only what its value shows, so this one writes it, as `{example}`.
 - refused: `Maybe.none` can't say what the `Maybe` holds, so the name's type has to be written
   - why: a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.
@@ -781,23 +803,23 @@ built since. `{…}` stands for what the message fills in.
 - refused: a list's item is reached with `pos:` or `offset:`
   - why: `pos:` counts from 1 and `offset:` from 0, so a bare number is never guessed at.
 - refused: a dictionary's value is reached with `key:`
-- not built yet: working out a type from a later line (D5), which this change needs, isn't built yet **(new)**
+- not built yet: working out a type from a later line (D5), which this change needs, isn't built yet
 - refused: {name} is {found}, which has no items to change
 - refused: a change reaches into a `mut` name, and this isn't a name
   - why: a change is a name changing its own value.
 - refused: this is {found}, which has no fields
-- refused: a change can't go through a `Dict`'s key on its way, since the key might be missing **(new)**
+- refused: a change can't go through a `Dict`'s key on its way, since the key might be missing
   - why: a lookup is dealt with on its own line: the value is taken out, as `mut north = shops[key: "north"] ?? crash`, changed, and put back, as `shops[key: "north"] = north`.
 - refused: this is {found}, which has no items
-- refused: `ret` hands a value to a caller, and the top level has none
-- refused: this `ret` gives back {}, but the procedure's header has no `-> Type` **(new)**
-- refused: this `ret` gives a value, but an earlier one gives none
+- refused: `return` hands a value to a caller, and the top level has none **(changed 2026-11-26)**
+- refused: this `return` gives back {}, but the procedure's header has no `-> Type` **(changed 2026-11-26)**
+- refused: this `return` gives a value, but an earlier one gives none **(changed 2026-11-26)**
 - refused: this gives nothing, so there's nothing to return
   - why: a procedure that gives nothing back can't be used as a value.
-- refused: this `ret` gives {found}, but the procedure gives {wanted}
-- refused: this `ret` gives no value, but the procedure gives one
+- refused: this `return` gives {found}, but the procedure gives {wanted} **(changed 2026-11-26)**
+- refused: this `return` gives no value, but the procedure gives one **(changed 2026-11-26)**
 - refused: `at key` is for going through a `Dict`
-- refused: `at {word}` is for going through a list; a `Dict` is gone through `at key` (shown with a `fix:` line) **(new)**
+- refused: `at {word}` is for going through a list; a `Dict` is gone through `at key` (shown with a `fix:` line)
 - refused: `at key` is for going through a `Dict`, but this is {found}
 - refused: a `range` takes `from:`, one of `to:` or `before:`, and an optional `step_by:`
   - why: `to:` includes its number and `before:` stops short of it.
@@ -805,7 +827,7 @@ built since. `{…}` stands for what the message fills in.
   - why: a range with a step of 0 never reaches its end.
 - refused: this range counts by {step} from {from}, away from its end, {end}
   - why: a range's step points towards its end; a negative `step_by:` counts down.
-- not built yet: working out a type from a later line (D5), which this `match` needs, isn't built yet **(new)**
+- not built yet: working out a type from a later line (D5), which this `match` needs, isn't built yet
 - refused: `match` reads which case a value is, but this is {found}
   - why: only a `one_of` or a `Maybe` has cases.
 - refused: {found} has no case `{}`
@@ -816,162 +838,162 @@ built since. `{…}` stands for what the message fills in.
 
 **`crates/seal/src/check/numbers.rs`**
 
-- refused: a `{name}` holds exactly what's written, so its number takes no `~` **(new)**
+- refused: a `{name}` holds exactly what's written, so its number takes no `~`
   - why: a `~` marks a `Float` that's only close to what's written; a decimal counts in tens, so `0.1` is exact.
-- refused: `{text}` has more digits than a `Decimal` keeps **(new)**
+- refused: `{text}` has more digits than a `Decimal` keeps
   - why: a `Decimal` keeps 34 digits; a `HugeDecimal` keeps any number of them.
-- refused: {quoted} has {left_type} on its left, but {right_type} on its right **(new)**
-- refused: {quoted} can't mix a `{left_type}` and a `{right_type}` **(new)**
+- refused: {quoted} has {left_type} on its left, but {right_type} on its right
+- refused: {quoted} can't mix a `{left_type}` and a `{right_type}`
   - why: a number becomes a bigger type by itself only where it always fits; `be.` converts the other ways, and a `Float` mixes with none of these.
-- refused: `**` on a `{}` takes a whole power, but this is {found} **(new)**
+- refused: `**` on a `{}` takes a whole power, but this is {found}
   - why: a `HugeWhole`, `Decimal` or `HugeDecimal` is raised to a `Whole` power.
-- refused: a `HugeWhole` to a negative power isn't a whole number **(new)**
+- refused: a `HugeWhole` to a negative power isn't a whole number
   - why: a negative power is one over the number; a `HugeDecimal` can hold it when it has an end.
 - refused: there's no `{full}`
   - why: `be.HugeWhole` takes `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` for a decimal, and `be.Decimal` takes `.shown` and `.nearest` for a `Float`.
-- refused: there's no conversion from {found} to a `{name}` **(new)**
+- refused: there's no conversion from {found} to a `{name}`
   - why: a number type converts from text and from the other number types.
-- refused: this is already a `{name}`, so `be.{name}` does nothing **(new)**
+- refused: this is already a `{name}`, so `be.{name}` does nothing
   - why: converting a value to the type it already is, is refused.
-- not designed yet: converting a `Float` to a `{name}` isn't decided yet **(new)**
-- refused: `be.Decimal` on a `Float` says which `Decimal` it becomes **(new)**
+- not designed yet: converting a `Float` to a `{name}` isn't decided yet
+- refused: `be.Decimal` on a `Float` says which `Decimal` it becomes
   - why: `be.Decimal.shown` takes the number the `Float` shows, so `~0.1` gives `0.1`; `be.Decimal.nearest` takes the `Decimal` nearest the value it holds.
-- refused: `{full}` takes a `Float`, but this is a `{}` **(new)**
+- refused: `{full}` takes a `Float`, but this is a `{}`
   - why: `.shown` and `.nearest` say which `Decimal` a `Float` becomes.
-- refused: `be.HugeWhole` on a `{}` says how the fraction goes **(new)**
+- refused: `be.HugeWhole` on a `{}` says how the fraction goes
   - why: the ways are `be.HugeWhole.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even`.
-- refused: `{full}` rounds a fraction, and a `{}` has none **(new)**
+- refused: `{full}` rounds a fraction, and a `{}` has none
   - why: `be.HugeWhole` converts a whole number or text with nothing to round.
-- refused: `be.Whole` on a `{source}` says how the fraction goes **(new)**
+- refused: `be.Whole` on a `{source}` says how the fraction goes
   - why: the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
-- refused: `{full}` rounds a fraction, and a `HugeWhole` has none **(new)**
+- refused: `{full}` rounds a fraction, and a `HugeWhole` has none
   - why: `be.Whole` converts a `HugeWhole`, failing with `too_big` when it doesn't fit.
 
 **`crates/seal/src/check/units.rs`**
 
-- refused: the unit group `{}` is declared twice, or is one of Seal's own **(new)**
+- refused: the unit group `{}` is declared twice, or is one of Seal's own
   - why: each unit group is declared once; `time`, `angle` and `distance` are Seal's own.
-- refused: `{}` has {bases} units marked `base`, where it needs exactly one **(new)**
+- refused: `{}` has {bases} units marked `base`, where it needs exactly one
   - why: a unit group's base is the unit every other one is counted in, so there's exactly one.
-- refused: the unit `::{}` is listed twice in `{}` **(new)**
+- refused: the unit `::{}` is listed twice in `{}`
   - why: each unit in a group has a name of its own.
-- refused: `{}` isn't a unit listed above in `{}` **(new)**
+- refused: `{}` isn't a unit listed above in `{}`
   - why: each unit is counted in one listed before it, so every size is known.
-- refused: a unit's size is a number written out **(new)**
+- refused: a unit's size is a number written out
   - why: a unit is so many of an earlier one, as `::dollars = 100 cents`.
-- refused: a unit's size can't be 0 **(new)**
-- refused: `{}` could be {} **(new)**
+- refused: a unit's size can't be 0
+- refused: `{}` could be {}
   - why: when two groups have a unit of the same name, the group is written before it, with `::`.
-- refused: a rate isn't a point **(new)**
+- refused: a rate isn't a point
   - why: `.point` marks a place counted from a fixed one, as `px.point`; a rate, as `px per secs`, is an amount.
-- refused: this is {found}, but {wanted_text} goes here, and {why} **(new)**
+- refused: this is {found}, but {wanted_text} goes here, and {why}
   - why: units of one group convert by themselves only where nothing is lost: into a `Whole`, a finer unit; into a `Float`, any unit with a fixed size.
-- refused: this plain number goes where `{unit_text}` is wanted **(new)**
+- refused: this plain number goes where `{unit_text}` is wanted
   - why: where something takes a unit, the number says it, so seconds and milliseconds, or degrees and radians, can't be mixed up.
-- refused: this has a unit, `{unit_text}`, where a plain number goes **(new)**
+- refused: this has a unit, `{unit_text}`, where a plain number goes
   - why: a value with a unit gives its plain number when it's measured in one, as `value to {unit_text}`.
-- refused: `to` measures a value with a unit, but this is {found} **(new today)**
+- refused: `to` measures a value with a unit, but this is {found}
   - why: `value to unit` gives the plain number a value with a unit is, as `total to secs`.
-- refused: a value in `{from_text}` isn't measured in `{to_text}` **(new)**
+- refused: a value in `{from_text}` isn't measured in `{to_text}`
   - why: only a unit of the value's own group measures it, and only one with a fixed size, which `frames` and `tiles` haven't.
-- not designed yet: a `HugeWhole` measured in a unit it isn't always a whole number of isn't decided yet **(new)**
-- refused: `{operator}` has {left_text} on its left, but {right_text} on its right **(new)**
+- not designed yet: a `HugeWhole` measured in a unit it isn't always a whole number of isn't decided yet
+- refused: `{operator}` has {left_text} on its left, but {right_text} on its right
   - why: units of different groups, as seconds and pixels, don't go together, and a `Whole` and a `Float` don't mix quietly.
-- refused: this can't be brought to the other side's unit for `{operator}`: {why} **(new)**
+- refused: this can't be brought to the other side's unit for `{operator}`: {why}
   - why: units of one group combine where they convert exactly, in the finer unit.
 - refused: {quoted} can't mix a `Whole` and a `Float`
   - why: `Whole` and `Float` don't mix quietly, units or not.
-- not designed yet: {quoted} on these units, whose answer's unit has no written form, isn't decided yet **(new)**
-- refused: `+` adds two points, two places, which has no meaning **(new)**
+- not designed yet: {quoted} on these units, whose answer's unit has no written form, isn't decided yet
+- refused: `+` adds two points, two places, which has no meaning
   - why: a point plus an amount is a point, and a point minus a point is the amount between them; two points aren't added.
-- refused: {quoted} has a value with a unit on one side and a plain number on the other **(new)**
+- refused: {quoted} has a value with a unit on one side and a plain number on the other
   - why: a number with a unit is added only to another of its group, so the unit is written on both, as `2 secs + 500 ms`.
-- refused: {quoted} compares a value with a unit and a plain number **(new)**
+- refused: {quoted} compares a value with a unit and a plain number
   - why: a number with a unit is compared only with another of its group, so the unit is written on both.
-- refused: this can't be brought to the rate's unit: {why} **(new)**
+- refused: this can't be brought to the rate's unit: {why}
   - why: a rate times an amount of its own unit gives the rate's unit, as `px per secs` times `secs` gives `px`.
 
 **`crates/seal/src/compile/compiler.rs`**
 
-- not built yet: more than 65,000 top-level names used by procedures (D4) aren't built yet **(new)**
-- not built yet: {what} aren't built yet **(new)**
+- not built yet: more than 65,000 top-level names used by procedures (D4) aren't built yet
+- not built yet: {what} aren't built yet
 
 **`crates/seal/src/host/doors.rs`**
 
-- refused (at a door): `{name}` isn't spelt as a type: a capital first, then letters and digits **(new)**
+- refused (at a door): `{name}` isn't spelt as a type: a capital first, then letters and digits
   - why: a type's name joins its words with capitals, as `HighScore`, so a capital always means a type.
-- refused (at a door): `{word}` is one of Seal's keywords, so it can't name a door or a label **(new)**
-- refused (at a door): `{first}` is one of Seal's own words, so it can't name a door **(new)**
+- refused (at a door): `{word}` is one of Seal's keywords, so it can't name a door or a label
+- refused (at a door): `{first}` is one of Seal's own words, so it can't name a door
   - why: each word has one meaning.
-- refused (at a door): the door `{name}` is opened twice **(new)**
+- refused (at a door): the door `{name}` is opened twice
   - why: each door is opened once.
-- refused (at a door): only a record or a `one_of` is opened as a type **(new)**
+- refused (at a door): only a record or a `one_of` is opened as a type
   - why: a host opens its own records and `one_of`s for a script; Seal's own types are there already.
-- refused (at a door): the unit group `{name}` is declared twice, or is one of Seal's own **(new)**
+- refused (at a door): the unit group `{name}` is declared twice, or is one of Seal's own
   - why: each unit group is declared once; `time`, `angle` and `distance` are Seal's own.
-- refused (at a door): the unit `{unit}` is listed twice in `{name}` **(new)**
-- refused (at a door): `{unit}`'s size, `{size}`, isn't a size **(new)**
-- refused (at a door): `{name}` needs exactly one unit marked `base` **(new)**
-- refused (at a door): `{name}` takes {} values, but {} labels are given **(new)**
+- refused (at a door): the unit `{unit}` is listed twice in `{name}`
+- refused (at a door): `{unit}`'s size, `{size}`, isn't a size
+- refused (at a door): `{name}` needs exactly one unit marked `base`
+- refused (at a door): `{name}` takes {} values, but {} labels are given
   - why: each of a door's values has one label, or none.
-- refused (at a door): two of `{name}`'s values have the label `{label}` **(new)**
+- refused (at a door): two of `{name}`'s values have the label `{label}`
   - why: each label names one argument.
-- refused (at a door): `{name}` takes {} values, but {} units are given **(new)**
+- refused (at a door): `{name}` takes {} values, but {} units are given
   - why: each of a door's values has one unit, or `None`.
-- refused (at a door): only an `i64` or an `f64` has a unit, but `{door}` is given `{unit}` for another type **(new)**
+- refused (at a door): only an `i64` or an `f64` has a unit, but `{door}` is given `{unit}` for another type
   - why: a unit says what a number measures, as `secs` or `px per secs`.
-- refused (at a door): `{unit}` isn't written as a unit **(new)**
+- refused (at a door): `{unit}` isn't written as a unit
   - why: a unit is written as a script writes it: `secs`, `px.point`, `px per secs`, or `time::secs`.
 
 **`crates/seal/src/syntax/lexer.rs`**
 
 - refused: this `///` has no declaration after it
   - why: a `///` comment describes the declaration on the line after it.
-- refused: this `end` closes `comment {name}`, so its note is `\\ {wanted}` (shown with a `fix:` line) **(new)**
-- not designed yet: a `\r` that isn't right before a line break isn't decided yet **(new)**
-- refused: this blank line is inside an open bracket **(new)**
+- refused: this `end` closes `comment {name}`, so its note is `\\ {wanted}` (shown with a `fix:` line)
+- not designed yet: a `\r` that isn't right before a line break isn't decided yet
+- refused: this blank line is inside an open bracket
   - why: a statement carries on over lines only inside its brackets, with no blank line between them.
 - refused: {extra} extra blank {lines}, after the one on line {}
   - why: one blank line is enough to separate the parts of a script.
-- refused: this line is indented with a tab (shown with a `fix:` line) **(new)**
+- refused: this line is indented with a tab (shown with a `fix:` line)
 - refused: this blank line has spaces on it
   - why: a blank line is empty.
-- refused: this `///` is inside an open bracket **(new)**
+- refused: this `///` is inside an open bracket
   - why: a `///` comment describes the declaration on the line after it.
-- refused: this line carries on a statement, so it's indented {wanted} spaces, one level deeper than the statement's first line **(new)**
+- refused: this line carries on a statement, so it's indented {wanted} spaces, one level deeper than the statement's first line
 - refused: this `comment` is never closed with `end`
   - why: a block comment closes with `end`, at the depth of its `comment` line.
 - refused: this `{}` is never closed
-- refused: this comment is indented {indentation} spaces, where the line after it puts it at {wanted} **(new)**
-- refused: this line has a tab in it **(new)**
+- refused: this comment is indented {indentation} spaces, where the line after it puts it at {wanted}
+- refused: this line has a tab in it
   - why: spacing is written with spaces, since a tab can't be told from them.
-- refused: `\\` outside text starts a note after `end` **(new)**
+- refused: `\\` outside text starts a note after `end`
   - why: an `end` can carry a note naming its block, as `end \\ proc on_hit`; nothing else uses `\\`.
 - refused: this text is never closed with `"`
-- refused: `\{shown}` isn't something text can hold **(new)**
+- refused: `\{shown}` isn't something text can hold
   - why: in text, `\` goes only before `"`, `\` or `{`; a line break is `{newln}` and a tab `{tab}`, so `\n` isn't a new line in Seal.
-- refused: this text has a tab character in it **(new)**
+- refused: this text has a tab character in it
   - why: a tab can't be told from spaces, so a tab in text is written `{tab}`.
-- not designed yet: a comment inside an open bracket isn't decided yet **(new)**
+- not designed yet: a comment inside an open bracket isn't decided yet
 - refused: a statement has no `;`
   - why: the end of a line ends its statement.
 - refused: a name has no `$`
   - why: Seal's names are plain words.
-- refused: `{other}` is beyond the plain English letters a script is written in **(new)**
+- refused: `{other}` is beyond the plain English letters a script is written in
   - why: outside text, a script is written in plain English letters, digits and symbols, for now.
 - refused: `{other}` can't be read here
 - refused: `{}` closes a `{}`
 - refused: this `{}` closes nothing
-- refused: a type's name has no `_`, so `{word}` is written `{fixed}` **(new)**
+- refused: a type's name has no `_`, so `{word}` is written `{fixed}`
   - why: a type's name joins its words with capitals, as `HighScore`.
 - refused: the name `{word}` {problem}
 - refused: a letter comes right after this number
 - refused: `~` goes in front of a number with a point, as in `~0.1`
-- refused: a number has no leading zero, so this is written `{shown}` **(new)**
+- refused: a number has no leading zero, so this is written `{shown}`
   - why: a number is written without zeros in front, as `7`, not `007`.
 - refused: `~` goes in front of a number with a point, as in `~0.1`
   - why: only a `Float` can be inexact.
-- refused: this line's spacing isn't the fixed spacing (shown with a `fix:` line) **(new)**
+- refused: this line's spacing isn't the fixed spacing (shown with a `fix:` line)
 
 **`crates/seal/src/syntax/parser.rs`**
 
@@ -986,48 +1008,48 @@ built since. `{…}` stands for what the message fills in.
   - why: a capital always means a type.
 - refused: {} comes after the end of this line's statement
   - why: each statement goes on a line of its own.
-- not built yet: blocks nested more than {MAX_BLOCK_DEPTH} deep (D20) aren't built yet **(new)**
+- not built yet: blocks nested more than {MAX_BLOCK_DEPTH} deep (D20) aren't built yet
 - refused: this `end` is at the wrong depth
 - refused: the `{}` on line {} has no `end`
-- refused: this `end` closes `{}` on line {}, so its note is `\\ {}` (shown with a `fix:` line) **(new)**
+- refused: this `end` closes `{}` on line {}, so its note is `\\ {}` (shown with a `fix:` line)
 - refused: a procedure's parameters go in `[ ]`, not `( )`
   - why: `( )` calls a procedure; `[ ]` describes one.
-- refused: a procedure that takes nothing has no `[ ]`: it's written `{written}` **(new)**
+- refused: a procedure that takes nothing has no `[ ]`: it's written `{written}`
   - why: `[ ]` describes the values a procedure takes, and this one takes none.
-- refused: the parameter `{}` has no type **(new)**
+- refused: the parameter `{}` has no type
   - why: a procedure's header writes each parameter's type, as `amount: Whole`, or a group's, as `[hp, amount : Whole]`.
-- refused: `labels` has one narrowing, `labels.any_order` **(new)**
+- refused: `labels` has one narrowing, `labels.any_order`
   - why: `labels.any_order [ … ]` lets a call write the labelled arguments in any order.
-- refused: a group is `group.handler`, a named set of handlers **(new)**
+- refused: a group is `group.handler`, a named set of handlers
   - why: `group.handler name` declares a handler group; Seal has no other kind of group yet.
-- refused: a handler group holds only handlers, each `::name` **(new)**
+- refused: a handler group holds only handlers, each `::name`
   - why: a handler group's members are written with the `::` they're reached with, as `::start_over`.
-- refused: a unit group holds only units, each `::name` **(new)**
+- refused: a unit group holds only units, each `::name`
   - why: a unit group's members are written with the `::` they're reached with, as `::cents base`.
-- refused: handlers live in a `group.handler`, not a family **(new)**
+- refused: handlers live in a `group.handler`, not a family
   - why: a family is a word and its kinds; a handler group is a named set, reached with `::`.
-- refused: a family's member is written without `proc` (shown with a `fix:` line) **(new)**
+- refused: a family's member is written without `proc` (shown with a `fix:` line)
 - refused: a `fam.proc` block holds only procedures
   - why: a family holds only the kind of thing it's declared for.
-- not designed yet: a `///` before a name made inside a block isn't decided yet **(new)**
-- refused: a `{}` is declared at the top level, not inside a block **(new)**
+- not designed yet: a `///` before a name made inside a block isn't decided yet
+- refused: a `{}` is declared at the top level, not inside a block
   - why: procedures, families, records and `one_of`s are declared at a script's top level only.
 - refused: a `{}` line goes at the top of a procedure's body
   - why: `labels` is the first line of a procedure's body, and `defaults` comes right after it.
 - refused: this `{}` has no block to belong to
 - refused: this can't be given a value
   - why: `=` gives a value to a name, a field or an item.
-- refused: `otherwise` opens a block of cases; on one line, a handler follows `??` (shown with a `fix:` line) **(new)**
+- refused: `otherwise` opens a block of cases; on one line, a handler follows `??` (shown with a `fix:` line)
 - refused: Seal writes `elif`, not `else if`
   - why: `elif` is short for "else if".
-- not built yet: values nested more than {MAX_EXPRESSION_DEPTH} deep in one statement aren't built yet **(new)**
+- not built yet: values nested more than {MAX_EXPRESSION_DEPTH} deep in one statement aren't built yet
 - refused: {} comes after a slide's last step
   - why: a slide's step is a procedure, so anything after the slide needs the slide in `( )`.
 - refused: two comparisons in a row
   - why: each comparison stands alone; join two with `and`, as in `1 < x and x < 10`.
-- refused: this is maths measured with `to`, without brackets **(new today)**
+- refused: this is maths measured with `to`, without brackets
   - why: `to` has no place in maths' order, so the maths it measures is in brackets, as `(a + b) to ms`.
-- refused: `&` doesn't join text; text is joined by filling it in with braces **(new)**
+- refused: `&` doesn't join text; text is joined by filling it in with braces
   - why: text is joined only with braces, as in `"Score: {score}"`, which looks like what it shows.
 - refused: `{0}` needs `.floor` or `.trunc`, as in `{0}.floor`
   - why: how the fraction goes is always said.
@@ -1044,15 +1066,15 @@ built since. `{…}` stands for what the message fills in.
   - why: an item is reached at a place the list has.
 - check failed: there's no character at this place
   - why: a text is reached at a place it has, counting what a person sees as one character.
-- check failed: this `Maybe` is `none` **(new)**
+- check failed: this `Maybe` is `none`
   - why: `?? crash` says the `Maybe` can't be `none` here, so the script stops when it is.
-- check failed: this value is {side} its type's `{word}: {}` **(new)**
+- check failed: this value is {side} its type's `{word}: {}`
   - why: a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.
-- check failed: this raises a `Whole` to a negative power **(new)**
+- check failed: this raises a `Whole` to a negative power
   - why: a `Whole`'s power is 0 or more, since a negative one isn't a whole number; `be.Float(…)` gives `Float`s.
-- check failed: `{name}` takes a value from -1 to 1 **(new)**
+- check failed: `{name}` takes a value from -1 to 1
   - why: no angle has a sine or cosine past 1 or below -1.
-- check failed: this splits a text by an empty text **(new)**
+- check failed: this splits a text by an empty text
   - why: an empty text is never found between two pieces; `for_each` goes through a text's characters.
 - check failed: this division leaves a remainder
   - why: `/` on two `Whole`s divides exactly; `div.floor` and `div.trunc` say how a fraction goes.
@@ -1067,15 +1089,15 @@ built since. `{…}` stands for what the message fills in.
 
 - check failed: this divides by zero
   - why: dividing by zero has no answer.
-- check failed: the result is too big for a `Decimal` **(new)**
+- check failed: the result is too big for a `Decimal`
   - why: a `Decimal` keeps 34 digits, up to almost 10 to the 6145; a `HugeDecimal` has no limit.
-- check failed: this has no exact decimal answer **(new)**
+- check failed: this has no exact decimal answer
   - why: a `HugeDecimal` is exact, so `/` and `sqrt` give the exact answer or stop; a `Decimal` rounds to 34 digits.
 - check failed: a negative number has no square root
   - why: the square root is taken of a number that isn't negative.
-- check failed: this raises a `HugeWhole` to a negative power **(new)**
+- check failed: this raises a `HugeWhole` to a negative power
   - why: a whole number's power is 0 or more, since a negative one isn't a whole number.
 - check failed: this division leaves a remainder
   - why: `/` on whole numbers gives the exact answer or stops; `div.floor` and `div.trunc` say how to round.
-- check failed: this value is {side} its type's `{word}: {edge_text}` **(new)**
+- check failed: this value is {side} its type's `{word}: {edge_text}`
   - why: a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.

@@ -727,7 +727,7 @@ impl<'a> Parser<'a> {
         Ok(Handler { name, parameters, labels, labels_any_order, defaults, cases, place: opener.place })
     }
 
-    /// A handler where it's used, after `??` or `incl`: `::name`, `group::name`, `*` before a name that can jump,
+    /// A handler where it's used, after `??` or `include`: `::name`, `group::name`, `*` before a name that can jump,
     /// and the arguments in `( )` (D98, D110, Unio D42, D44).
     fn handler_use(&mut self) -> Result<HandlerUse<'a>, Message> {
         let place = self.here();
@@ -1063,7 +1063,7 @@ impl<'a> Parser<'a> {
                 self.end_line()?;
                 return Ok(Statement { kind: StatementKind::Fail(name), place });
             }
-            Some(Keyword::Use) => {
+            Some(Keyword::Instead) => {
                 self.advance();
                 let value = self.full_expression()?;
                 self.end_line()?;
@@ -1156,8 +1156,8 @@ impl<'a> Parser<'a> {
         let mut cases = Vec::new();
         let mut includes = Vec::new();
         while self.in_body(&opener)? {
-            // trace: Unio D43. `incl` brings a handler's cases in beside the block's own.
-            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "incl")
+            // trace: Unio D43. `include` brings a handler's cases in beside the block's own.
+            if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "include")
                 && matches!(
                     self.peek_at(1).map(|token| &token.kind),
                     Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_))
@@ -1404,11 +1404,16 @@ impl<'a> Parser<'a> {
             self.peek_kind(),
             Some(
                 TokenKind::Keyword(
-                    Keyword::Or | Keyword::And | Keyword::AtLeast | Keyword::AtMost | Keyword::Div | Keyword::Rem
+                    Keyword::Or
+                        | Keyword::And
+                        | Keyword::Eq
+                        | Keyword::NotEq
+                        | Keyword::AtLeast
+                        | Keyword::AtMost
+                        | Keyword::Div
+                        | Keyword::Rem
                 ) | TokenKind::Symbol(
-                    Symbol::EqualEqual
-                        | Symbol::NotEqual
-                        | Symbol::Less
+                    Symbol::Less
                         | Symbol::Greater
                         | Symbol::Ampersand
                         | Symbol::Plus
@@ -1477,8 +1482,9 @@ impl<'a> Parser<'a> {
 
     fn comparison_operator(&self) -> Option<BinaryOperator> {
         match self.peek_kind()? {
-            TokenKind::Symbol(Symbol::EqualEqual) => Some(BinaryOperator::Equal),
-            TokenKind::Symbol(Symbol::NotEqual) => Some(BinaryOperator::NotEqual),
+            // trace: D158
+            TokenKind::Keyword(Keyword::Eq) => Some(BinaryOperator::Equal),
+            TokenKind::Keyword(Keyword::NotEq) => Some(BinaryOperator::NotEqual),
             TokenKind::Symbol(Symbol::Less) => Some(BinaryOperator::Less),
             TokenKind::Symbol(Symbol::Greater) => Some(BinaryOperator::Greater),
             TokenKind::Keyword(Keyword::AtLeast) => Some(BinaryOperator::AtLeast),
@@ -1922,14 +1928,14 @@ mod tests {
 
     #[test]
     fn d37_match_and_d40_otherwise_parse() {
-        let source = "match last\n    case hurt[amount]\n        hp = hp - amount\n    case idle\nend\nc = f(1) otherwise\n    case too_high\n        use 99\nend\n";
+        let source = "match last\n    case hurt[amount]\n        hp = hp - amount\n    case idle\nend\nc = f(1) otherwise\n    case too_high\n        instead 99\nend\n";
         let script = parse(source);
         assert!(script.is_ok(), "{:?}", script.err());
     }
 
     #[test]
     fn d60_a_procedure_that_takes_nothing_has_no_brackets() {
-        let script = parse("proc tick\nend\nproc count -> Whole\n    ret 1\nend\ntick()\n");
+        let script = parse("proc tick\nend\nproc count -> Whole\n    return 1\nend\ntick()\n");
         assert!(script.is_ok(), "{:?}", script.err());
         let kind = parse("proc tick[]\nend\n").err().map(|message| message.kind);
         assert_eq!(kind, Some(MessageKind::Refused));

@@ -4,19 +4,19 @@ one_of Tree
 end
 
 proc build[depth: Whole] -> Tree
-    if depth == 0
-        ret Tree.leaf
+    if depth eq 0
+        return Tree.leaf
     else
-        ret Tree.node[left: build(depth - 1), right: build(depth - 1)]
+        return Tree.node[left: build(depth - 1), right: build(depth - 1)]
     end
 end
 
 proc count[tree: Tree] -> Whole
     match tree
         case leaf
-            ret 1
+            return 1
         case node[left, right]
-            ret 1 + count(left) + count(right)
+            return 1 + count(left) + count(right)
     end
 end
 
@@ -37,5 +37,5 @@ proc run[max_depth: Whole] -> Whole
         total = total + check
         depth = depth + 2
     end
-    ret total + count(long_lived)
+    return total + count(long_lived)
 end

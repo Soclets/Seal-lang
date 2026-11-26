@@ -6,5 +6,5 @@ proc run[n: Whole] -> Whole
         savings = savings * 1.05
         year = year + 1
     end
-    ret be.Text(savings).len
+    return be.Text(savings).len
 end

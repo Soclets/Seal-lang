@@ -16,6 +16,8 @@ edition = "2024"
 version = "0.1.0"
 rust-version = "1.96"
 publish = false
+# trace: D156
+license = "Apache-2.0 WITH LLVM-exception"
 
 # IMPLEMENTATION.md, Building rule 3: the same lints in every package, and the one command turns warnings into errors.
 [workspace.lints.rust]
