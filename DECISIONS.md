@@ -4800,3 +4800,22 @@ completes the set; `=` and `==` can't be mixed up; and `!` keeps one job, the fa
 **Tankun's words.** "Let me see `eq` & `not_eq` replace `==` & `!=`", "`~=` looks more like approx equal, lol", "yea"
 (before the design session pointed out D59), then, asked "Should `eq` and `not_eq` replace `==` and `!=`, replacing
 D59?", the owner chose: "yea"
+
+## D159. D155's bar is Python's built-ins, with `gmpy2` as a reference row
+
+2026-11-26.
+
+**Chosen.** D155's goals are judged against Python's built-in big numbers, what every Python user has without
+installing anything: `int` for `HugeWhole`, and the standard library's `decimal` (on libmpdec) for `Decimal` and
+`HugeDecimal`. `gmpy2`, Python's binding to GMP, is measured beside them for reference only, with no target, as
+LuaJIT's JIT is (D150); installing it is part of Tankun's OK.
+
+**Weighed.**
+- `gmpy2` as a bar. At big sizes it's GMP, which Seal won't catch; at script sizes each call still pays for Python's
+  interpreter, so it's worth seeing.
+- `mpmath`, mostly pure Python unless it runs on `gmpy2`, and `fractions`, pure Python: easy wins, not worth goals.
+
+**Why this won.** The bar is what Python's users actually use, and the strongest option is shown honestly beside it.
+
+**Tankun's words.** "Which Python math lib, though", then, asked "Should the prompt keep D155's built-ins as the bar,
+and add `gmpy2` as a reference row only?", the owner chose: "yea, make good prompt now?"
