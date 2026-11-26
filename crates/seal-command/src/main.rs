@@ -11,6 +11,10 @@
 //! `seal build` takes `--sign NAME.secret` to sign what it writes, and `seal run` takes `--key NAME.public` to load
 //! only a file signed with the matching key, as a host that requires signatures does (D169, D175).
 //!
+//! `NAME.secret` signs scripts as the game: anyone who has it can. `seal keygen` writes it readable by its owner only;
+//! keep it on the machine that builds the game's scripts, and never commit it to a repository or ship it. Hosts get
+//! `NAME.public`.
+//!
 //! The test host's doors are a convention for tests, not part of Seal: `show_msg`, `show_msg.same_line`, `ask`,
 //! `rand` and `wait`. `ask` reads standard input, `rand` reads `random.txt` and the calls come from `calls.txt`,
 //! both beside the script.
@@ -186,6 +190,21 @@ fn randomness() -> Result<[u8; 32], ExitCode> {
     Ok(bytes)
 }
 
+/// Writes a key, a secret one readable and writable by its owner only (on Unix, permissions 600), made new so
+/// another's file is never written over.
+fn write_key(path: &str, bytes: &[u8], secret: bool) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if secret {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    #[cfg(not(unix))]
+    let _ = secret;
+    options.open(path)?.write_all(bytes)
+}
+
 /// trace: D169, D175. `seal keygen NAME`: an ML-DSA-44 key pair, the public key for hosts and the secret one for the
 /// build that signs, which stays on the developer's machine.
 fn keygen_command(name: &str) -> ExitCode {
@@ -194,12 +213,17 @@ fn keygen_command(name: &str) -> ExitCode {
         Err(code) => return code,
     };
     let (public, secret) = seal::host::signing::keys_from_seed(&seed);
-    for (path, bytes) in [(format!("{name}.public"), public), (format!("{name}.secret"), secret)] {
-        if let Err(error) = std::fs::write(&path, bytes) {
+    for (path, bytes, secret) in [(format!("{name}.public"), public, false), (format!("{name}.secret"), secret, true)] {
+        if let Err(error) = write_key(&path, &bytes, secret) {
             eprintln!("seal: `{path}` can't be written: {error}");
             return ExitCode::from(2);
         }
     }
+    // A secret key that leaks lets anyone sign scripts as the game: it stays on the machine that builds them.
+    eprintln!(
+        "seal: `{name}.secret` signs scripts as your game. Keep it on the machine that builds them, readable by you \
+         alone, and never commit it or ship it; hosts get `{name}.public`."
+    );
     ExitCode::SUCCESS
 }
 
