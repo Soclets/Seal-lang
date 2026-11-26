@@ -5102,6 +5102,53 @@ end
 **Why this won.** The intent is written on the type, a mistake is caught where it's made, and the line reads as
 English: "Player meets Scored".
 
-**Tankun's words.** Asked "Should a type meet a requirement only by saying so, with a `[ … ]` line inside the record or
-`one_of`?", the owner chose: "yea, but what syntax?", then "Is `satisfies` accurate?", then, asked "Should a type
+**Tankun's words.** Asked "Should a type meet a requirement only by saying so, with a `[ … ]` line inside the record
+or `one_of`?", the owner chose: "yea, but what syntax?", then "Is `satisfies` accurate?", then, asked "Should a type
 state the requirements it meets with `meets [ … ]` as its first line?", the owner chose: "`meets`"
+
+## D168. A requirement is declared with `requirement`, listing method headers, with `?Self` for the type meeting it
+
+2026-11-26.
+
+**Chosen.**
+
+```
+requirement Scored
+    proc score[item: ?Self] -> Whole
+end
+
+record Player
+    meets [Scored]
+    name: Text
+    kills: Whole
+
+    proc score[p: Player] -> Whole
+        return p.kills * 10
+    end
+end
+
+proc best<?Item: Scored>[things: List<?Item>] -> Maybe<?Item>
+```
+
+- **`requirement Name … end`** lists the headers of the methods a type must have, with no bodies. Its name is
+  capitalised, as a type's is, since it stands where types do.
+- **`?Self`** stands for the type that meets it, marked as every type still to be filled in is (D161).
+- **A type's method matches a listed one** when its name, the types it takes (with `?Self` as the type), their labels,
+  its result and its failures are the same. Its parameters' names and its body are its own, and it may have other
+  methods besides.
+- **The requirement says the shape once; each type writes its own version,** its header included, as every
+  procedure does (D81), so reading a type shows its methods without finding the requirement, and Seal compares the two.
+
+**Weighed.**
+- `need`, as the design session proposed for its length, pairing with `meets` as "meets a need".
+- `requi`, as Tankun asked about, and `req`: clipped forms, the kind D157 took back, and `req` reads as "request".
+- `interface` (Java, Go, Cyborg), `trait` (Rust) and `protocol` (Swift): each a new piece of jargon.
+- The type taking its methods' headers from the requirement, rather than writing them again. A type's methods would
+  no longer show what they take and give.
+
+**Why this won.** It's the word the docs already use, and "Player meets requirement Scored" reads straight through.
+
+**Tankun's words.** "what", "How do you say which types must?", "Ahhh. What about `requi`?", "requirement is longer
+than return, though. Like, very long", "Wait, so a `need` says the exact `proc` the opt-in needs?", "Wait, then. Why
+would you write it again?", then, asked "Should requirements be declared with `need`, as `need Scored … end`, listing
+the methods a type needs?", the owner chose: "yea, but with `requirement` instead"

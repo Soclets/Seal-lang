@@ -1,0 +1,1 @@
+A requirement lists methods; types meet it with meets [ ], and a generic asking for it can call them. D168, D167, D166.

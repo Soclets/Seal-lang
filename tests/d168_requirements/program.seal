@@ -1,0 +1,37 @@
+requirement Scored
+    proc score[item: ?Self] -> Whole
+end
+
+record Player
+    meets [Scored]
+    name: Text
+    kills: Whole
+
+    proc score[p: Player] -> Whole
+        return p.kills * 10
+    end
+end
+
+record Item
+    meets [Scored]
+    name: Text
+    price: Whole
+
+    proc score[i: Item] -> Whole
+        return i.price
+    end
+end
+
+proc best_score<?Thing: Scored>[things: List<?Thing>] -> Whole
+    mut top = 0
+    for_each thing in things
+        top = max(_, thing.score())
+    end
+    return top
+end
+
+players = [Player[name: "Ann", kills: 3], Player[name: "Bo", kills: 5]]
+items = [Item[name: "Gem", price: 40], Item[name: "Key", price: 70]]
+a = best_score(players)
+b = best_score(items)
+show_msg("{a} {b}")

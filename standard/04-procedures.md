@@ -79,12 +79,22 @@ end
   and `Float` still don't mix (D16). Values with units aren't among them (D166).
 - **A script can write its own requirements,** listing methods a type must have, so a generic can call them (D166).
 
+- **A script's requirement is declared with `requirement`,** listing the method headers a type must have, with `?Self`
+  for the type that meets it (D168):
+
+```
+requirement Scored
+    proc score[item: ?Self] -> Whole
+end
+```
+
+  A type's method matches a listed one when its name, the types it takes (with `?Self` as the type), their labels,
+  its result and its failures are the same; its parameters' names and its body are its own.
 - **A record or `one_of` meets a script's requirement only by saying so,** with `meets [ … ]` as its first line, as
   `meets [Scored]`; Seal checks there that it has every method the requirement lists (D167). Nothing meets one by
   accident.
 
-**Not decided:** how a requirement is written and named; generics over units; generic records and `one_of`s; how
-generics are compiled.
+**Not decided:** generics over units; generic records and `one_of`s; how generics are compiled.
 
 **Not decided:** parameter words for reading, changing or taking over (Unio D130).
 A procedure's failures: chapter 7.
