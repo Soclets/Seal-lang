@@ -5,7 +5,8 @@ message once the open questions are settled. Removed once sent.
 
 ## Answers to send
 
-- D130 to D157, in DECISIONS.md. D157 takes back D144 and D145: `return`, `include` and `instead` again, in five
+- D130 to D158, in DECISIONS.md. D158: `eq` and `not_eq` replace `==` and `!=` (four tests). D157 takes back D144
+  and D145: `return`, `include` and `instead` again, in five
   tests and `bench/programs/`. D155 is for later. D156: the licence files are in; each crate's `Cargo.toml` needs
   `license = "Apache-2.0 WITH LLVM-exception"`. D151 and D152 answer its C API proposal's two questions, D153 its bytecode
   proposal's two, and D154 adds a host-switched cache to D141. D144 (`use`), D145 (`ret`, `incl`) and D146 (`for_each`) change eight tests, which fail until built;
