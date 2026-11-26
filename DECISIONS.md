@@ -4260,6 +4260,8 @@ affordable, and verifying keeps the sandbox whole for a fraction of what reading
 **Tankun's words.** Asked "Should Seal be able to compile scripts ahead of time to bytecode files, always verified when
 loaded?", the owner chose: "yea"
 
+(Corrected by D169: without a signature, a file changed on purpose that stays a valid program can pass; signing catches it.)
+
 ## D142. LuaJIT's interpreter joins Luau's as a bar Seal must beat
 
 2026-11-25.
@@ -5152,3 +5154,43 @@ proc best<?Item: Scored>[things: List<?Item>] -> Maybe<?Item>
 than return, though. Like, very long", "Wait, so a `need` says the exact `proc` the opt-in needs?", "Wait, then. Why
 would you write it again?", then, asked "Should requirements be declared with `need`, as `need Scored … end`, listing
 the methods a type needs?", the owner chose: "yea, but with `requirement` instead"
+
+## D169. `.sealc` files can be signed with ML-DSA, and a host can require it
+
+2026-11-26.
+
+**Chosen.**
+- **`seal build` can sign a `.sealc`** with the game developer's secret key, using ML-DSA (Dilithium), the
+  post-quantum signature standard of 2024 (FIPS 204). The developer makes the key pair once; the secret key stays on
+  their build machine and the public key ships in the game.
+- **A host can require a valid signature from its own public key;** a file with none, or one that doesn't match, is
+  refused, so any change to a signed file, even one that keeps it a valid program, is caught. The host chooses, as it
+  does for the cache (D154); Seal never decides it alone.
+- **A signature is checked once per file or bundle in a run,** since checking one costs tens of microseconds, more
+  than loading a script; a bundle (D153) needs one check however many scripts it holds.
+- **Seal never writes its own cryptography:** it uses a reviewed implementation, checked against Building rule 2,
+  with Tankun's OK where it needs `unsafe`.
+- Built after the current work; the parameter set and the API are the building session's to propose.
+
+This also corrects D141, which said a tampered file is always refused. Without a signature, a damaged or out-of-date
+file is always refused, but one changed on purpose that stays a valid program can pass, meaning something else; only
+a signature catches that. No file, signed or not, can harm the host: the VM checks every value as it runs.
+
+**Weighed.**
+- Ed25519, which the design session recommended: tiny 64-byte signatures and over a decade of audited code, against
+  ML-DSA's younger code. ML-DSA's 2.4 KB signatures are nothing for a game, as Tankun pointed out, its checking is as
+  fast, and it stays safe against quantum computers.
+- SLH-DSA (SPHINCS+): built only on hash functions, very conservative, but with 8 to 30 KB signatures and slower
+  checking.
+- ECDSA, RSA and Ed448: older or larger, with ECDSA's need for a good random number at every signature.
+- AES-256, which Tankun asked about: encryption, hiding a file, not proving where it came from; its key would have to
+  ship in the game.
+- No signing, correcting D141 to what holds without it.
+
+**Why this won.** A game that downloads scripts, as updates or live events, can prove they came from its developer,
+and the scheme will last.
+
+**Tankun's words.** "What about signing now?", "What's Ed25519?", "What's AES-256?", "Any alts?", "What's pos q is
+better? Dih or SPINX", "What's the speed diff between Dih vs Ed", "Kilobytes, isn't that like not even a Mega?", then,
+asked "Should `.sealc` files be signable, with the host able to require a valid signature from its own public key,
+using Ed25519, checked once per file or bundle?", the owner chose: "No, use Dih"

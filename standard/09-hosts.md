@@ -13,7 +13,8 @@ the building session's to propose.
 - **A script with no procedures is a program,** run once from top to bottom (D4).
 - **A host can load a script from its text, or from a bytecode file compiled ahead of time,** which Seal verifies
   before loading and refuses if it's been changed or comes from another Seal version. The script means the same
-  either way (D141).
+  either way (D141). A damaged or out-of-date file is always refused; a host can also require each file to be
+  signed with its own key, using ML-DSA, so a file changed in any way is refused (D169).
 
 ## Doors
 

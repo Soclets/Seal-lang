@@ -16,7 +16,8 @@ run:   a register VM runs the bytecode, counting steps
 
   No JIT. The instruction set, its names and the optimizations are the building session's to propose (D17, D46).
 - **Ahead of time** (D141): `seal build` can compile a script to a bytecode file once, when a game is built; loading
-  one always verifies it first, so a tampered or out-of-date file is refused. Built after the current work.
+  one always verifies it first, so a damaged or out-of-date file is refused, and a host can require an ML-DSA
+  signature from its own key, so any change is refused (D169). Built after the current work.
 - **Checks:** at load time and while running, always on, with no build modes (D17, D18).
 - **Parts** (D47), one Rust workspace:
 
