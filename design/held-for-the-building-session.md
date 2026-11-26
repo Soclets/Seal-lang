@@ -7,6 +7,11 @@ message once the open questions are settled. Removed once sent.
 
 All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to paste.
 
+## Since the prompt was pasted
+
+- D160 (no macros or comptime), D161 (generic procedures, `<?Item>`), D162 ("variable", mutable and immutable, in
+  messages where they mean one) are in DECISIONS.md; it finds them by Building rule 10.
+
 ## Still to settle with Tankun
 
 - A `Whole` with a unit into a `Float` with a unit of its group (asked; recommended yes, whenever exact).

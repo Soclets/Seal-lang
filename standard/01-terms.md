@@ -11,6 +11,12 @@ label, slide and failure, except where a term below replaces one.
 - **Top level:** a script's lines outside any procedure, run once when the script is loaded (D4).
 - **Built-in:** a procedure Seal provides itself, touching nothing outside the script (D11).
 
+## Values
+
+- **Variable:** a named value, made with `name = value`. A **mutable variable** is made with `mut` and can change; an
+  **immutable variable** is made without it and never changes, its insides included (D2, D15, D162). The docs and
+  messages say "variable", never "binding", and "name" only for a spelling.
+
 ## Checking and running
 
 - **Load time:** when the host loads a script, and Seal reads, checks and prepares it, before any of it runs (D4, D17).

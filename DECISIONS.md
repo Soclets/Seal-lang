@@ -4887,3 +4887,34 @@ separately.
 **Tankun's words.** "Cyborg uses `?` too", "It marks a generic, though", then, asked "Should a Seal generic procedure
 declare its type parameters as `?` plus a capitalised name in `< >` after its name, as `largest<?Item>`, with calls
 never writing the type?", the owner chose: "yea"
+
+## D162. They're called variables: mutable with `mut`, immutable without
+
+2026-11-26.
+
+**Chosen.** Seal's docs and messages call a named value a **variable**: a **mutable variable** when it's made with
+`mut`, an **immutable variable** otherwise. "Name" stays for the spelling itself, as in "a name can't be a keyword".
+The standard's chapter 3 is now "Variables and values", and its terms chapter says so.
+
+- **"Immutable variable" reads as "an immutable kind of variable",** as Seal's narrowings read "a Y kind of X" (D41),
+  not as a variable that can't vary.
+- **"Mutable" teaches `mut` as it's learned:** `mut` is short for it.
+- **No deeper words in teaching:** "binding", the precise term for a name tied to a value, is left for whoever asks
+  how it works, as a `Float` is taught as a number with a point without IEEE 754.
+
+**Weighed.**
+- "Name", as the standard said: the plainest, but too general, Tankun pointed out.
+- "Binding", the programming-language term: exact, but jargon for a first lesson.
+- "Variable" with no qualifier. Every course, Scratch, Python and Roblox's docs say "variable", so learners know it;
+  "mutable" and "immutable" add only what `mut` already marks.
+
+**Why this won.** It's the word learners meet everywhere, made exact by the same "kind of" reading Seal uses
+throughout.
+
+**Tankun's words.** "What is val vs var", "No, accurate", "Why don't we say "immutable variable" and "mutable
+variable"?", "So, what the fuck is the accurate word? Name is generic as fuck", "Wait what? Who the fuck owns
+variable", "So, is binding the accurate pl word?", "If someone teaches, just say variable?", "I think "immutable
+variable" and "mutable variable" is easier to teach, without dropping into a deep rabbit hole (like Float means IEEE
+binary). immut var doesn't sound so confusing, because it doesn't say var is immutable, it just says an immut ver of
+var?", then, asked "Should Seal's docs and messages call them variables, mutable when marked `mut` and immutable
+otherwise?", the owner chose: "yea"

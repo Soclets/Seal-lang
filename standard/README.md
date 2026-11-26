@@ -38,7 +38,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 
 1. [Terms](01-terms.md)
 2. [Lines and blocks](02-lines-and-blocks.md): lines, `end`, indentation, files
-3. [Names and values](03-names-and-values.md): making and changing names, `mut`, `unused`, names' spelling, values
+3. [Variables and values](03-names-and-values.md): making and changing variables, `mut`, `unused`, names' spelling, values
 4. [Procedures](04-procedures.md): definitions, families, worked-out types, calls, labels, defaults and slides
 5. [Control flow](05-control-flow.md): `if`, `elif`, comparisons, logic, `while`, `for_each` and `break`
 6. [Types](06-types.md): `Whole`, `Float`, `Bool`, `Text`, lists and arrays, records, dictionaries, options and `match`, `Maybe`, filling in text, converting
