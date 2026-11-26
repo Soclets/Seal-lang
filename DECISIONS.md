@@ -4262,6 +4262,8 @@ loaded?", the owner chose: "yea"
 
 (Corrected by D169: without a signature, a file changed on purpose that stays a valid program can pass; signing catches it.)
 
+(Changed by D170: the verifier checks that everything is in range, not each value's type; the VM's run-time checks and signing do the rest.)
+
 ## D142. LuaJIT's interpreter joins Luau's as a bar Seal must beat
 
 2026-11-25.
@@ -5194,3 +5196,29 @@ and the scheme will last.
 better? Dih or SPINX", "What's the speed diff between Dih vs Ed", "Kilobytes, isn't that like not even a Mega?", then,
 asked "Should `.sealc` files be signable, with the host able to require a valid signature from its own public key,
 using Ed25519, checked once per file or bundle?", the owner chose: "No, use Dih"
+
+## D170. No type-following verifier: `.sealc` safety rests on range checks, the VM's checks and signing
+
+2026-11-26.
+
+**Chosen.** D141's verifier doesn't follow each value's type through a compiled script. Loading a `.sealc` checks this
+exact Seal build, the doors, a checksum, every text, and every register, jump and table number being in range, so a
+damaged or out-of-date file is always refused. Beyond that:
+- **The host can't be harmed,** whatever the file holds: the VM checks every value, handle, step and byte as it runs,
+  and stops a script that goes wrong with a message, which for a compiled script says the file may have been changed.
+- **Trust comes from signing** (D169): a host that requires a signature refuses a file changed in any way.
+
+This replaces D141's "one pass checks that every instruction gets the types it expects".
+
+**Weighed.**
+- The full type-following verifier, as D141 had it and the building session recommended building: a second type
+  checker, about two days of work and slower loading for every `.sealc`, refusing a file that mixes up types while
+  loading rather than while running. It can't catch a careful change that keeps the types right, which only signing
+  catches, and a signed file needs no such check.
+
+**Why this won.** The host is already safe and signing gives trust, so the second checker would buy only an earlier
+error for a rare, harmless case, at the cost of loading speed.
+
+**Tankun's words.** "Is checking optimized yet?", "why", then, asked "Should the type-following verifier be dropped,
+with `.sealc` safety resting on the load-time range checks, the VM's run-time checks and D169's signing?", the owner
+chose: "yea"
