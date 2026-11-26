@@ -917,12 +917,21 @@ impl<'a> Parser<'a> {
         opener.note = Note::new("record ", name.text);
         self.end_line()?;
         let mut fields = Vec::new();
+        let mut methods = Vec::new();
         while self.in_body(&opener)? {
+            // trace: D164. A method is a `proc` inside its record, after the fields.
+            if self.first_keyword() == Some(Keyword::Proc) {
+                methods.push(self.procedure(false)?);
+                continue;
+            }
+            if !methods.is_empty() {
+                return Err(self.after_methods("a field", "a record's fields"));
+            }
             fields.push(self.field()?);
             self.end_line()?;
         }
         self.end_of(&opener)?;
-        Ok(RecordDeclaration { name, fields })
+        Ok(RecordDeclaration { name, fields, methods })
     }
 
     /// trace: D35, D36
@@ -933,7 +942,16 @@ impl<'a> Parser<'a> {
         opener.note = Note::new("one_of ", name.text);
         self.end_line()?;
         let mut cases = Vec::new();
+        let mut methods = Vec::new();
         while self.in_body(&opener)? {
+            // trace: D164. A method is a `proc` inside its `one_of`, after the cases.
+            if self.first_keyword() == Some(Keyword::Proc) {
+                methods.push(self.procedure(false)?);
+                continue;
+            }
+            if !methods.is_empty() {
+                return Err(self.after_methods("a case", "a `one_of`'s cases"));
+            }
             let case_name = self.expect_name("a case's name")?;
             let mut fields = Vec::new();
             if self.at_symbol(Symbol::OpenSquare) {
@@ -952,7 +970,13 @@ impl<'a> Parser<'a> {
             cases.push(CaseDeclaration { name: case_name, fields });
         }
         self.end_of(&opener)?;
-        Ok(OneOfDeclaration { name, cases })
+        Ok(OneOfDeclaration { name, cases, methods })
+    }
+
+    /// trace: D164. A field or case written after a method.
+    fn after_methods(&self, what: &str, belong: &str) -> Message {
+        Message::refused(self.here(), format!("{what} comes after a method"))
+            .with_why(format!("{belong} come first, then its methods, so a type's data reads before what it does."))
     }
 
     /// trace: D30, D31, Unio D167

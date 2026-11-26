@@ -469,3 +469,25 @@ fn d161_a_host_calls_no_generic_procedure_and_instances_keep_their_counts() {
     assert!(matches!(script.call_values("names", &[]), Ok(seal::Called::Finished(seal::Value::Whole(2)))));
     assert_eq!(script.audit(), Ok(()));
 }
+
+// trace: D164. Methods: `proc`s inside a record or `one_of`, called only with a dot, two types sharing a name.
+#[test]
+fn d164_methods_are_procs_inside_their_type_called_with_a_dot() {
+    let script = "record Enemy\n    name: Text\n    hp: Whole\n\n    proc is_alive[enemy: Enemy] -> Bool\n        return enemy.hp > 0\n    end\n\n    proc hurt[enemy: Enemy, by: Whole] -> Enemy\n        return Enemy[name: enemy.name, hp: enemy.hp - by]\n    end\n\n    proc size[enemy: Enemy] -> Whole\n        return enemy.hp div.floor 10\n    end\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\n\n    proc size[of: Tree] -> Whole\n        match of\n            case leaf\n                return 1\n            case node[left, right]\n                return 1 + left.size() + right.size()\n        end\n    end\nend\n\ngoblin = Enemy[name: \"Goblin\", hp: 30]\nforest = Tree.node[left: Tree.leaf, right: Tree.leaf]\na = goblin.hurt(30).is_alive()\nb = Enemy[name: \"Ghost\", hp: 50].size()\nc = forest.size()\nshow_msg(\"{a} {b} {c}\")\n";
+    assert_eq!(shows(script), ["false 5 3"]);
+    let plain = "record Enemy\n    hp: Whole\n\n    proc twice[enemy: Enemy] -> Whole\n        return enemy.hp * 2\n    end\nend\ng = Enemy[hp: 4]\nx = twice(g)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(plain).contains("there's no procedure or door named `twice`"), "{}", refusal(plain));
+    let wrong_first =
+        "record Enemy\n    hp: Whole\n\n    proc hp_of[x: Whole] -> Whole\n        return x\n    end\nend\n";
+    assert!(refusal(wrong_first).contains("isn't a value of `Enemy`"), "{}", refusal(wrong_first));
+    let twice = "record Enemy\n    hp: Whole\n\n    proc size[e: Enemy] -> Whole\n        return e.hp\n    end\n\n    proc size[e: Enemy] -> Whole\n        return e.hp\n    end\nend\n";
+    assert!(refusal(twice).contains("`Enemy` has two methods named `size`"), "{}", refusal(twice));
+    let late = "record Enemy\n    hp: Whole\n\n    proc size[e: Enemy] -> Whole\n        return e.hp\n    end\n    name: Text\nend\n";
+    assert!(refusal(late).contains("a field comes after a method"), "{}", refusal(late));
+    let source = "record Enemy\n    hp: Whole\n\n    proc size[e: Enemy] -> Whole\n        return e.hp\n    end\nend\n";
+    let Ok(mut loaded) = Script::load("methods.seal", source, &Doors::new(), LIMITS) else {
+        panic!("the script didn't load");
+    };
+    let called = loaded.call_values("Enemy.size", &[]);
+    assert!(matches!(&called, Err(Error::Refused(messages)) if messages.text().contains("a method")), "{called:?}");
+}

@@ -54,6 +54,7 @@ pub struct Variable {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // each is a separate fact about the procedure
 pub struct Procedure {
     /// The full name, narrowings included, as `spawn.boss`.
     pub name: String,
@@ -62,6 +63,8 @@ pub struct Procedure {
     pub type_parameters: Vec<TypeId>,
     /// For an instance of a generic procedure, the generic procedure it was made from (D161).
     pub instance_of: Option<ProcedureId>,
+    /// A method of one of the script's records or `one_of`s, called only with a dot (D164).
+    pub method: bool,
     pub parameters: Vec<VariableId>,
     /// Each parameter's label, when it has one (D41); empty when none has one.
     pub labels: Vec<Option<String>>,

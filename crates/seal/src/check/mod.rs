@@ -202,6 +202,10 @@ pub(crate) struct Checker<'a> {
     judged_chains: HashSet<u32>,
     /// The type parameters of the generic procedure whose first line is being read (D161).
     header_parameters: Vec<TypeId>,
+    /// Each type's methods, by the type and the method's own name (D164).
+    methods: Vec<((TypeId, String), ProcedureId)>,
+    /// The type whose method is being declared, and its name (D164).
+    method_owner: Option<(TypeId, &'a str)>,
 }
 
 /// Checks a script against the doors its host opened.
@@ -258,6 +262,8 @@ pub fn check(
         slide_depth: 0,
         judged_chains: HashSet::new(),
         header_parameters: Vec::new(),
+        methods: Vec::new(),
+        method_owner: None,
     };
     checker.run(script);
     // The tables are emptied and kept for the next script this thread checks, when they're not too big to keep.
@@ -1157,6 +1163,63 @@ impl<'a> Checker<'a> {
         for procedure in list {
             self.declare_procedure(procedure);
         }
+        // trace: D164. Each record's and `one_of`'s methods, known by their type and their own name.
+        for item in &script.items {
+            let (type_name, methods) = match item {
+                syntax::Item::Record(record) => (record.name.text, &record.methods),
+                syntax::Item::OneOf(one_of) => (one_of.name.text, &one_of.methods),
+                _ => continue,
+            };
+            let owner = if let Some(&index) = self.record_names.get(type_name) {
+                self.program.types.intern(Type::Record(index))
+            } else if let Some(&index) = self.one_of_names.get(type_name) {
+                self.program.types.intern(Type::OneOf(index))
+            } else {
+                continue;
+            };
+            for method in methods {
+                self.declare_method(method, owner, type_name);
+            }
+        }
+    }
+
+    /// trace: D164. A method: a procedure inside its type, named after the type inside the program, whose first
+    /// parameter is a value of the type, called only with a dot.
+    fn declare_method(&mut self, method: &'a syntax::Procedure<'a>, owner: TypeId, type_name: &'a str) {
+        let word = method.name();
+        let name_place = method.path.first().map_or(method.place, |word| word.place);
+        if self.methods.iter().any(|((earlier_owner, earlier), _)| *earlier_owner == owner && *earlier == word.as_ref())
+        {
+            self.refuse_why(
+                name_place,
+                format!("`{type_name}` has two methods named `{word}`"),
+                "each of a type's methods has a name of its own.",
+            );
+            return;
+        }
+        if method.path.len() > 1 {
+            self.refuse_why(
+                name_place,
+                format!("a method's name is one word, but this is `{word}`"),
+                "a method is called with a dot after its value, as `goblin.is_alive()`, so a narrowing would read as a field.",
+            );
+            return;
+        }
+        let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
+        self.method_owner = Some((owner, type_name));
+        self.declare_procedure(method);
+        self.method_owner = None;
+        let Some(declared) = self.program.procedure(id) else { return };
+        let first = declared.parameters.first().map(|&parameter| self.variable_type(parameter));
+        if !first.is_some_and(|first| self.program.types.unify(first, owner)) {
+            let place = method.parameters.first().map_or(name_place, |parameter| parameter.name.place);
+            self.refuse_why(
+                place,
+                format!("`{word}`'s first parameter isn't a value of `{type_name}`, the type it's a method of"),
+                "a method's first parameter is the value before the dot, as `goblin` in `goblin.is_alive()`.",
+            );
+        }
+        self.methods.push(((owner, word.into_owned()), id));
     }
 
     #[allow(clippy::too_many_lines)] // a procedure's first line, its labels and its defaults, in order
@@ -1164,8 +1227,10 @@ impl<'a> Checker<'a> {
         let name = procedure.name();
         let name_place = procedure.path.first().map_or(procedure.place, |word| word.place);
         let word = procedure.path.first().map_or("", |word| word.text);
+        // A method is reached only through its type, so it shares no names with what's outside it (D164).
+        let method_of = self.method_owner.map(|(_, type_name)| type_name);
         // trace: D71, D93. One spelling means one thing, so a procedure can't take a built-in's or a door's name.
-        if BUILT_IN_WORDS.contains(&word) {
+        if method_of.is_none() && BUILT_IN_WORDS.contains(&word) {
             self.refuse_why(
                 name_place,
                 format!("`{word}` is one of Seal's own words, so a procedure can't be named `{word}`"),
@@ -1173,7 +1238,7 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        if self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
+        if method_of.is_none() && self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
             self.refuse_why(
                 name_place,
                 format!("`{word}` is one of the host's doors, so a procedure can't be named `{word}`"),
@@ -1181,7 +1246,9 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        if let Some(&earlier) = self.procedure_names.get(name.as_ref()) {
+        if method_of.is_none()
+            && let Some(&earlier) = self.procedure_names.get(name.as_ref())
+        {
             let earlier_place = self.program.procedure(earlier).map_or(Place::default(), |earlier| earlier.place);
             self.messages.push(
                 Message::refused(name_place, format!("the procedure `{name}` is declared twice"))
@@ -1316,10 +1383,16 @@ impl<'a> Checker<'a> {
         let can_fail = procedure.failures.is_some() || block_can_fail(&procedure.body);
         let labels_any_order = procedure.labels_any_order;
         let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
+        let is_method = method_of.is_some();
+        let full_name = match method_of {
+            Some(type_name) => format!("{type_name}.{name}"),
+            None => name.to_string(),
+        };
         self.program.procedures.push(Procedure {
-            name: name.to_string(),
+            name: full_name,
             type_parameters,
             instance_of: None,
+            method: is_method,
             parameters,
             labels,
             labels_any_order,
@@ -1335,8 +1408,10 @@ impl<'a> Checker<'a> {
         self.procedure_syntax.push(procedure);
         self.procedure_state.push(ProcedureState::Unchecked);
         self.written_failures.push(procedure.failures.clone());
-        self.procedure_names.insert(name, id);
-        self.words.add(word);
+        if method_of.is_none() {
+            self.procedure_names.insert(name, id);
+            self.words.add(word);
+        }
     }
 
     /// A default: a value written out plainly, or a top-level name made from one with no `mut`, of the parameter's

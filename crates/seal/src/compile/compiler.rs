@@ -774,6 +774,7 @@ impl<'p> Compiler<'p> {
                 can_pause: false,
                 holds_itself: false,
                 generic: true,
+                method: false,
             });
             return;
         }
@@ -855,6 +856,7 @@ impl<'p> Compiler<'p> {
             can_pause: procedure.can_pause,
             holds_itself,
             generic: false,
+            method: procedure.method,
         });
     }
 

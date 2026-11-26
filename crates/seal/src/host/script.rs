@@ -475,6 +475,15 @@ impl Script {
         else {
             return Err(refusal(&self.name, format!("`{}` has no procedure named `{procedure}`", self.name)));
         };
+        // trace: D164. Whether a host calls a script's methods, and how, isn't decided.
+        if found.method {
+            let mut message = Message::not_designed_yet(
+                Place::default(),
+                format!("a host calling `{procedure}`, a method, which a script calls only with a dot"),
+            );
+            message.file = self.name.to_string();
+            return Err(Error::Refused(Messages::one(message)));
+        }
         // trace: D161. What a host's call to a generic procedure fills its types in with isn't decided.
         if found.generic {
             let mut message = Message::not_designed_yet(

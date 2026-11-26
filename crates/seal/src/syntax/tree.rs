@@ -170,6 +170,8 @@ pub struct Family<'a> {
 pub struct RecordDeclaration<'a> {
     pub name: Word<'a>,
     pub fields: Vec<FieldDeclaration<'a>>,
+    /// Its methods, each a procedure whose first parameter is a value of the record (D164).
+    pub methods: Vec<Procedure<'a>>,
 }
 
 #[derive(Clone, Debug)]
@@ -183,6 +185,8 @@ pub struct FieldDeclaration<'a> {
 pub struct OneOfDeclaration<'a> {
     pub name: Word<'a>,
     pub cases: Vec<CaseDeclaration<'a>>,
+    /// Its methods, each a procedure whose first parameter is a value of the `one_of` (D164).
+    pub methods: Vec<Procedure<'a>>,
 }
 
 #[derive(Clone, Debug)]

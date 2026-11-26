@@ -1002,6 +1002,7 @@ impl Compare {
 
 /// A procedure, compiled.
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)] // each is a separate fact about the procedure
 pub struct CompiledProcedure {
     pub name: String,
     /// Where its instructions start.
@@ -1018,6 +1019,8 @@ pub struct CompiledProcedure {
     pub holds_itself: bool,
     /// A generic procedure, which runs only as its instances (D161); a host can't call it yet.
     pub generic: bool,
+    /// A method, called only with a dot (D164); a host can't call it yet.
+    pub method: bool,
 }
 
 #[derive(Clone, Debug)]

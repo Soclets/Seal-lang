@@ -897,6 +897,69 @@ impl<'a> Checker<'a> {
         Expression { kind: ExpressionKind::Convert { conversion, value: Box::new(value) }, type_id, place }
     }
 
+    /// trace: D164. A call to a method of the script's own record or `one_of`, the value before the dot its first
+    /// argument; nothing when the value's type has no such method.
+    fn script_method(
+        &mut self,
+        receiver: &syntax::Expression<'a>,
+        method: &syntax::Word<'a>,
+        arguments: &[syntax::Entry<'a>],
+        place: Place,
+    ) -> Option<Expression> {
+        if self.methods.is_empty() {
+            return None;
+        }
+        let owner = self.receiver_type(receiver)?;
+        let &(_, procedure) =
+            self.methods.iter().find(|((type_id, name), _)| *type_id == owner && name == method.text)?;
+        let mut entries = Vec::with_capacity(arguments.len() + 1);
+        entries.push(syntax::Entry { label: None, value: receiver.clone() });
+        entries.extend(arguments.iter().cloned());
+        let name = format!(".{}", method.text);
+        Some(self.procedure_call(procedure, &name, &entries, place))
+    }
+
+    /// trace: D164. The type of the value before a method's dot, when it's plain to see without checking it: a
+    /// variable, a record or case being built, a record's field, or a call to a procedure or method, whose first line
+    /// says what it gives. Nothing else, which leaves the call to Seal's own methods.
+    fn receiver_type(&mut self, receiver: &syntax::Expression<'a>) -> Option<TypeId> {
+        match &receiver.kind {
+            syntax::ExpressionKind::Name(_) | syntax::ExpressionKind::Group(_) => self.peek_type(receiver),
+            syntax::ExpressionKind::Bracketed { receiver: built, .. } => {
+                let path = super::expressions::type_path(built)?;
+                let name = path.first()?.text;
+                if let Some(&index) = self.record_names.get(name) {
+                    return Some(self.program.types.intern(Type::Record(index)));
+                }
+                let &index = self.one_of_names.get(name)?;
+                Some(self.program.types.intern(Type::OneOf(index)))
+            }
+            syntax::ExpressionKind::Member { receiver: record, name } => {
+                let owner = self.receiver_type(record)?;
+                let Type::Record(index) = self.program.types.get(owner) else { return None };
+                let record = self.program.types.records.get(*index as usize)?;
+                record.fields.iter().find(|(field, _)| field == name.text).map(|(_, type_id)| *type_id)
+            }
+            syntax::ExpressionKind::Call { .. } => {
+                let (callee, _) = receiver.kind.as_call()?;
+                let procedure = match &callee.kind {
+                    syntax::ExpressionKind::Member { receiver: inner, name } if self.is_value(inner) => {
+                        let owner = self.receiver_type(inner)?;
+                        self.methods.iter().find(|((type_id, method), _)| *type_id == owner && method == name.text)?.1
+                    }
+                    _ => {
+                        let path = name_path(callee)?;
+                        *self.procedure_names.get(path.join(".").as_str())?
+                    }
+                };
+                let result = self.program.procedure(procedure)?;
+                (result.type_parameters.is_empty()).then_some(result.result)
+            }
+            _ => None,
+        }
+        .map(|type_id| self.program.types.resolve(type_id))
+    }
+
     /// A method on a value: `.add` and `.remove` on a list, `.remove` and `.has` on a dictionary
     /// (D34, Unio D77, D80).
     #[allow(clippy::too_many_lines)] // each method's arguments are read here, one after another
@@ -908,6 +971,9 @@ impl<'a> Checker<'a> {
         place: Place,
     ) -> Expression {
         let label_of = |entry: &syntax::Entry| entry.label.as_ref().map(|label| label.text.to_owned());
+        if let Some(call) = self.script_method(receiver, method, arguments, place) {
+            return call;
+        }
         if method.text == "has" {
             let dict = self.expression(receiver, None);
             let key_type = self.program.types.fresh();

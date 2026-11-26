@@ -327,6 +327,7 @@ fn make_instance(program: &mut Program, generic: ProcedureId, filled: &[TypeId])
         place,
         end_place,
         mut parameters,
+        method,
         ..
     } = original;
     let mut fill = Fill { program, map, names: HashMap::new() };
@@ -343,6 +344,7 @@ fn make_instance(program: &mut Program, generic: ProcedureId, filled: &[TypeId])
         name,
         type_parameters: Vec::new(),
         instance_of: Some(generic),
+        method,
         parameters,
         labels,
         labels_any_order,
