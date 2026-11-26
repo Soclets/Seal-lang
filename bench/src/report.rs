@@ -516,10 +516,12 @@ impl Report {
             self.out,
             "Tests: loading, pausing, footprint. Each script is loaded from its own copy of the same text and \
              paused in its patrol; then every one is resumed {} times, and then a procedure of each is called {} \
-             times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes. Loading is timed two \
-             ways: every script from a text of its own, so that nothing compiled is reused, and every script from the \
+             times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes. Loading is timed three \
+             ways: every script from a text of its own, so that nothing compiled is reused; every script from the \
              same text, where Seal reuses what it compiled, and the other engines compile once and make each script from \
-             that.\n",
+             that; and every script from a compiled file of its own, a `.sealc` for Seal and `string.dump`'s bytecode, as \
+             `luajit -b` writes it, for LuaJIT (D171). Seal frees each script loaded from a text or a \
+             file of its own inside its timing, before loading the next.\n",
             PATROL.1, PATROL.1, PATROL_PURPOSE.1, self.runs
         );
         let _ = writeln!(
@@ -890,13 +892,15 @@ impl Report {
                 );
             }
         }
-        // trace: D141. Loading a compiled file has no target; LuaJIT's bytecode, as `luajit -b` writes it, is beside it.
+        // trace: D141, D171. Loading a compiled file, checks and all, is judged against LuaJIT loading its own bytecode,
+        // as `luajit -b` writes it.
         let (seal, luajit) = (time("patrol.load_compiled", "Seal"), time("patrol.load_compiled", "LuaJIT `-joff`"));
         let _ = writeln!(
             out,
-            "| D141. Loading a compiled file | patrolling scripts, loading each from a compiled file of its own | {} | LuaJIT's bytecode: {} | for reference, no target |",
+            "| D171. Faster than LuaJIT loading its own bytecode | patrolling scripts, loading each from a compiled file of its own | {} | {} | {} |",
             shown(seal),
             shown(luajit),
+            verdict(seal, luajit, 1.0),
         );
         // trace: D152. A door call through C aims at a Rust door's speed; LuaJIT's C API is beside it.
         let (c, rust) = (time("doors.c", "Seal"), time("doors.rust", "Seal"));
