@@ -4939,10 +4939,10 @@ types work like Seal's.
 
 **Tankun's words.** "kits? What the fuck? That's a lib", "Why `Enemy` as name?", "The fuck? Why does name matter?",
 "What?", "Why the fuck does name matter?", "Wait what? We don't usually give a fuck about the name", "No, not that",
-"Why does the name matter? We don't usually do names like that", "Where does it check? The name or inside?", "Wait
-what? We don't usually give a fuck about the name? Look", "No, I meant the fucking name `Enemy` of `methods`", "Idk?
-Like, that's not what I meant either. There was another case that we tried to checked name, but didn't pass into
-decided", "That's not what I meant either", "that case", "Why no name?", a question asking what a pasted `methods` block does,
-"What about just say the meth in record?", "Should it be `proc` or `method`?", "How does it get call", "Why don't they just use normal proc?", then,
-after D162's questions, asked "should Seal have methods on records and `one_of`s at all, so two types can share a
-method name and generics can require methods?", the owner chose: "yea"
+"Why does the name matter? We don't usually do names like that", "Where does it check? The name or inside?", "Wait what?
+We don't usually give a fuck about the name? Look", "No, I meant the fucking name `Enemy` of `methods`", "Idk? Like,
+that's not what I meant either. There was another case that we tried to checked name, but didn't pass into decided",
+"That's not what I meant either", "that case", "Why no name?", a question asking what a pasted `methods` block does,
+"What about just say the meth in record?", "Should it be `proc` or `method`?", "How does it get call", "Why don't they
+just use normal proc?", then, after D162's questions, asked "should Seal have methods on records and `one_of`s at all,
+so two types can share a method name and generics can require methods?", the owner chose: "yea"
