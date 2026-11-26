@@ -4918,3 +4918,31 @@ variable" and "mutable variable" is easier to teach, without dropping into a dee
 binary). immut var doesn't sound so confusing, because it doesn't say var is immutable, it just says an immut ver of
 var?", then, asked "Should Seal's docs and messages call them variables, mutable when marked `mut` and immutable
 otherwise?", the owner chose: "yea"
+
+## D163. Records and `one_of`s can have methods
+
+2026-11-26.
+
+**Chosen.** A script's records and `one_of`s can have methods: procedures called with a dot on a value of the type,
+as Seal's own types already are (`bag.add("Gem")`, Unio D77), so `goblin.is_alive()`. A method that changes its value
+works only on a mutable variable, as `bag.add` does. Where and how methods are declared and called is decided
+separately.
+
+**Weighed.**
+- Plain procedures only, as `is_alive(goblin)`, as Tankun asked about. Two types couldn't each have a `size`, since
+  two procedures of one name clash (D71), and a generic would have no way to call "whatever `score` means for this
+  type", which is what requirements on type parameters need.
+- Classes, inheritance and shared references, which D27 left out by calling them records. Still out (D15).
+
+**Why this won.** One name can mean the right thing on each type, generics can require behaviour, and a script's own
+types work like Seal's.
+
+**Tankun's words.** "kits? What the fuck? That's a lib", "Why `Enemy` as name?", "The fuck? Why does name matter?",
+"What?", "Why the fuck does name matter?", "Wait what? We don't usually give a fuck about the name", "No, not that",
+"Why does the name matter? We don't usually do names like that", "Where does it check? The name or inside?", "Wait
+what? We don't usually give a fuck about the name? Look", "No, I meant the fucking name `Enemy` of `methods`", "Idk?
+Like, that's not what I meant either. There was another case that we tried to checked name, but didn't pass into
+decided", "That's not what I meant either", "that case", "Why no name?", a question asking what a pasted `methods` block does,
+"What about just say the meth in record?", "Should it be `proc` or `method`?", "How does it get call", "Why don't they just use normal proc?", then,
+after D162's questions, asked "should Seal have methods on records and `one_of`s at all, so two types can share a
+method name and generics can require methods?", the owner chose: "yea"
