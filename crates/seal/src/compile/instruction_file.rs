@@ -1145,214 +1145,393 @@ pub fn read(input: &mut Reader) -> Result<Instruction, FileError> {
 /// The most registers one instruction names.
 pub const MOST_REGISTERS: usize = 3;
 
-/// The registers an instruction names, in its fields' order, then register 0, which every frame has, for the
-/// rest: made with nothing to free, so verifying makes nothing (D171).
-#[must_use]
-pub fn registers(instruction: Instruction) -> [Register; MOST_REGISTERS] {
-    match instruction {
-        Instruction::Move { to, from, .. } => [to, from, 0],
-        Instruction::LoadSmall { to, .. } => [to, 0, 0],
-        Instruction::LoadConstant { to, .. } => [to, 0, 0],
-        Instruction::LoadText { to, .. } => [to, 0, 0],
-        Instruction::LoadPlainCase { to, .. } => [to, 0, 0],
-        Instruction::GetGlobal { to, .. } => [to, 0, 0],
-        Instruction::SetGlobal { from, .. } => [from, 0, 0],
-        Instruction::Retain { register, .. } => [register, 0, 0],
-        Instruction::Release { register, .. } => [register, 0, 0],
-        Instruction::AddWhole { to, left, right, .. } => [to, left, right],
-        Instruction::SubtractWhole { to, left, right, .. } => [to, left, right],
-        Instruction::MultiplyWhole { to, left, right, .. } => [to, left, right],
-        Instruction::DivideWhole { to, left, right, .. } => [to, left, right],
-        Instruction::DivideFloor { to, left, right, .. } => [to, left, right],
-        Instruction::DivideTrunc { to, left, right, .. } => [to, left, right],
-        Instruction::RemainderFloor { to, left, right, .. } => [to, left, right],
-        Instruction::RemainderTrunc { to, left, right, .. } => [to, left, right],
-        Instruction::AddWholeSmall { to, left, .. } => [to, left, 0],
-        Instruction::AddWholeConstant { to, left, .. } => [to, left, 0],
-        Instruction::MultiplyWholeConstant { to, left, .. } => [to, left, 0],
-        Instruction::DivideFloorConstant { to, left, .. } => [to, left, 0],
-        Instruction::RemainderFloorConstant { to, left, .. } => [to, left, 0],
-        Instruction::NegateWhole { to, from, .. } => [to, from, 0],
-        Instruction::AddFloat { to, left, right, .. } => [to, left, right],
-        Instruction::SubtractFloat { to, left, right, .. } => [to, left, right],
-        Instruction::MultiplyFloat { to, left, right, .. } => [to, left, right],
-        Instruction::DivideFloat { to, left, right, .. } => [to, left, right],
-        Instruction::NegateFloat { to, from, .. } => [to, from, 0],
-        Instruction::SquareRoot { to, from, .. } => [to, from, 0],
-        Instruction::AddFloatConstant { to, left, .. } => [to, left, 0],
-        Instruction::MultiplyFloatConstant { to, left, .. } => [to, left, 0],
-        Instruction::DivideFloatConstant { to, left, .. } => [to, left, 0],
-        Instruction::DivideConstantByFloat { to, right, .. } => [to, right, 0],
-        Instruction::EqualWhole { to, left, right, .. } => [to, left, right],
-        Instruction::NotEqualWhole { to, left, right, .. } => [to, left, right],
-        Instruction::LessWhole { to, left, right, .. } => [to, left, right],
-        Instruction::AtMostWhole { to, left, right, .. } => [to, left, right],
-        Instruction::UnpackItemAtPosition { base, list, index, .. } => [base, list, index],
-        Instruction::UnpackItemAtOffset { base, list, index, .. } => [base, list, index],
-        Instruction::ItemFieldAtPosition { to, list, index, .. } => [to, list, index],
-        Instruction::ItemFieldAtOffset { to, list, index, .. } => [to, list, index],
-        Instruction::SetItemFieldAtPosition { list, index, value, .. } => [list, index, value],
-        Instruction::SetItemFieldAtOffset { list, index, value, .. } => [list, index, value],
-        Instruction::FitList { to, from, limit, .. } => [to, from, limit],
-        Instruction::Own { register, .. } => [register, 0, 0],
-        Instruction::OwnField { to, record, .. } => [to, record, 0],
-        Instruction::OwnItemAtPosition { to, list, index, .. } => [to, list, index],
-        Instruction::OwnItemAtOffset { to, list, index, .. } => [to, list, index],
-        Instruction::TextLength { to, from, .. } => [to, from, 0],
-        Instruction::GraphemeAtPosition { to, text, index, .. } => [to, text, index],
-        Instruction::GraphemeAtOffset { to, text, index, .. } => [to, text, index],
-        Instruction::Graphemes { to, from, .. } => [to, from, 0],
-        Instruction::SplitText { to, text, by, .. } => [to, text, by],
-        Instruction::SplitTextNoEmpty { to, text, by, .. } => [to, text, by],
-        Instruction::EqualText { to, left, right, .. } => [to, left, right],
-        Instruction::NotEqualText { to, left, right, .. } => [to, left, right],
-        Instruction::EqualFloat { to, left, right, .. } => [to, left, right],
-        Instruction::NotEqualFloat { to, left, right, .. } => [to, left, right],
-        Instruction::LessFloat { to, left, right, .. } => [to, left, right],
-        Instruction::AtMostFloat { to, left, right, .. } => [to, left, right],
-        Instruction::Not { to, from, .. } => [to, from, 0],
-        Instruction::JumpIfTrue { register, .. } => [register, 0, 0],
-        Instruction::JumpIfFalse { register, .. } => [register, 0, 0],
-        Instruction::JumpIfEqualWhole { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfNotEqualWhole { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfLessWhole { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfAtMostWhole { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfEqualWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfNotEqualWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfLessWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfAtMostWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfGreaterWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfAtLeastWholeSmall { left, .. } => [left, 0, 0],
-        Instruction::JumpIfEqualFloat { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfNotEqualFloat { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfLessFloat { left, right, .. } => [left, right, 0],
-        Instruction::JumpIfAtMostFloat { left, right, .. } => [left, right, 0],
-        Instruction::Call { base, .. } => [base, 0, 0],
-        Instruction::CallAdding { base, from, .. } => [base, from, 0],
-        Instruction::Return { from, .. } => [from, 0, 0],
-        Instruction::ReturnIfWholeSmall { from, left, .. } => [from, left, 0],
-        Instruction::ReturnAddWhole { left, right, .. } => [left, right, 0],
-        Instruction::CallDoor { base, .. } => [base, 0, 0],
-        Instruction::EqualValues { to, left, .. } => [to, left, 0],
-        Instruction::MakeRange { to, base, .. } => [to, base, 0],
-        Instruction::PowerWhole { to, left, right, .. } => [to, left, right],
-        Instruction::PowerFloat { to, left, right, .. } => [to, left, right],
-        Instruction::Maths { to, base, .. } => [to, base, 0],
-        Instruction::LoadNumber { to, .. } => [to, 0, 0],
-        Instruction::NumberOperation { to, left, right, .. } => [to, left, right],
-        Instruction::NumberUpdate { target, right, .. } => [target, right, 0],
-        Instruction::ConvertNumber { to, from, .. } => [to, from, 0],
-        Instruction::CheckLimits { register, .. } => [register, 0, 0],
-        Instruction::Scale { to, from, .. } => [to, from, 0],
-        Instruction::CrashIfNone { number, .. } => [number, 0, 0],
-        Instruction::JoinPieces { to, .. } => [to, 0, 0],
-        Instruction::AppendPieces { to, .. } => [to, 0, 0],
-        Instruction::TextToBool { to, from, .. } => [to, from, 0],
-        Instruction::TextToWhole { to, from, .. } => [to, from, 0],
-        Instruction::WholeToFloat { to, from, .. } => [to, from, 0],
-        Instruction::FloatToWhole { to, from, .. } => [to, from, 0],
-        Instruction::NewList { to, base, .. } => [to, base, 0],
-        Instruction::NewReferenceList { to, base, .. } => [to, base, 0],
-        Instruction::RepeatList { to, value, count, .. } => [to, value, count],
-        Instruction::RepeatReferenceList { to, value, count, .. } => [to, value, count],
-        Instruction::ItemAtPosition { to, list, index, .. } => [to, list, index],
-        Instruction::ItemAtOffset { to, list, index, .. } => [to, list, index],
-        Instruction::SetItemAtPosition { list, index, value, .. } => [list, index, value],
-        Instruction::SetItemAtOffset { list, index, value, .. } => [list, index, value],
-        Instruction::AddItem { list, value, .. } => [list, value, 0],
-        Instruction::InsertItemAtPosition { list, index, value, .. } => [list, index, value],
-        Instruction::InsertItemAtOffset { list, index, value, .. } => [list, index, value],
-        Instruction::CheckRoom { list, limit, .. } => [list, limit, 0],
-        Instruction::RemoveItemAtPosition { list, index, .. } => [list, index, 0],
-        Instruction::RemoveItemAtOffset { list, index, .. } => [list, index, 0],
-        Instruction::Length { to, from, .. } => [to, from, 0],
-        Instruction::NextItem { to, base, .. } => [to, base, 0],
-        Instruction::PrepareRangeTo { base, .. } => [base, 0, 0],
-        Instruction::PrepareRangeBefore { base, .. } => [base, 0, 0],
-        Instruction::NextInRange { to, base, .. } => [to, base, 0],
-        Instruction::NewDict { to, .. } => [to, 0, 0],
-        Instruction::GetKey { to, dict, key, .. } => [to, dict, key],
-        Instruction::SetKey { dict, key, value, .. } => [dict, key, value],
-        Instruction::RemoveKey { dict, key, .. } => [dict, key, 0],
-        Instruction::HasKey { to, dict, key, .. } => [to, dict, key],
-        Instruction::FindKey { to, dict, key, .. } => [to, dict, key],
-        Instruction::DivideFloorByPowerOfTwo { to, left, .. } => [to, left, 0],
-        Instruction::RemainderFloorByPowerOfTwo { to, left, .. } => [to, left, 0],
-        Instruction::ReleaseText { register, .. } => [register, 0, 0],
-        Instruction::GetKeyIfAny { to, dict, key, .. } => [to, dict, key],
-        Instruction::GetFoundIfAny { to, dict, found, .. } => [to, dict, found],
-        Instruction::GetFound { to, dict, found, .. } => [to, dict, found],
-        Instruction::SetFound { dict, found, key, .. } => [dict, found, key],
-        Instruction::NextEntry { to, base, .. } => [to, base, 0],
-        Instruction::NewRecord { to, base, .. } => [to, base, 0],
-        Instruction::GetField { to, record, .. } => [to, record, 0],
-        Instruction::SetField { record, value, .. } => [record, value, 0],
-        Instruction::SetReferenceField { record, value, .. } => [record, value, 0],
-        Instruction::NewCase { to, base, .. } => [to, base, 0],
-        Instruction::UnpackRecord { base, record, .. } => [base, record, 0],
-        Instruction::PackIntoItemAtPosition { list, index, base, .. } => [list, index, base],
-        Instruction::PackIntoItemAtOffset { list, index, base, .. } => [list, index, base],
-        Instruction::CaseNumber { to, from, .. } => [to, from, 0],
-        Instruction::GetCaseValue { to, case, .. } => [to, case, 0],
-        _ => [0; MOST_REGISTERS],
-    }
-}
-
 /// The most table numbers one instruction holds.
 pub const MOST_NUMBERED: usize = 1;
 
-/// The numbers an instruction picks things out of the script's tables with, each by its field's name.
-#[must_use]
-pub fn numbered(instruction: Instruction) -> [Option<(&'static str, u32)>; MOST_NUMBERED] {
-    match instruction {
-        Instruction::LoadConstant { constant, .. } => [Some(("constant", constant))],
-        Instruction::GetGlobal { global, .. } => [Some(("global", u32::from(global)))],
-        Instruction::SetGlobal { global, .. } => [Some(("global", u32::from(global)))],
-        Instruction::AddWholeConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::MultiplyWholeConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::DivideFloorConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::RemainderFloorConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::AddFloatConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::MultiplyFloatConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::DivideFloatConstant { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::DivideConstantByFloat { constant, .. } => [Some(("constant", u32::from(constant)))],
-        Instruction::Call { procedure, .. } => [Some(("procedure", procedure))],
-        Instruction::CallAdding { procedure, .. } => [Some(("procedure", u32::from(procedure)))],
-        Instruction::Fail { failure, .. } => [Some(("failure", u32::from(failure)))],
-        Instruction::JumpUnlessFailureIs { failure, .. } => [Some(("failure", u32::from(failure)))],
-        Instruction::TextToBool { failure, .. } => [Some(("failure", u32::from(failure)))],
-        Instruction::NewRecord { layout, .. } => [Some(("layout", u32::from(layout)))],
-        Instruction::NewCase { layout, .. } => [Some(("layout", u32::from(layout)))],
-        _ => [None; MOST_NUMBERED],
-    }
+/// The script's tables an instruction picks things out of by number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Table {
+    Constant,
+    Failure,
+    Global,
+    Procedure,
+    Layout,
 }
 
-/// Where an instruction can jump, as an offset from the instruction after it.
+/// What the verifier checks of an instruction, found in one look at it (D173): the registers it names, in its
+/// fields' order, then register 0, which every frame has, for the rest; the numbers it picks things out of the
+/// script's tables with; and where it can jump, as an offset from the instruction after it.
+#[derive(Clone, Copy, Debug)]
+pub struct Facts {
+    pub registers: [Register; MOST_REGISTERS],
+    pub numbered: [Option<(Table, u32)>; MOST_NUMBERED],
+    pub jump: Option<i32>,
+}
+
+/// An instruction's [`Facts`].
 #[must_use]
-pub fn jump(instruction: Instruction) -> Option<i32> {
+pub fn facts(instruction: Instruction) -> Facts {
     match instruction {
-        Instruction::Jump { offset, .. } => Some(offset),
-        Instruction::JumpIfTrue { offset, .. } => Some(offset),
-        Instruction::JumpIfFalse { offset, .. } => Some(offset),
-        Instruction::JumpIfEqualWhole { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfNotEqualWhole { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfLessWhole { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfAtMostWhole { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfEqualWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfNotEqualWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfLessWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfAtMostWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfGreaterWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfAtLeastWholeSmall { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfEqualFloat { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfNotEqualFloat { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfLessFloat { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpIfAtMostFloat { offset, .. } => Some(i32::from(offset)),
-        Instruction::JumpUnlessFailed { offset, .. } => Some(offset),
-        Instruction::JumpUnlessFailureIs { offset, .. } => Some(offset),
-        Instruction::NextItem { offset, .. } => Some(i32::from(offset)),
-        Instruction::NextInRange { offset, .. } => Some(i32::from(offset)),
-        Instruction::NextEntry { offset, .. } => Some(i32::from(offset)),
-        _ => None,
+        Instruction::Move { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::LoadSmall { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::LoadConstant { to, constant, .. } => {
+            Facts { registers: [to, 0, 0], numbered: [Some((Table::Constant, constant))], jump: None }
+        }
+        Instruction::LoadText { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::LoadPlainCase { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::GetGlobal { to, global, .. } => {
+            Facts { registers: [to, 0, 0], numbered: [Some((Table::Global, u32::from(global)))], jump: None }
+        }
+        Instruction::SetGlobal { from, global, .. } => {
+            Facts { registers: [from, 0, 0], numbered: [Some((Table::Global, u32::from(global)))], jump: None }
+        }
+        Instruction::Retain { register, .. } => Facts { registers: [register, 0, 0], numbered: [None], jump: None },
+        Instruction::Release { register, .. } => Facts { registers: [register, 0, 0], numbered: [None], jump: None },
+        Instruction::AddWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::SubtractWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::MultiplyWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::DivideWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::DivideFloor { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::DivideTrunc { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::RemainderFloor { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::RemainderTrunc { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::AddWholeSmall { to, left, .. } => Facts { registers: [to, left, 0], numbered: [None], jump: None },
+        Instruction::AddWholeConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::MultiplyWholeConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::DivideFloorConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::RemainderFloorConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::NegateWhole { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::AddFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::SubtractFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::MultiplyFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::DivideFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::NegateFloat { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::SquareRoot { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::AddFloatConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::MultiplyFloatConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::DivideFloatConstant { to, left, constant, .. } => {
+            Facts { registers: [to, left, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::DivideConstantByFloat { to, right, constant, .. } => {
+            Facts { registers: [to, right, 0], numbered: [Some((Table::Constant, u32::from(constant)))], jump: None }
+        }
+        Instruction::EqualWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::NotEqualWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::LessWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::AtMostWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::UnpackItemAtPosition { base, list, index, .. } => {
+            Facts { registers: [base, list, index], numbered: [None], jump: None }
+        }
+        Instruction::UnpackItemAtOffset { base, list, index, .. } => {
+            Facts { registers: [base, list, index], numbered: [None], jump: None }
+        }
+        Instruction::ItemFieldAtPosition { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::ItemFieldAtOffset { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::SetItemFieldAtPosition { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::SetItemFieldAtOffset { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::FitList { to, from, limit, .. } => {
+            Facts { registers: [to, from, limit], numbered: [None], jump: None }
+        }
+        Instruction::Own { register, .. } => Facts { registers: [register, 0, 0], numbered: [None], jump: None },
+        Instruction::OwnField { to, record, .. } => Facts { registers: [to, record, 0], numbered: [None], jump: None },
+        Instruction::OwnItemAtPosition { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::OwnItemAtOffset { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::TextLength { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::GraphemeAtPosition { to, text, index, .. } => {
+            Facts { registers: [to, text, index], numbered: [None], jump: None }
+        }
+        Instruction::GraphemeAtOffset { to, text, index, .. } => {
+            Facts { registers: [to, text, index], numbered: [None], jump: None }
+        }
+        Instruction::Graphemes { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::SplitText { to, text, by, .. } => {
+            Facts { registers: [to, text, by], numbered: [None], jump: None }
+        }
+        Instruction::SplitTextNoEmpty { to, text, by, .. } => {
+            Facts { registers: [to, text, by], numbered: [None], jump: None }
+        }
+        Instruction::EqualText { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::NotEqualText { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::EqualFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::NotEqualFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::LessFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::AtMostFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::Not { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::Jump { offset, .. } => Facts { registers: [0, 0, 0], numbered: [None], jump: Some(offset) },
+        Instruction::JumpIfTrue { register, offset, .. } => {
+            Facts { registers: [register, 0, 0], numbered: [None], jump: Some(offset) }
+        }
+        Instruction::JumpIfFalse { register, offset, .. } => {
+            Facts { registers: [register, 0, 0], numbered: [None], jump: Some(offset) }
+        }
+        Instruction::JumpIfEqualWhole { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfNotEqualWhole { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfLessWhole { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfAtMostWhole { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfEqualWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfNotEqualWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfLessWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfAtMostWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfGreaterWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfAtLeastWholeSmall { left, offset, .. } => {
+            Facts { registers: [left, 0, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfEqualFloat { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfNotEqualFloat { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfLessFloat { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::JumpIfAtMostFloat { left, right, offset, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::Call { base, procedure, .. } => {
+            Facts { registers: [base, 0, 0], numbered: [Some((Table::Procedure, procedure))], jump: None }
+        }
+        Instruction::CallAdding { base, from, procedure, .. } => {
+            Facts { registers: [base, from, 0], numbered: [Some((Table::Procedure, u32::from(procedure)))], jump: None }
+        }
+        Instruction::Return { from, .. } => Facts { registers: [from, 0, 0], numbered: [None], jump: None },
+        Instruction::ReturnIfWholeSmall { from, left, .. } => {
+            Facts { registers: [from, left, 0], numbered: [None], jump: None }
+        }
+        Instruction::ReturnAddWhole { left, right, .. } => {
+            Facts { registers: [left, right, 0], numbered: [None], jump: None }
+        }
+        Instruction::CallDoor { base, .. } => Facts { registers: [base, 0, 0], numbered: [None], jump: None },
+        Instruction::Fail { failure, .. } => {
+            Facts { registers: [0, 0, 0], numbered: [Some((Table::Failure, u32::from(failure)))], jump: None }
+        }
+        Instruction::JumpUnlessFailed { offset, .. } => {
+            Facts { registers: [0, 0, 0], numbered: [None], jump: Some(offset) }
+        }
+        Instruction::JumpUnlessFailureIs { failure, offset, .. } => {
+            Facts { registers: [0, 0, 0], numbered: [Some((Table::Failure, u32::from(failure)))], jump: Some(offset) }
+        }
+        Instruction::EqualValues { to, left, .. } => Facts { registers: [to, left, 0], numbered: [None], jump: None },
+        Instruction::MakeRange { to, base, .. } => Facts { registers: [to, base, 0], numbered: [None], jump: None },
+        Instruction::PowerWhole { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::PowerFloat { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::Maths { to, base, .. } => Facts { registers: [to, base, 0], numbered: [None], jump: None },
+        Instruction::LoadNumber { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::NumberOperation { to, left, right, .. } => {
+            Facts { registers: [to, left, right], numbered: [None], jump: None }
+        }
+        Instruction::NumberUpdate { target, right, .. } => {
+            Facts { registers: [target, right, 0], numbered: [None], jump: None }
+        }
+        Instruction::ConvertNumber { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::CheckLimits { register, .. } => {
+            Facts { registers: [register, 0, 0], numbered: [None], jump: None }
+        }
+        Instruction::Scale { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::CrashIfNone { number, .. } => Facts { registers: [number, 0, 0], numbered: [None], jump: None },
+        Instruction::JoinPieces { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::AppendPieces { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::TextToBool { to, from, failure, .. } => {
+            Facts { registers: [to, from, 0], numbered: [Some((Table::Failure, u32::from(failure)))], jump: None }
+        }
+        Instruction::TextToWhole { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::WholeToFloat { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::FloatToWhole { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::NewList { to, base, .. } => Facts { registers: [to, base, 0], numbered: [None], jump: None },
+        Instruction::NewReferenceList { to, base, .. } => {
+            Facts { registers: [to, base, 0], numbered: [None], jump: None }
+        }
+        Instruction::RepeatList { to, value, count, .. } => {
+            Facts { registers: [to, value, count], numbered: [None], jump: None }
+        }
+        Instruction::RepeatReferenceList { to, value, count, .. } => {
+            Facts { registers: [to, value, count], numbered: [None], jump: None }
+        }
+        Instruction::ItemAtPosition { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::ItemAtOffset { to, list, index, .. } => {
+            Facts { registers: [to, list, index], numbered: [None], jump: None }
+        }
+        Instruction::SetItemAtPosition { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::SetItemAtOffset { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::AddItem { list, value, .. } => Facts { registers: [list, value, 0], numbered: [None], jump: None },
+        Instruction::InsertItemAtPosition { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::InsertItemAtOffset { list, index, value, .. } => {
+            Facts { registers: [list, index, value], numbered: [None], jump: None }
+        }
+        Instruction::CheckRoom { list, limit, .. } => {
+            Facts { registers: [list, limit, 0], numbered: [None], jump: None }
+        }
+        Instruction::RemoveItemAtPosition { list, index, .. } => {
+            Facts { registers: [list, index, 0], numbered: [None], jump: None }
+        }
+        Instruction::RemoveItemAtOffset { list, index, .. } => {
+            Facts { registers: [list, index, 0], numbered: [None], jump: None }
+        }
+        Instruction::Length { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::NextItem { to, base, offset, .. } => {
+            Facts { registers: [to, base, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::PrepareRangeTo { base, .. } => Facts { registers: [base, 0, 0], numbered: [None], jump: None },
+        Instruction::PrepareRangeBefore { base, .. } => Facts { registers: [base, 0, 0], numbered: [None], jump: None },
+        Instruction::NextInRange { to, base, offset, .. } => {
+            Facts { registers: [to, base, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::NewDict { to, .. } => Facts { registers: [to, 0, 0], numbered: [None], jump: None },
+        Instruction::GetKey { to, dict, key, .. } => Facts { registers: [to, dict, key], numbered: [None], jump: None },
+        Instruction::SetKey { dict, key, value, .. } => {
+            Facts { registers: [dict, key, value], numbered: [None], jump: None }
+        }
+        Instruction::RemoveKey { dict, key, .. } => Facts { registers: [dict, key, 0], numbered: [None], jump: None },
+        Instruction::HasKey { to, dict, key, .. } => Facts { registers: [to, dict, key], numbered: [None], jump: None },
+        Instruction::FindKey { to, dict, key, .. } => {
+            Facts { registers: [to, dict, key], numbered: [None], jump: None }
+        }
+        Instruction::DivideFloorByPowerOfTwo { to, left, .. } => {
+            Facts { registers: [to, left, 0], numbered: [None], jump: None }
+        }
+        Instruction::RemainderFloorByPowerOfTwo { to, left, .. } => {
+            Facts { registers: [to, left, 0], numbered: [None], jump: None }
+        }
+        Instruction::ReleaseText { register, .. } => {
+            Facts { registers: [register, 0, 0], numbered: [None], jump: None }
+        }
+        Instruction::GetKeyIfAny { to, dict, key, .. } => {
+            Facts { registers: [to, dict, key], numbered: [None], jump: None }
+        }
+        Instruction::GetFoundIfAny { to, dict, found, .. } => {
+            Facts { registers: [to, dict, found], numbered: [None], jump: None }
+        }
+        Instruction::GetFound { to, dict, found, .. } => {
+            Facts { registers: [to, dict, found], numbered: [None], jump: None }
+        }
+        Instruction::SetFound { dict, found, key, .. } => {
+            Facts { registers: [dict, found, key], numbered: [None], jump: None }
+        }
+        Instruction::NextEntry { to, base, offset, .. } => {
+            Facts { registers: [to, base, 0], numbered: [None], jump: Some(i32::from(offset)) }
+        }
+        Instruction::NewRecord { to, base, layout, .. } => {
+            Facts { registers: [to, base, 0], numbered: [Some((Table::Layout, u32::from(layout)))], jump: None }
+        }
+        Instruction::GetField { to, record, .. } => Facts { registers: [to, record, 0], numbered: [None], jump: None },
+        Instruction::SetField { record, value, .. } => {
+            Facts { registers: [record, value, 0], numbered: [None], jump: None }
+        }
+        Instruction::SetReferenceField { record, value, .. } => {
+            Facts { registers: [record, value, 0], numbered: [None], jump: None }
+        }
+        Instruction::NewCase { to, base, layout, .. } => {
+            Facts { registers: [to, base, 0], numbered: [Some((Table::Layout, u32::from(layout)))], jump: None }
+        }
+        Instruction::UnpackRecord { base, record, .. } => {
+            Facts { registers: [base, record, 0], numbered: [None], jump: None }
+        }
+        Instruction::PackIntoItemAtPosition { list, index, base, .. } => {
+            Facts { registers: [list, index, base], numbered: [None], jump: None }
+        }
+        Instruction::PackIntoItemAtOffset { list, index, base, .. } => {
+            Facts { registers: [list, index, base], numbered: [None], jump: None }
+        }
+        Instruction::CaseNumber { to, from, .. } => Facts { registers: [to, from, 0], numbered: [None], jump: None },
+        Instruction::GetCaseValue { to, case, .. } => Facts { registers: [to, case, 0], numbered: [None], jump: None },
+        _ => Facts { registers: [0; MOST_REGISTERS], numbered: [None; MOST_NUMBERED], jump: None },
     }
 }

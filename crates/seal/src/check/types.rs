@@ -345,6 +345,19 @@ impl TypeTable {
         BASE.get_or_init(TypeTable::base).clone()
     }
 
+    /// Whether the table holds Seal's own types and unit groups and nothing else, as `TypeTable::new` makes it.
+    fn only_seal_own(&self) -> bool {
+        self.types.len() == FIXED_TYPES
+            && self.bindings.is_empty()
+            && self.records.is_empty()
+            && self.one_ofs.is_empty()
+            && self.big_edges.is_empty()
+            && self.parameters.is_empty()
+            && self.requirement_names.is_empty()
+            && self.meets.is_empty()
+            && *self.unit_groups == *Self::seal_groups()
+    }
+
     /// Seal's own unit groups, shared, which every table starts with (D113).
     fn seal_groups() -> std::sync::Arc<Vec<UnitGroupType>> {
         static BASE: std::sync::OnceLock<TypeTable> = std::sync::OnceLock::new();
@@ -839,6 +852,9 @@ impl TypeTable {
 
 // ---- in a `.sealc` file (D141) ----
 
+/// How many types Seal's own table starts with, each at its fixed number.
+const FIXED_TYPES: usize = 9;
+
 /// The lists [`TypeTable::verify`] works in: each type's parts, how deep each is, which are being walked, and the
 /// walk itself.
 #[derive(Default)]
@@ -869,6 +885,11 @@ impl TypeTable {
     /// Writes the table into a `.sealc` file.
     #[allow(clippy::too_many_lines)] // one case per kind of type, then each list in turn
     pub fn write_file(&self, out: &mut Writer) {
+        // trace: D173. A table of Seal's own types and nothing else, as a simple script's is, is one flag.
+        out.flag(self.only_seal_own());
+        if self.only_seal_own() {
+            return;
+        }
         let unit = |unit: UnitRef, out: &mut Writer| {
             out.u16(unit.group);
             out.u16(unit.member);
@@ -1006,6 +1027,9 @@ impl TypeTable {
     /// When the file ends, or a part of it isn't a type's.
     #[allow(clippy::too_many_lines)] // one case per kind of type, then each list in turn
     pub fn read_file(input: &mut Reader) -> Result<TypeTable, FileError> {
+        if input.flag()? {
+            return Ok(TypeTable::new());
+        }
         let unit = |input: &mut Reader| -> Result<UnitRef, FileError> {
             Ok(UnitRef { group: input.u16()?, member: input.u16()? })
         };
@@ -1145,6 +1169,10 @@ impl TypeTable {
     ///
     /// What doesn't fit.
     pub fn verify(&self) -> Result<(), String> {
+        // Seal's own table, as `TypeTable::new` makes it, needs no checking.
+        if self.only_seal_own() {
+            return Ok(());
+        }
         // The lists checking works in, kept on the thread between files, so checking one makes nothing (D171).
         thread_local! {
             static KEPT: std::cell::Cell<VerifyLists> = std::cell::Cell::new(VerifyLists::default());

@@ -93,53 +93,52 @@ out.append('    })')
 out.append('}')
 out.append('')
 MOST_REGISTERS = max(sum(1 for _, t in fields if t == 'Register') for _, fields in variants)
+NUMBERED = ('constant', 'failure', 'global', 'procedure', 'layout')
+MOST_NUMBERED = max(sum(1 for f, t in fields if f in NUMBERED and t != 'Register') for _, fields in variants)
 out.append('/// The most registers one instruction names.')
 out.append(f'pub const MOST_REGISTERS: usize = {MOST_REGISTERS};')
 out.append('')
-out.append('/// The registers an instruction names, in its fields\' order, then register 0, which every frame has, for the')
-out.append('/// rest: made with nothing to free, so verifying makes nothing (D171).')
-out.append('#[must_use]')
-out.append('pub fn registers(instruction: Instruction) -> [Register; MOST_REGISTERS] {')
-out.append('    match instruction {')
-for name, fields in variants:
-    regs = [f for f, t in fields if t == 'Register']
-    if regs:
-        padded = regs + ['0'] * (MOST_REGISTERS - len(regs))
-        out.append(f'        Instruction::{name} {{ {", ".join(regs)}, .. }} => [{", ".join(padded)}],')
-out.append(f'        _ => [0; MOST_REGISTERS],')
-out.append('    }')
-out.append('}')
-out.append('')
-NUMBERED = ('constant', 'failure', 'global', 'procedure', 'layout')
-MOST_NUMBERED = max(sum(1 for f, t in fields if f in NUMBERED and t != 'Register') for _, fields in variants)
 out.append('/// The most table numbers one instruction holds.')
 out.append(f'pub const MOST_NUMBERED: usize = {MOST_NUMBERED};')
 out.append('')
-out.append('/// The numbers an instruction picks things out of the script\'s tables with, each by its field\'s name.')
-out.append('#[must_use]')
-out.append('pub fn numbered(instruction: Instruction) -> [Option<(&\'static str, u32)>; MOST_NUMBERED] {')
-out.append('    match instruction {')
-for name, fields in variants:
-    picked = [(f, t) for f, t in fields if f in NUMBERED and t != 'Register']
-    if picked:
-        names = ', '.join(f for f, _ in picked)
-        items = [f'Some(("{f}", u32::from({f})))' if t != 'u32' else f'Some(("{f}", {f}))' for f, t in picked]
-        items += ['None'] * (MOST_NUMBERED - len(picked))
-        out.append(f'        Instruction::{name} {{ {names}, .. }} => [{", ".join(items)}],')
-out.append('        _ => [None; MOST_NUMBERED],')
-out.append('    }')
+out.append('/// The script\'s tables an instruction picks things out of by number.')
+out.append('#[derive(Clone, Copy, Debug, PartialEq, Eq)]')
+out.append('pub enum Table {')
+for f in NUMBERED:
+    out.append(f'    {f.capitalize()},')
 out.append('}')
 out.append('')
-out.append('/// Where an instruction can jump, as an offset from the instruction after it.')
+out.append('/// What the verifier checks of an instruction, found in one look at it (D173): the registers it names, in its')
+out.append('/// fields\' order, then register 0, which every frame has, for the rest; the numbers it picks things out of the')
+out.append('/// script\'s tables with; and where it can jump, as an offset from the instruction after it.')
+out.append('#[derive(Clone, Copy, Debug)]')
+out.append('pub struct Facts {')
+out.append('    pub registers: [Register; MOST_REGISTERS],')
+out.append('    pub numbered: [Option<(Table, u32)>; MOST_NUMBERED],')
+out.append('    pub jump: Option<i32>,')
+out.append('}')
+out.append('')
+out.append('/// An instruction\'s [`Facts`].')
 out.append('#[must_use]')
-out.append('pub fn jump(instruction: Instruction) -> Option<i32> {')
+out.append('pub fn facts(instruction: Instruction) -> Facts {')
 out.append('    match instruction {')
 for name, fields in variants:
-    for f, t in fields:
-        if f == 'offset':
-            value = 'offset' if t == 'i32' else 'i32::from(offset)'
-            out.append(f'        Instruction::{name} {{ offset, .. }} => Some({value}),')
-out.append('        _ => None,')
+    regs = [f for f, t in fields if t == 'Register']
+    picked = [(f, t) for f, t in fields if f in NUMBERED and t != 'Register']
+    jump = [(f, t) for f, t in fields if f == 'offset']
+    used = regs + [f for f, _ in picked] + [f for f, _ in jump]
+    if not used:
+        continue
+    pattern = f'Instruction::{name} {{ {", ".join(used)}, .. }}'
+    registers = '[' + ', '.join(regs + ['0'] * (MOST_REGISTERS - len(regs))) + ']'
+    items = [f'Some((Table::{f.capitalize()}, u32::from({f})))' if t != 'u32' else f'Some((Table::{f.capitalize()}, {f}))' for f, t in picked]
+    numbered = '[' + ', '.join(items + ['None'] * (MOST_NUMBERED - len(picked))) + ']'
+    jumped = 'None'
+    if jump:
+        f, t = jump[0]
+        jumped = f'Some({f})' if t == 'i32' else f'Some(i32::from({f}))'
+    out.append(f'        {pattern} => Facts {{ registers: {registers}, numbered: {numbered}, jump: {jumped} }},')
+out.append(f'        _ => Facts {{ registers: [0; MOST_REGISTERS], numbered: [None; MOST_NUMBERED], jump: None }},')
 out.append('    }')
 out.append('}')
 out.append('')

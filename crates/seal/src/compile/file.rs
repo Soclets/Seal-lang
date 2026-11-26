@@ -16,7 +16,7 @@ use super::bytecode::{
     Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction,
     JoinPiece, Kept, Layout, PauseMaps, ProcedureEntry,
 };
-use super::instruction_file;
+use super::instruction_file::{self, Table};
 use crate::big::Big;
 use crate::check::tree::{NumberConversion, NumberHow, NumberType, Rounding};
 use crate::check::types::{Edge, Limits, Size, TypeTable};
@@ -1471,12 +1471,11 @@ fn verify_procedures(compiled: &Compiled, door_count: usize, starts: &mut Vec<(u
         for at in start..end {
             let Some(instruction) = compiled.code.get(at) else { continue };
             let wrong = |what: &str| format!("instruction {at}, {instruction:?}: {what}");
-            for register in instruction_file::registers(*instruction) {
-                if u32::from(register) >= frame {
-                    return Err(wrong("a register outside its procedure's frame"));
-                }
+            let facts = instruction_file::facts(*instruction);
+            if facts.registers.iter().any(|&register| u32::from(register) >= frame) {
+                return Err(wrong("a register outside its procedure's frame"));
             }
-            if let Some(offset) = instruction_file::jump(*instruction) {
+            if let Some(offset) = facts.jump {
                 let offset = if offset == i32::from(FAR) {
                     *compiled
                         .far_jumps
@@ -1492,17 +1491,17 @@ fn verify_procedures(compiled: &Compiled, door_count: usize, starts: &mut Vec<(u
                 }
             }
             check_tables(*instruction, compiled, door_count).map_err(|what| wrong(&what))?;
-            for (field, number) in instruction_file::numbered(*instruction).into_iter().flatten() {
-                let length = match field {
-                    "constant" => compiled.constants.len(),
+            for (table, number) in facts.numbered.into_iter().flatten() {
+                let (length, what) = match table {
+                    Table::Constant => (compiled.constants.len(), "constant"),
                     // A failure's number counts from 1, with 0 for none.
-                    "failure" => compiled.failure_names.count() + 1,
-                    "global" => compiled.global_count as usize,
-                    "procedure" => compiled.entries.len(),
-                    _ => compiled.layouts.len(),
+                    Table::Failure => (compiled.failure_names.count() + 1, "failure"),
+                    Table::Global => (compiled.global_count as usize, "global"),
+                    Table::Procedure => (compiled.entries.len(), "procedure"),
+                    Table::Layout => (compiled.layouts.len(), "layout"),
                 };
                 if number as usize >= length {
-                    return Err(wrong(&format!("a {field} that isn't one of the script's")));
+                    return Err(wrong(&format!("a {what} that isn't one of the script's")));
                 }
             }
         }
