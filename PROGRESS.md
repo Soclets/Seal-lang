@@ -448,9 +448,16 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met.** About 0.60 to 0.70 µs
-  against LuaJIT's 0.28 to 0.32 µs (2.1 µs before this afternoon's work, then D173's block). The same file loaded again
-  reuses what was verified, in about 0.15 µs.
+- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: not met in the latest run.**
+  0.64 µs against LuaJIT's 0.28 µs (2.3×; side by side, best of several, about 0.57 µs). From 2.1 µs this afternoon:
+  D173's block, the lists a dropped script recycles, one look at each instruction when verifying, Seal's own type
+  table as one flag. The same file loaded again reuses what was verified, in about 0.15 µs.
+- **`fib` against LuaJIT's interpreter: not met in the latest runs (101% to 109%), met before D173 (91%).** It runs
+  the same bytecode and the same machine instructions (4% fewer now, with call frames at the loop's own width); the
+  processor takes more cycles for where the run loop lands in the program. A harmless change in an unrelated file moves
+  it between 32.9 and 34.8 ms. A table for a base case's comparison was tried and made it slower, since the branch it
+  replaced is always predicted. The design session has the numbers.
+- **Loading from a text of its own against Luau: met, thinly** (98% to 100% across today's runs).
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
