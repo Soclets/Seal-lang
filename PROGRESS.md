@@ -14,9 +14,9 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D171 are built, except the language server's parts, D169's signing (waiting on Tankun's
-   OK for its crate), and what's listed under "Not built yet" below. D171's goal isn't met yet (see "Benchmarks"). All
-   30 tests in `tests/` pass, from text and from compiled files.
+2. **Decisions built.** D1 to D173 are built, except the language server's parts, D169's signing (waiting on Tankun's
+   OK for its crate), and what's listed under "Not built yet" below. D171's goal isn't met (see "Benchmarks"); D173's
+   numbers went to the design session. All 31 tests in `tests/` pass, from text and from compiled files.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -300,6 +300,20 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   across into C. `tests/api_test.c` runs under AddressSanitizer from `cargo test` (built with the system's `cc`; it
   says so and compares nothing where there's none); `tests/fuzz.rs` makes 20,000 random calls, with handles made up,
   freed or of the wrong kind, arguments of any kind and bits, damaged scripts and doors that answer anything.
+- **D172** `for i from 1 to 3`, `before`, and an optional `step_by`, read with `range`'s words and no brackets; the
+  checked tree's counting loop, which `for_each` over a written range used to make, is what `for` makes. A step of 0
+  or counting away from the end is refused where it's written as numbers, and a failed check when the loop starts
+  otherwise. `for_each` over `range[…]` is refused with the `for` line as the fix (the loop is still checked, so
+  nothing else is refused because of it), and `for … in` with the `for_each` line. On a `for` line a bare `to` ends
+  the first number, so measuring there is bracketed, and `-` after `from`, `to`, `before` or `step_by` is a sign. A
+  counter never read is marked `for unused i` (sent to the design session to check). The benchmarks' programs, the
+  fuzzer and the tests count with `for`.
+- **D173** A script loaded from a `.sealc` keeps its bytes as one block; each instruction's place, the procedures and
+  their names, the failures' names, the pause maps and the source text stay in it, checked at load without being
+  built, and are read the first time they're wanted (`Kept` and `ScriptText`). Loading a compiled patrolling script
+  makes 8 allocations, from 26, in about 0.60 µs. LuaJIT's is 0.28 to 0.32 µs; the design session has the numbers,
+  where the rest goes, the floor (about 0.4 µs) and a recommendation, as D173 asks. Leaving the type table in the block
+  too was tried and saved nothing, so it's read at load.
 - **D170** No type-following verifier: what `.sealc` loading checks (this Seal, the doors, a checksum, every text,
   register, jump and table number in range) stays as it is, and the VM's checks keep the host safe whatever a file
   holds.
@@ -426,8 +440,9 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, loading a compiled file faster than LuaJIT loading its own bytecode: not met.** 0.83 µs against LuaJIT's
-  0.28 µs (2.1 µs before this afternoon's work). The design session has the numbers and a recommendation.
+- **D171, loading a compiled file faster than LuaJIT loading its own bytecode: not met.** About 0.60 µs against
+  LuaJIT's 0.28 to 0.32 µs (2.1 µs before this afternoon's work, then D173's block). The design session has the numbers
+  and a recommendation.
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
