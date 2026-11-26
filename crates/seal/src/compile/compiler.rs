@@ -660,8 +660,9 @@ impl<'p> Compiler<'p> {
     fn pause_map(&mut self) {
         let pc = u32::try_from(self.here()).unwrap_or(u32::MAX);
         let moved = self.function.moved_register;
-        let held = self.function.held.iter().copied().filter(|register| Some(*register) != moved).collect();
-        self.out.pause_maps.insert(pc, held);
+        let held: Vec<Register> =
+            self.function.held.iter().copied().filter(|register| Some(*register) != moved).collect();
+        self.out.pause_maps.insert(pc, &held);
     }
 
     // ---- procedures ----

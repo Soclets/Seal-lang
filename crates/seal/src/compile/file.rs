@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 
 use super::bytecode::{
     Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction,
-    JoinPiece, Layout, ProcedureEntry, Register,
+    JoinPiece, Layout, PauseMaps, ProcedureEntry,
 };
 use super::instruction_file;
 use crate::big::Big;
@@ -179,6 +179,7 @@ impl Writer {
 }
 
 /// Bytes being read, each read checked against what's left.
+#[derive(Clone)]
 pub struct Reader<'b> {
     bytes: &'b [u8],
     at: usize,
@@ -350,8 +351,13 @@ pub fn write(scripts: &[ToWrite], doors: u64) -> Vec<u8> {
     out.bytes
 }
 
-/// The header checked and the index read: the scripts' names, each with where its bytes are.
-fn index(bytes: &[u8], doors: u64) -> Result<Vec<(&str, std::ops::Range<usize>)>, FileError> {
+/// The header checked and the index read: the scripts' names, each with where its bytes are, given to `each`
+/// in order, with nothing made (D171).
+fn index<'b>(
+    bytes: &'b [u8],
+    doors: u64,
+    mut each: impl FnMut(&'b str, std::ops::Range<usize>),
+) -> Result<(), FileError> {
     if bytes.len() < MAGIC.len() || bytes.get(..MAGIC.len()) != Some(MAGIC.as_slice()) {
         return Err(FileError::NotSeal);
     }
@@ -372,24 +378,25 @@ fn index(bytes: &[u8], doors: u64) -> Result<Vec<(&str, std::ops::Range<usize>)>
         return Err(FileError::OtherDoors);
     }
     let count = input.count(8)?;
-    let mut entries = Vec::with_capacity(count);
+    // The scripts start after the index, so the index is read once to find where, then again for each one.
+    let mut through = input.clone();
+    for _ in 0..count {
+        through.text_in_file()?;
+        through.count(0)?;
+    }
+    let mut start = through.at;
     for _ in 0..count {
         let name = input.text_in_file()?;
         let length = input.count(0)?;
-        entries.push((name, length));
-    }
-    let mut start = input.at;
-    let mut index = Vec::with_capacity(entries.len());
-    for (name, length) in entries {
         let end =
             start.checked_add(length).filter(|&end| end <= body).ok_or(FileError::Damaged("a script past its end"))?;
-        index.push((name, start..end));
+        each(name, start..end);
         start = end;
     }
     if start != body {
         return Err(FileError::Damaged("bytes between its scripts and its checksum"));
     }
-    Ok(index)
+    Ok(())
 }
 
 /// The names of the scripts a file holds, in order.
@@ -398,7 +405,9 @@ fn index(bytes: &[u8], doors: u64) -> Result<Vec<(&str, std::ops::Range<usize>)>
 ///
 /// When the file isn't one this Seal built for these doors, or is damaged.
 pub fn names(bytes: &[u8], doors: u64) -> Result<Vec<String>, FileError> {
-    Ok(index(bytes, doors)?.into_iter().map(|(name, _)| name.to_owned()).collect())
+    let mut names = Vec::new();
+    index(bytes, doors, |name, _| names.push(name.to_owned()))?;
+    Ok(names)
 }
 
 /// trace: D141, D153. Reads the script named `name` from a file, and verifies it.
@@ -407,12 +416,13 @@ pub fn names(bytes: &[u8], doors: u64) -> Result<Vec<String>, FileError> {
 ///
 /// When the file isn't one this Seal built for these doors, is damaged, has no such script, or fails verifying.
 pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> Result<FileScript<'b>, FileError> {
-    let index = index(bytes, doors)?;
-    let range = index
-        .into_iter()
-        .find(|(written, _)| *written == name)
-        .map(|(_, range)| range)
-        .ok_or_else(|| FileError::NotInFile(name.to_owned()))?;
+    let mut found = None;
+    index(bytes, doors, |written, range| {
+        if found.is_none() && written == name {
+            found = Some(range);
+        }
+    })?;
+    let range = found.ok_or_else(|| FileError::NotInFile(name.to_owned()))?;
     let mut input = Reader::new(bytes.get(range).ok_or(FileError::Damaged("a script past its end"))?);
     let written_name = input.text_in_file()?;
     let source = input.text_in_file()?;
@@ -525,10 +535,8 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
         out.u32(at);
         out.place(place);
     }
-    let mut pauses: Vec<(&u32, &Vec<Register>)> = compiled.pause_maps.iter().collect();
-    pauses.sort_unstable_by_key(|(at, _)| **at);
-    out.count(pauses.len());
-    for (&at, registers) in pauses {
+    out.count(compiled.pause_maps.iter().count());
+    for (at, registers) in compiled.pause_maps.iter() {
         out.u32(at);
         out.count(registers.len());
         for &register in registers {
@@ -662,15 +670,16 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
         fused_places.push((input.u32()?, input.place()?));
     }
     let count = input.count(8)?;
-    let mut pause_maps = HashMap::with_capacity(count);
+    let mut pause_maps = PauseMaps::with_capacity(count, count * 2);
+    let mut list = Vec::new();
     for _ in 0..count {
         let at = input.u32()?;
         let registers = input.count(2)?;
-        let mut list = Vec::with_capacity(registers);
+        list.clear();
         for _ in 0..registers {
             list.push(input.u16()?);
         }
-        pause_maps.insert(at, list);
+        pause_maps.insert(at, &list);
     }
     let count = input.count(4)?;
     let mut failure_names = Vec::with_capacity(count);

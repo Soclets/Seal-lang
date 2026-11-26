@@ -1043,6 +1043,45 @@ pub struct ProcedureEntry {
     pub frame_size: u32,
 }
 
+/// For each call that can pause, by the place just after it, the registers holding heap values the frame owns
+/// there (D54): kept in two lists, whatever the number of calls, so loading a script makes little (D171).
+#[derive(Clone, Debug, Default)]
+pub struct PauseMaps {
+    /// Each call's place, where its registers start in `registers`, and how many there are, by place.
+    calls: Vec<(u32, u32, u32)>,
+    registers: Vec<Register>,
+}
+
+impl PauseMaps {
+    /// Adds a call's registers. Calls are added in the order of their places, as a compiler meets them.
+    pub fn insert(&mut self, place: u32, held: &[Register]) {
+        let start = u32::try_from(self.registers.len()).unwrap_or(u32::MAX);
+        let count = u32::try_from(held.len()).unwrap_or(u32::MAX);
+        self.registers.extend_from_slice(held);
+        let at = self.calls.partition_point(|&(known, ..)| known < place);
+        self.calls.insert(at, (place, start, count));
+    }
+
+    /// The registers held at a call's place, when it can pause.
+    #[must_use]
+    pub fn get(&self, place: u32) -> Option<&[Register]> {
+        let at = self.calls.binary_search_by_key(&place, |&(known, ..)| known).ok()?;
+        let &(_, start, count) = self.calls.get(at)?;
+        self.registers.get(start as usize..start as usize + count as usize)
+    }
+
+    /// Every call's place and registers, in order of their places.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &[Register])> {
+        self.calls.iter().map(|&(place, ..)| (place, self.get(place).unwrap_or(&[])))
+    }
+
+    /// Room made for what's read from a file.
+    #[must_use]
+    pub fn with_capacity(calls: usize, registers: usize) -> PauseMaps {
+        PauseMaps { calls: Vec::with_capacity(calls), registers: Vec::with_capacity(registers) }
+    }
+}
+
 /// A whole script, compiled: what a loaded script runs.
 #[derive(Clone, Debug, Default)]
 pub struct Compiled {
@@ -1082,7 +1121,7 @@ pub struct Compiled {
     pub fused_places: Vec<(u32, Place)>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
     /// owns there, to be freed if the task is cancelled (D54).
-    pub pause_maps: HashMap<u32, Vec<Register>>,
+    pub pause_maps: PauseMaps,
     pub failure_names: Vec<std::borrow::Cow<'static, str>>,
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`, 0 for one the script never meets.
     pub built_in_failures: [u32; 3],
