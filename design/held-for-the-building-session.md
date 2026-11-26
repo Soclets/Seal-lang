@@ -12,7 +12,7 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 - D163 to D171 are in DECISIONS.md too: methods (D163 to D165), requirements (D166 to D168), signing with ML-DSA
   (D169), no type-following verifier (D170, its question answered), and a `.sealc` loading goal against `luajit -b`
   (D171).
-- Its 111 newer draft wordings (78cb5bc): reviewed on 2026-11-26 in `design/wording-review-2026-11-26b.md`; not sent
+- Its 111 newer draft wordings (78cb5bc): reviewed on 2026-11-26 in `design/wording-review-2026-11-26b.md`; sent
   yet.
 - D160 (no macros or comptime), D161 (generic procedures, `<?Item>`), D162 ("variable", mutable and immutable, in
   messages where they mean one) are in DECISIONS.md; it finds them by Building rule 10.
