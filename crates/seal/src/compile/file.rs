@@ -10,11 +10,11 @@
 //! script with a mistake is.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use super::bytecode::{
     Compare, Compiled, CompiledParameter, CompiledProcedure, Crossing, CrossingCase, DoorSite, FAR, Instruction,
-    JoinPiece, Layout, PauseMaps, ProcedureEntry,
+    JoinPiece, Kept, Layout, PauseMaps, ProcedureEntry,
 };
 use super::instruction_file;
 use crate::big::Big;
@@ -301,6 +301,11 @@ impl<'b> Reader<'b> {
         Ok(Place { line: self.u32()?, column: self.u32()?, width: self.u32()? })
     }
 
+    /// What's left to read.
+    fn rest(&self) -> &'b [u8] {
+        self.bytes.get(self.at..).unwrap_or(&[])
+    }
+
     fn done(&self) -> bool {
         self.at == self.bytes.len()
     }
@@ -429,7 +434,10 @@ pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> R
     if written_name != name {
         return Err(FileError::Damaged("a script that isn't what its index says"));
     }
-    let compiled = read_compiled(&mut input)?;
+    // The compiled script's bytes, kept as one block, which what's needed only now and then is read from (D173).
+    let blob: Arc<[u8]> = Arc::from(input.rest());
+    let mut input = Reader::new(&blob);
+    let compiled = read_compiled(&mut input, &blob)?;
     if !input.done() {
         return Err(FileError::Damaged("bytes after a script"));
     }
@@ -445,10 +453,6 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
     for instruction in &compiled.code {
         instruction_file::write(*instruction, out);
     }
-    out.count(compiled.places.len());
-    for &place in &compiled.places {
-        out.place(place);
-    }
     out.count(compiled.constants.len());
     for &constant in &compiled.constants {
         out.u64(constant);
@@ -456,10 +460,6 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
     out.count(compiled.texts.len());
     for text in &compiled.texts {
         out.text(text);
-    }
-    out.count(compiled.procedures.len());
-    for procedure in &compiled.procedures {
-        write_procedure(procedure, out);
     }
     out.count(compiled.entries.len());
     for entry in &compiled.entries {
@@ -530,11 +530,6 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
         out.u32(at);
         out.u32(offset.cast_unsigned());
     }
-    out.count(compiled.fused_places.len());
-    for &(at, place) in &compiled.fused_places {
-        out.u32(at);
-        out.place(place);
-    }
     out.count(compiled.pause_maps.iter().count());
     for (at, registers) in compiled.pause_maps.iter() {
         out.u32(at);
@@ -542,6 +537,25 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
         for &register in registers {
             out.u16(register);
         }
+    }
+    for &failure in &compiled.built_in_failures {
+        out.u32(failure);
+    }
+    compiled.types.write_file(out);
+    // trace: D173. What's needed only now and then comes last, checked when the file's loaded and read from its
+    // bytes the first time it's wanted: each instruction's place, the fused ones', the procedures and the failures.
+    out.count(compiled.places.len());
+    for &place in &compiled.places {
+        out.place(place);
+    }
+    out.count(compiled.fused_places.len());
+    for &(at, place) in &compiled.fused_places {
+        out.u32(at);
+        out.place(place);
+    }
+    out.count(compiled.procedures.len());
+    for procedure in &compiled.procedures {
+        write_procedure(procedure, out);
     }
     // A failure of Seal's own is its number among them, from 1, so reading it makes nothing (D171); 0 is a text.
     out.count(compiled.failure_names.len());
@@ -553,23 +567,14 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
             out.text(name);
         }
     }
-    for &failure in &compiled.built_in_failures {
-        out.u32(failure);
-    }
-    compiled.types.write_file(out);
 }
 
 #[allow(clippy::too_many_lines)] // each field in turn, in the order they were written
-fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
+fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileError> {
     let count = input.count(1)?;
     let mut code = Vec::with_capacity(count);
     for _ in 0..count {
         code.push(instruction_file::read(input)?);
-    }
-    let count = input.count(12)?;
-    let mut places = Vec::with_capacity(count);
-    for _ in 0..count {
-        places.push(input.place()?);
     }
     let count = input.count(8)?;
     let mut constants = Vec::with_capacity(count);
@@ -580,11 +585,6 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
     let mut texts = Vec::with_capacity(count);
     for _ in 0..count {
         texts.push(input.text()?);
-    }
-    let count = input.count(16)?;
-    let mut procedures = Vec::with_capacity(count);
-    for _ in 0..count {
-        procedures.push(read_procedure(input)?);
     }
     let count = input.count(8)?;
     let mut entries = Vec::with_capacity(count);
@@ -664,11 +664,6 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
     for _ in 0..count {
         far_jumps.insert(input.u32()?, input.u32()?.cast_signed());
     }
-    let count = input.count(16)?;
-    let mut fused_places = Vec::with_capacity(count);
-    for _ in 0..count {
-        fused_places.push((input.u32()?, input.place()?));
-    }
     let count = input.count(8)?;
     let mut pause_maps = PauseMaps::with_capacity(count, count * 2);
     let mut list = Vec::new();
@@ -681,27 +676,15 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
         }
         pause_maps.insert(at, &list);
     }
-    let count = input.count(4)?;
-    let mut failure_names = Vec::with_capacity(count);
-    for _ in 0..count {
-        let name = match input.u8()? {
-            0 => std::borrow::Cow::Owned(input.text()?),
-            own => std::borrow::Cow::Borrowed(
-                *crate::check::BUILT_IN_FAILURES
-                    .get(usize::from(own) - 1)
-                    .ok_or(FileError::Damaged("a failure of Seal's own that isn't one"))?,
-            ),
-        };
-        failure_names.push(name);
-    }
     let built_in_failures = [input.u32()?, input.u32()?, input.u32()?];
     let types = TypeTable::read_file(input)?;
+    let kept = check_kept(input, (&entries, code.len(), types.len()))?;
     Ok(Compiled {
         code,
-        places,
+        places: kept_list(blob, kept.places, read_places),
         constants,
         texts,
-        procedures,
+        procedures: kept_list(blob, kept.procedures, read_procedures),
         entries,
         top_level_entry,
         top_level_frame_size,
@@ -717,12 +700,176 @@ fn read_compiled(input: &mut Reader) -> Result<Compiled, FileError> {
         numbers,
         number_conversions,
         far_jumps,
-        fused_places,
+        fused_places: kept_list(blob, kept.fused_places, read_fused_places),
         pause_maps,
-        failure_names,
+        failure_names: kept_list(blob, kept.failure_names, read_failure_names),
         built_in_failures,
         types,
     })
+}
+
+// ---- what's needed only now and then: checked as the file loads, read when first wanted (D173) ----
+
+/// Where each list left in the file starts, and how many items it has.
+struct KeptAt {
+    places: (usize, usize),
+    fused_places: (usize, usize),
+    procedures: (usize, usize),
+    failure_names: (usize, usize),
+}
+
+/// Checks the lists left in the file, as reading them would, making nothing: every count against the file, every
+/// text as UTF-8, a place for each instruction, a procedure for each entry, each where its entry says, and every
+/// type one the table has.
+fn check_kept(
+    input: &mut Reader,
+    (entries, code_length, type_count): (&[ProcedureEntry], usize, usize),
+) -> Result<KeptAt, FileError> {
+    let unverified = |what: String| FileError::Unverified(what);
+    let places = (input.at, input.count(12)?);
+    if places.1 != code_length {
+        return Err(unverified("its instructions and their places don't pair up".to_owned()));
+    }
+    for _ in 0..places.1 {
+        input.place()?;
+    }
+    let fused_places = (input.at, input.count(16)?);
+    for _ in 0..fused_places.1 {
+        input.u32()?;
+        input.place()?;
+    }
+    let procedures = (input.at, input.count(16)?);
+    if procedures.1 != entries.len() {
+        return Err(unverified("its procedures and their entries don't pair up".to_owned()));
+    }
+    for entry in entries {
+        let name = input.text_in_file()?;
+        if (input.u32()?, input.u32()?) != (entry.entry, entry.frame_size) {
+            return Err(unverified(format!("`{name}`'s entry isn't what the entries say")));
+        }
+        let count = input.count(8)?;
+        if count >= entry.frame_size as usize {
+            return Err(unverified(format!("`{name}` takes more values than its frame holds")));
+        }
+        let in_table = |type_id: u32| (type_id as usize) < type_count;
+        for _ in 0..count {
+            input.text_in_file()?;
+            if input.flag()? {
+                input.text_in_file()?;
+            }
+            check_crossing(input, 0)?;
+            if !in_table(input.u32()?) {
+                return Err(unverified(format!("`{name}` has a type that isn't in the script's table")));
+            }
+            if input.flag()? {
+                read_value(input, 0)?;
+            }
+        }
+        check_crossing(input, 0)?;
+        if !in_table(input.u32()?) {
+            return Err(unverified(format!("`{name}` has a type that isn't in the script's table")));
+        }
+        for _ in 0..input.count(4)? {
+            input.text_in_file()?;
+        }
+        for _ in 0..4 {
+            input.flag()?;
+        }
+    }
+    let failure_names = (input.at, input.count(1)?);
+    for _ in 0..failure_names.1 {
+        read_failure_name(input)?;
+    }
+    Ok(KeptAt { places, fused_places, procedures, failure_names })
+}
+
+/// A crossing checked as [`read_crossing`] reads one, making nothing.
+fn check_crossing(input: &mut Reader, depth: u32) -> Result<(), FileError> {
+    if depth > DEEPEST {
+        return Err(FileError::Damaged("a type nested too deep"));
+    }
+    let fields = |input: &mut Reader| -> Result<(), FileError> {
+        for _ in 0..input.count(5)? {
+            input.text_in_file()?;
+            check_crossing(input, depth + 1)?;
+        }
+        Ok(())
+    };
+    match input.u8()? {
+        0..=7 => {}
+        8 => check_crossing(input, depth + 1)?,
+        9 => {
+            check_crossing(input, depth + 1)?;
+            check_crossing(input, depth + 1)?;
+        }
+        10 => {
+            check_crossing(input, depth + 1)?;
+            input.u16()?;
+        }
+        11 => {
+            input.text_in_file()?;
+            input.u16()?;
+            fields(input)?;
+        }
+        12 => {
+            input.text_in_file()?;
+            for _ in 0..input.count(10)? {
+                input.text_in_file()?;
+                input.u16()?;
+                fields(input)?;
+            }
+        }
+        13 => {
+            input.text_in_file()?;
+        }
+        _ => return Err(FileError::Damaged("a type that isn't one")),
+    }
+    Ok(())
+}
+
+/// A failure's name: one of Seal's own by its number, or a text.
+fn read_failure_name(input: &mut Reader) -> Result<std::borrow::Cow<'static, str>, FileError> {
+    Ok(match input.u8()? {
+        0 => std::borrow::Cow::Owned(input.text()?),
+        own => std::borrow::Cow::Borrowed(
+            *crate::check::BUILT_IN_FAILURES
+                .get(usize::from(own) - 1)
+                .ok_or(FileError::Damaged("a failure of Seal's own that isn't one"))?,
+        ),
+    })
+}
+
+/// A list left in the file's block, at a place [`check_kept`] found.
+fn kept_list<T>(blob: &Arc<[u8]>, (at, count): (usize, usize), read: crate::compile::bytecode::ReadKept<T>) -> Kept<T> {
+    Kept::in_file(Arc::clone(blob), at, count, read)
+}
+
+/// Reads a counted list left in the file, already checked.
+fn read_list<T>(
+    bytes: &[u8],
+    smallest: usize,
+    mut item: impl FnMut(&mut Reader) -> Result<T, FileError>,
+) -> Option<Vec<T>> {
+    let mut input = Reader::new(bytes);
+    let count = input.count(smallest).ok()?;
+    (0..count).map(|_| item(&mut input).ok()).collect()
+}
+
+#[allow(clippy::redundant_closure_for_method_calls)] // the method alone ties the reader to one lifetime
+fn read_places(bytes: &[u8]) -> Option<Vec<Place>> {
+    read_list(bytes, 12, |input| input.place())
+}
+
+fn read_fused_places(bytes: &[u8]) -> Option<Vec<(u32, Place)>> {
+    read_list(bytes, 16, |input| Ok((input.u32()?, input.place()?)))
+}
+
+fn read_procedures(bytes: &[u8]) -> Option<Vec<CompiledProcedure>> {
+    read_list(bytes, 16, read_procedure)
+}
+
+fn read_failure_names(bytes: &[u8]) -> Option<Vec<std::borrow::Cow<'static, str>>> {
+    read_list(bytes, 1, read_failure_name)
 }
 
 fn write_procedure(procedure: &CompiledProcedure, out: &mut Writer) {
@@ -1217,22 +1364,14 @@ fn read_value(input: &mut Reader, depth: u32) -> Result<Value, FileError> {
 #[allow(clippy::too_many_lines)] // one case per kind of table an instruction reads
 pub fn verify(compiled: &Compiled, door_count: usize) -> Result<(), String> {
     let code_length = compiled.code.len();
-    if compiled.places.len() != code_length {
+    if compiled.places.count() != code_length {
         return Err("its instructions and their places don't pair up".to_owned());
     }
     // Every procedure, and the top level, is a stretch of instructions from its entry to the next one's.
     let mut starts: Vec<(u32, u32)> = compiled.entries.iter().map(|entry| (entry.entry, entry.frame_size)).collect();
     starts.push((compiled.top_level_entry, compiled.top_level_frame_size));
-    if compiled.entries.len() != compiled.procedures.len() {
+    if compiled.entries.len() != compiled.procedures.count() {
         return Err("its procedures and their entries don't pair up".to_owned());
-    }
-    for (procedure, entry) in compiled.procedures.iter().zip(&compiled.entries) {
-        if procedure.entry != entry.entry || procedure.frame_size != entry.frame_size {
-            return Err(format!("`{}`'s entry isn't what the entries say", procedure.name));
-        }
-        if procedure.parameters.len() >= entry.frame_size as usize {
-            return Err(format!("`{}` takes more values than its frame holds", procedure.name));
-        }
     }
     starts.sort_unstable();
     starts.dedup_by_key(|(start, _)| *start);
@@ -1290,7 +1429,7 @@ pub fn verify(compiled: &Compiled, door_count: usize) -> Result<(), String> {
                 let length = match field {
                     "constant" => compiled.constants.len(),
                     // A failure's number counts from 1, with 0 for none.
-                    "failure" => compiled.failure_names.len() + 1,
+                    "failure" => compiled.failure_names.count() + 1,
                     "global" => compiled.global_count as usize,
                     "procedure" => compiled.entries.len(),
                     _ => compiled.layouts.len(),
@@ -1327,16 +1466,10 @@ pub fn verify(compiled: &Compiled, door_count: usize) -> Result<(), String> {
     if compiled.compared_types.iter().any(|&type_id| type_id as usize >= type_count) {
         return Err("a type that isn't in the script's table".to_owned());
     }
-    for procedure in &compiled.procedures {
-        let types = procedure.parameters.iter().map(|parameter| parameter.type_id).chain([procedure.result_type]);
-        if types.into_iter().any(|type_id| type_id.0 as usize >= type_count) {
-            return Err(format!("`{}` has a type that isn't in the script's table", procedure.name));
-        }
-    }
     if compiled.global_references.len() != compiled.global_count as usize {
         return Err("its top-level names and what they hold don't pair up".to_owned());
     }
-    if compiled.built_in_failures.iter().any(|&failure| failure as usize > compiled.failure_names.len()) {
+    if compiled.built_in_failures.iter().any(|&failure| failure as usize > compiled.failure_names.count()) {
         return Err("a failure that isn't one of the script's".to_owned());
     }
     compiled.types.verify()

@@ -1082,15 +1082,116 @@ impl PauseMaps {
     }
 }
 
+/// How a list kept in a compiled script's file is read from it, from where it starts.
+pub type ReadKept<T> = fn(&[u8]) -> Option<Vec<T>>;
+
+/// A list of a compiled script that's needed only now and then, for messages or a host's call: made as it's
+/// compiled, or, for a script loaded from a `.sealc` file, left in the file's bytes, checked, and read from them
+/// the first time it's wanted, so loading makes nothing for it (D173). It reads as a slice either way.
+pub struct Kept<T> {
+    /// The list, when it was made rather than left in a file.
+    made: Vec<T>,
+    /// The list read from the file, the first time it's wanted.
+    read: std::sync::OnceLock<Vec<T>>,
+    /// The file's bytes from where the list starts, and how to read it.
+    in_file: Option<(std::sync::Arc<[u8]>, usize, ReadKept<T>)>,
+    /// How many items a list left in a file has, known without reading it.
+    known: usize,
+}
+
+impl<T> Kept<T> {
+    /// A list left in a file's bytes, at `at`, already checked, read by `read` when it's first wanted.
+    #[must_use]
+    pub fn in_file(bytes: std::sync::Arc<[u8]>, at: usize, known: usize, read: ReadKept<T>) -> Kept<T> {
+        Kept { made: Vec::new(), read: std::sync::OnceLock::new(), in_file: Some((bytes, at, read)), known }
+    }
+
+    /// How many items there are, without reading a list left in a file.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        if self.in_file.is_some() && self.read.get().is_none() { self.known } else { self.list().len() }
+    }
+
+    fn list(&self) -> &[T] {
+        match &self.in_file {
+            Some((bytes, at, read)) => self.read.get_or_init(|| bytes.get(*at..).and_then(*read).unwrap_or_default()),
+            None => &self.made,
+        }
+    }
+
+    /// The list, to change, read from the file first when it's there.
+    pub fn as_mut_vec(&mut self) -> &mut Vec<T> {
+        if let Some((bytes, at, read)) = self.in_file.take() {
+            self.made = match self.read.take() {
+                Some(list) => list,
+                None => bytes.get(at..).and_then(read).unwrap_or_default(),
+            };
+        }
+        &mut self.made
+    }
+
+    pub fn push(&mut self, item: T) {
+        self.as_mut_vec().push(item);
+    }
+}
+
+impl<T> From<Vec<T>> for Kept<T> {
+    fn from(list: Vec<T>) -> Kept<T> {
+        Kept { made: list, read: std::sync::OnceLock::new(), in_file: None, known: 0 }
+    }
+}
+
+impl<T> Default for Kept<T> {
+    fn default() -> Kept<T> {
+        Kept::from(Vec::new())
+    }
+}
+
+impl<T: Clone> Clone for Kept<T> {
+    fn clone(&self) -> Kept<T> {
+        match (self.read.get(), &self.in_file) {
+            (None, Some((bytes, at, read))) => Kept::in_file(std::sync::Arc::clone(bytes), *at, self.known, *read),
+            _ => Kept::from(self.list().to_vec()),
+        }
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Kept<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.list().fmt(formatter)
+    }
+}
+
+impl<T> std::ops::Deref for Kept<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        self.list()
+    }
+}
+
+impl<'k, T> IntoIterator for &'k Kept<T> {
+    type Item = &'k T;
+    type IntoIter = std::slice::Iter<'k, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.list().iter()
+    }
+}
+
+impl<T: PartialEq> PartialEq<[T]> for Kept<T> {
+    fn eq(&self, other: &[T]) -> bool {
+        self.list() == other
+    }
+}
+
 /// A whole script, compiled: what a loaded script runs.
 #[derive(Clone, Debug, Default)]
 pub struct Compiled {
     pub code: Vec<Instruction>,
     /// Each instruction's place in the script, for messages (D17).
-    pub places: Vec<Place>,
+    pub places: Kept<Place>,
     pub constants: Vec<u64>,
     pub texts: Vec<String>,
-    pub procedures: Vec<CompiledProcedure>,
+    pub procedures: Kept<CompiledProcedure>,
     /// One entry for each of `procedures`, in the same order.
     pub entries: Vec<ProcedureEntry>,
     pub top_level_entry: u32,
@@ -1118,11 +1219,11 @@ pub struct Compiled {
     pub far_jumps: HashMap<u32, i32>,
     /// For each instruction made of two, by its place in `code`, in order: the place of its first part, the maths,
     /// which a failed check there points at. `places` has its second part's, the call's or the `return`'s.
-    pub fused_places: Vec<(u32, Place)>,
+    pub fused_places: Kept<(u32, Place)>,
     /// For each call that can pause, by the place just after it: the registers holding heap values the frame
     /// owns there, to be freed if the task is cancelled (D54).
     pub pause_maps: PauseMaps,
-    pub failure_names: Vec<std::borrow::Cow<'static, str>>,
+    pub failure_names: Kept<std::borrow::Cow<'static, str>>,
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`, 0 for one the script never meets.
     pub built_in_failures: [u32; 3],
     /// Each procedure's name, by the place its instructions start, for messages.

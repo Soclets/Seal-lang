@@ -137,9 +137,9 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
 /// As [`compile`].
 pub fn compile_taking(mut program: Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiled = compile_parts(&program, doors, plain)?;
-    compiled.failure_names = std::mem::take(&mut program.failure_names);
+    compiled.failure_names = std::mem::take(&mut program.failure_names).into();
     compiled.types = std::mem::take(&mut program.types);
-    for (procedure, checked) in compiled.procedures.iter_mut().zip(&mut program.procedures) {
+    for (procedure, checked) in compiled.procedures.as_mut_vec().iter_mut().zip(&mut program.procedures) {
         procedure.name = std::mem::take(&mut checked.name);
         for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {
             if let Some(variable) = program.variables.get_mut(variable.0 as usize) {
@@ -158,9 +158,9 @@ pub fn compile_taking(mut program: Program, doors: &[DoorSignature], plain: bool
 /// As [`compile`].
 pub fn compile_as(program: &Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiled = compile_parts(program, doors, plain)?;
-    compiled.failure_names.clone_from(&program.failure_names);
+    compiled.failure_names = program.failure_names.clone().into();
     compiled.types = program.types.clone();
-    for (procedure, checked) in compiled.procedures.iter_mut().zip(&program.procedures) {
+    for (procedure, checked) in compiled.procedures.as_mut_vec().iter_mut().zip(&program.procedures) {
         procedure.name.clone_from(&checked.name);
         for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {
             if let Some(variable) = program.variable(variable) {
@@ -184,7 +184,7 @@ fn compile_parts(program: &Program, doors: &[DoorSignature], plain: bool) -> Res
             }),
             // Room for a small script's instructions from the start, rather than growing to it.
             code: Vec::with_capacity(32),
-            places: Vec::with_capacity(32),
+            places: Vec::with_capacity(32).into(),
             ..Compiled::default()
         },
         constant_ids: HashMap::new(),
