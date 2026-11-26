@@ -1,7 +1,7 @@
-# Lists every refusal, failed check and stop wording in the seal crate, for PROGRESS.md's "Draft wordings".
+# Lists every refusal, failed check and stop wording in the seal crate, and every host mistake the C API reports, for PROGRESS.md's "Draft wordings".
 # Run from the repository: python3 -I crates/seal-check-all/wordings.py OUT.md
 import re, glob, sys
-FILES = sorted(glob.glob('crates/seal/src/**/*.rs', recursive=True))
+FILES = sorted(glob.glob('crates/seal/src/**/*.rs', recursive=True)) + sorted(glob.glob('crates/seal-c/src/*.rs'))
 CALLS = {
     'refuse_why(': ('refused', 1, 2),
     'refuse(': ('refused', 1, None),
@@ -13,6 +13,7 @@ CALLS = {
     'not_built(': ('not built yet', 1, None),
     'Message::not_built_yet(': ('not built yet', 1, None),
     'door_refusal(': ('refused (at a door)', 1, 2),
+    'mistake(': ('host mistake (C API)', 0, None),
 }
 def args_at(src, i):
     # i points just after '('; returns list of argument texts and end index

@@ -1,7 +1,10 @@
 # `seal-c`: the C API (D136), as proposed
 
-The building session's proposal for the shape and names of Seal's C API, which D136 leaves to it. Nothing here is
-built yet: D136 builds it after the current work. Written 2026-11-25 by seal opus claude.
+The building session's proposal for the shape and names of Seal's C API, which D136 leaves to it. Written 2026-11-25
+by seal opus claude, and built on 2026-11-26 as `include/seal.h` and `src/lib.rs`. Where the two differ, the header is
+what's built: door arguments are an array of plain tagged values, `seal_arg`, with numbers inline and big values as
+lent handles (D152); every reader of a value reports the wrong kind as a host mistake; and messages are kept per
+thread, so one thread never reads another's.
 
 ## What it gives a host
 

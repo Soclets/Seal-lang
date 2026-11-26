@@ -14,9 +14,8 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D168 are built, except the language server's parts, D136's C API and D141's bytecode
-   files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
-   `tests/` pass.
+2. **Decisions built.** D1 to D168 are built, except the language server's parts and what's listed under "Not built
+   yet" below. All 30 tests in `tests/` pass, from text and from compiled files.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -73,12 +72,14 @@ From the prompt in `design/seal-next-prompt.md`, in this order, each step commit
 - [x] **C15. Catching up.** D157's `return`, `include` and `instead`; D158's `eq` and `not_eq` as keywords, with `==`
   and `!=` gone; D156's licence on every crate (set once in the workspace); D131's missing case after `??` worded
   as the handler's; D135 checked on `bench/programs/` (nothing to change).
-- [ ] **C16. Big numbers against Python (D155, D159).** Fixed benchmarks for `HugeWhole`, `Decimal` and
-  `HugeDecimal`, Python's `int` and `decimal` as the bar, `gmpy2` for reference; then faster than Python on each.
-- [ ] **C17. `.sealc` files (D141, D153, D154).** `seal build`, bundles, loading by name, the verifier, the cache;
-  fuzzing damaged files; a loading row with `luajit -b` beside it.
-- [ ] **C18. The C API (D136, D151, D152).** `seal-c`, a C test program under AddressSanitizer, fuzzing through it, a
-  door-call row with Luau's C API beside it.
+- [x] **C16. Big numbers against Python (D155, D159).** Fixed benchmarks for `HugeWhole`, `Decimal` and
+  `HugeDecimal`, Python's `int` and `decimal` as the bar, `gmpy2` for reference; faster than Python on each, at 48% to
+  88% of its time.
+- [x] **C17. `.sealc` files (D141, D153, D154).** `seal build`, bundles, loading by name, the verifier, the cache;
+  fuzzing damaged and tampered files; a loading row with LuaJIT's `string.dump` bytecode beside it.
+- [x] **C18. The C API (D136, D151, D152).** `seal-c`, a C test program under AddressSanitizer, fuzzing through it, a
+  door-call row with LuaJIT's C API beside it. Luau's C library isn't installed; Tankun was asked whether it may be
+  built in `target/`.
 
 ## Decisions built since D58
 
@@ -286,7 +287,18 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   the fuzzer loads every script compiled (exactly the same as from text), damaged (always refused) and tampered
   with a remade checksum (never harming the host). Not done: following each register's kind, so a tampered file
   that swaps registers can still pass and stop with an internal message, which then says the file may have been
-  changed; and the loading row in `bench/RESULTS.md`.
+  changed. `bench/RESULTS.md` has a loading row, with LuaJIT's bytecode beside it.
+- **D136, D151, D152: the C API** (`crates/seal-c`, `include/seal.h`), the one package where `unsafe` is allowed.
+  Doors, scripts and values are handles: numbers into tables kept per thread, each with a generation, so a freed,
+  made-up or wrong-kind handle is refused as a host mistake, never trusted. A door is a C function with the host's
+  pointer; its arguments are an array of plain tagged values (`seal_arg`), `Whole`, `Float`, `Bool` and `Nothing`
+  inline and anything else as a value handle lent for the call, and its kinds are worked out when it's opened. A
+  door call through C takes about 11 ns, against 8 ns for a Rust door. Every reader of a value says when it's the
+  wrong kind (`SEAL_HOST_MISTAKE` with a message), and messages are kept per thread, read whole or in parts (D151)
+  until the thread's next call. Every function is guarded, so a panic inside Seal comes back as a status, never
+  across into C. `tests/api_test.c` runs under AddressSanitizer from `cargo test` (built with the system's `cc`; it
+  says so and compares nothing where there's none); `tests/fuzz.rs` makes 20,000 random calls, with handles made up,
+  freed or of the wrong kind, arguments of any kind and bits, damaged scripts and doors that answer anything.
 - **D157, D158** `return`, `include` and `instead` again, and `eq` and `not_eq` as keywords in place of `==` and
   `!=`, which no longer read as one symbol. `ret`, `incl` and `use` are plain names again. Messages, the fuzzer and
   `bench/programs/` use the new words; the Unio translator already wrote Unio's.
@@ -492,11 +504,13 @@ what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole li
 (Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
 marked.
 
-374 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26, after the design session's
-review (`design/wording-review-2026-11-26.md`) was built. The 37 marked **(changed 2026-11-26)** differ from the list
-it reviewed (384d500): its corrections, D157's and D158's words, D115's limits past a `Whole`'s range, and a handler
-used after `??` that misses a case, named as a handler. `{…}` stands for what the message fills in; a `why:` held in
-a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script, so it doesn't show here.
+436 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26, after the design session's
+review (`design/wording-review-2026-11-26.md`) was built. The ones marked **(changed 2026-11-26)** differ from the
+list it reviewed (384d500): its corrections, D157's and D158's words, D115's limits past a `Whole`'s range, and a
+handler used after `??` that misses a case, named as a handler. The 111 marked **(new since the review)** came after
+it: D162's "variable", D161's generics, D164 to D168's methods and requirements, and the C API's host mistakes (D136),
+which a C host reads as `SEAL_HOST_MISTAKE`'s message. `{…}` stands for what the message fills in; a `why:` held in a
+constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script, so it doesn't show here.
 
 **`crates/seal/src/check/calls.rs`**
 
@@ -504,7 +518,7 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: `( )` calls a procedure.
 - refused: this is a chain of {length} calls, each inside the next, and three or more are written as a slide
   - why: a slide reads in the order it runs, as in `points |> double |> be.Text |> show_msg`.
-- refused: `{word}` is a name, not a procedure, so it can't be called
+- refused: `{word}` is a variable, not a procedure, so it can't be called **(new since the review)**
   - why: `( )` calls a procedure.
 - refused: `sqrt` takes a `Float`, but this is {found}
   - why: `sqrt` gives a `Float`'s square root; a number written with a point, as `9.0`, is a `Float`.
@@ -544,8 +558,9 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: `be.Type(value)` converts a value to a type.
 - refused: there's no conversion to `{target}` **(changed 2026-11-26)**
   - why: `be` converts to `Text`, `Whole`, `Float`, `Bool`, `HugeWhole`, `Decimal` and `HugeDecimal`; other values are built as they're written.
-- refused: there's no `{full}` **(changed 2026-11-26)**
+- refused: there's no `{full}`
   - why: `be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.HugeWhole`, `be.Decimal`, `be.HugeDecimal`, `be.Decimal.shown` and `be.Decimal.nearest`, and `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` after `be.Whole` or `be.HugeWhole`.
+- not designed yet: `{full}` on {found}: what a type parameter can do isn't decided yet **(new since the review)**
 - refused: there's no conversion from {found} to a `Bool` **(changed 2026-11-26)**
   - why: a number is compared, as `n not_eq 0`, for a `Bool`.
 - refused: this is already a `{target}`, so `be.{target}` does nothing **(changed 2026-11-26)**
@@ -560,6 +575,8 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
 - refused: there's no conversion from {written} to a `Whole`
   - why: `be.Whole` reads a `Whole` from text, and turns a `Float` into one with `.floor`, `.trunc`, `.ceil`, `.nearest` or `.nearest.even`.
+- not designed yet: calling `{}`, which changes its value, on something other than a variable isn't decided yet **(new since the review)**
+- not designed yet: `{}` changing its value and able to fail, which leaves the variable it's lent undecided isn't decided yet **(new since the review)**
 - refused: {found} has no method `has`
 - refused: `.has` takes `key:` and its value
 - refused: `{name}` splits a text, but this is {found}
@@ -580,16 +597,16 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: `{digits}` is too big for a `Whole`
   - why: a `Whole` goes up to 9223372036854775807.
 - refused: `_` is the value of what an `=` changes, and nothing is changed here **(changed 2026-11-26)**
-  - why: on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.
+  - why: on the right of an `=` that changes a variable, `_` is what's on the left, as `score = _ + 10`. **(new since the review)**
 - refused: a `{name}` is built with `[ ]`, naming every field
   - why: a record is built as `Name[field: value]`.
 - refused: `{name}` is a type, not a value
 - refused: `{path}` is a procedure, and a call writes `( )`
   - why: every call writes `( )`, even with nothing inside.
-- refused: there's no name `{word}` here
+- refused: there's no variable `{word}` here **(new since the review)**
 - refused: `.len.{}` is a text's length, but this is {found}
   - why: only a text's length comes in graphemes, code points and bytes.
-- refused: `[:]` can't say what the dictionary holds, so the name's type has to be written
+- refused: `[:]` can't say what the dictionary holds, so the variable's type has to be written **(new since the review)**
   - why: a type is written where the value can't say it, as in `name: Dict<key: Text, value: Whole> = [:]`.
 - refused: `-{digits}` is too small for a `Whole`
   - why: a `Whole` goes down to -9223372036854775808.
@@ -602,11 +619,11 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: `places:` takes a whole number written out, but this is `{places}`
   - why: `places:` says how many digits a `Float` shows after its point, as `{speed, places: 2}`.
 - refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name **(changed 2026-11-26)**
-  - why: `to` in braces measures a name in one of its group's units, as `{total to secs}`.
-- refused: `{{inside}}` isn't a name with its fields and facts
-  - why: braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.
-- refused: there's no name `{first}` here
-  - why: a name in braces is checked when the script loads; a brace shown as it is, is written `\{`.
+  - why: `to` in braces measures a variable in one of its group's units, as `{total to secs}`. **(new since the review)**
+- refused: `{{inside}}` isn't a variable with its fields and facts **(new since the review)**
+  - why: braces in text hold a variable, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`. **(new since the review)**
+- refused: there's no variable `{first}` here **(new since the review)**
+  - why: a variable in braces is checked when the script loads; a brace shown as it is, is written `\{`. **(new since the review)**
 - refused: `places:` shows a `Float` to so many digits, but this is {found}
   - why: `places:` is only for a `Float`, which otherwise shows every digit it needs.
 - refused: `{text}` is too big for a `Float`
@@ -616,12 +633,12 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: `{text}` is stored exactly as a `Float`, so it takes no `~`
   - why: a `~` marks a `Float` that's only close to what's written.
 - refused: `{name}` is marked `unused`, so it can't be read
-  - why: `unused` marks a name that's never read on purpose.
+  - why: `unused` marks a variable that's never read on purpose. **(new since the review)**
 - refused: `{name}` fills in braces in text, so it's written `"{{name}}"`
   - why: `{newln}` and `{tab}` give a line break and a tab inside text; the text holding just one is written `"{newln}"`.
 - refused: `{name}` is a procedure, and a call writes `( )`
   - why: every call writes `( )`, even with nothing inside.
-- refused: there's no name `{name}` here
+- refused: there's no variable `{name}` here **(new since the review)**
 - refused: {operator} takes {wanted}, but this is {found}
 - refused: {quoted} can't mix a `Whole` and a `Float`
   - why: `Whole` and `Float` don't mix quietly: `be.Float(…)` turns a `Whole` into a `Float`, and a number written with a point, as `2.0`, is a `Float`.
@@ -656,7 +673,7 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: a list never holds more than its `len.max`.
 - refused: this has {} items, but the array holds exactly {length}
   - why: an array's length is part of its type.
-- refused: `[]` can't say what the list holds, so the name's type has to be written
+- refused: `[]` can't say what the list holds, so the variable's type has to be written **(new since the review)**
   - why: a type is written where the value can't say it, as in `name: List<Text> = []`.
 - refused: `[all: value]` is only allowed where the length is known, as for an `Array`
   - why: `[all: value]` takes its length from the type, as in `board: Array<Whole>[len: 64] = [all: 0]`.
@@ -690,14 +707,14 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 
 - refused: this can fail with {}, and nothing deals with the failure
   - why: every call that can fail is dealt with, by `?`, `??` or `otherwise`.
-- refused: this `otherwise` has no `case` for {}
-  - why: the cases cover every failure the call can give.
-- refused: this handler has no `case` for {} **(changed 2026-11-26)**
-  - why: a handler used after `??` covers every failure the call can give.
+- refused: {what} {} **(new since the review)**
 - refused: this `otherwise` has a `case` for {}, which the call can't fail with
   - why: the call can fail with {}.
+- refused: `{method}` reaches `{}` itself, so it can't be called on it **(new since the review)**
+  - why: while a variable is lent to a method that changes it, nothing else touches it; the method works on the value it's given. **(new since the review)**
 - refused: `{called}` can change `{name}`, which this `for_each` is going through **(changed 2026-11-26)**
-- refused: this can pause, while a `for_each` is going through the top-level name `{name}` **(changed 2026-11-26)**
+- refused: this can pause, while a `for_each` is going through the top-level variable `{name}` **(new since the review)**
+- not designed yet: {purpose}, on {found}: what a type parameter can do isn't decided yet **(new since the review)**
 - refused: {purpose}, but this is {found}
 - refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most`
   - why: text has no one right order: by character codes `"Zebra"` comes before `"apple"`, and alphabetical order differs between languages.
@@ -714,11 +731,18 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: this pauses, and the top level can't pause
   - why: the host waits for loading to finish; a pause belongs in a procedure the host calls.
 
+**`crates/seal/src/check/generics.rs`**
+
+- not built yet: a generic procedure filled in with more than 10,000 sets of types isn't built yet **(new since the review)**
+- not built yet: a generic procedure filled in with types nested more than 100 deep, as one calling itself with a list of what it was given, isn't built yet **(new since the review)**
+- refused: this call can't work out what `{name}` stands for in `{}` **(new since the review)**
+  - why: a call works its types out from its arguments, or from where its result goes, as `top: Maybe<Whole> = first(scores)`; a type is written where nothing says it. **(new since the review)**
+
 **`crates/seal/src/check/handlers.rs`**
 
 - refused: the handler group `{}` is declared twice
   - why: each handler group is declared once.
-- refused: `{}` is already a top-level name, so a handler group can't be named `{}`
+- refused: `{}` is already a top-level variable, so a handler group can't be named `{}` **(new since the review)**
 - refused: the handler `::{}` is listed twice in `{}`
   - why: each handler in a group has a name of its own.
 - refused: there's no procedure or door named `{full}` for `{}` to handle
@@ -734,6 +758,7 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: `{}` isn't one of `::{member}`'s labels
 - refused: the failure `{}` is handled twice
   - why: a handler has one `case` for each failure.
+- not designed yet: a `mut` parameter other than a method's first, whose words Unio D130 leaves open isn't decided yet **(new since the review)**
 - refused: `{}` is never used
   - why: a handler's parameter that's never read on purpose is marked, as `unused {}`.
 
@@ -759,8 +784,8 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: each edge is written once, with `min:` or `min.clamp:`, and `max:` or `max.clamp:`.
 - refused: this number's lowest edge is above its highest
   - why: a ranged number's `min` is at most its `max`, so some value fits.
-- refused: `{name}` isn't a top-level name made from a number written out, with no `mut`
-  - why: a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.
+- refused: `{name}` isn't an immutable top-level variable made from a number written out **(new since the review)**
+  - why: a number's limits are known while loading: a number written there, or an immutable top-level variable made from one. **(new since the review)**
 - refused: this number's limit has to be a `HugeWhole`, written out **(changed 2026-11-26)**
   - why: a number's limits are known while loading, and are of its own type.
 - refused: this number's limit has to be {wanted}, written out **(changed 2026-11-26)**
@@ -769,7 +794,11 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.
 - refused: `{digits}` is too big for a `Whole`
 - refused: a type's setting is a whole number known while loading, never a calculation or a call
-  - why: a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.
+  - why: a type's setting is a whole number written there, or an immutable top-level variable made from one, as `max_items = 10`. **(new since the review)**
+- refused: `{name}` isn't one of this procedure's type parameters **(new since the review)**
+  - why: a type parameter is declared in `< >` right after its procedure's name, as `proc first<?Item>[items: List<?Item>]`, and used inside that procedure. **(new since the review)**
+- refused: `{name}` is a type parameter, so it takes nothing in `< >` or `[ ]` **(new since the review)**
+  - why: a type parameter stands for a whole type, which each call fills in. **(new since the review)**
 - not designed yet: units and limits on a `{name}` isn't decided yet
 - refused: `{name}` has no setting `{setting}`
 - refused: `{setting}` can't be less than 0
@@ -788,11 +817,30 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: a word and its kinds are declared together.
 - refused: `{}` isn't `{}` or a kind of it
   - why: each member of a family is the word itself, or reads as "a Y kind of X" for its name `X.Y`.
+- refused: `{name}` already names a type or a requirement **(new since the review)**
+- refused: there's no requirement named `{}` **(new since the review)**
+  - why: a type meets requirements the script declares with `requirement`. **(new since the review)**
+- refused: `{type_name}` meets `{}`, but has no method `{name}` **(new since the review)**
+  - why: a type meeting a requirement has every method the requirement lists. **(new since the review)**
+- refused: `{type_name}`'s `{name}` isn't the one `{}` lists: {why} **(new since the review)**
+  - why: a method meeting a requirement takes the same types, with `?Self` as the type, the same labels, and gives the same result and failures. **(new since the review)**
+- refused: `{type_name}` has two methods named `{word}` **(new since the review)**
+  - why: each of a type's methods has a name of its own. **(new since the review)**
+- refused: a method's name is one word, but this is `{word}` **(new since the review)**
+  - why: a method is called with a dot after its value, as `goblin.is_alive()`, so a narrowing would read as a field. **(new since the review)**
+- refused: `{word}`'s first parameter isn't a value of `{type_name}`, the type it's a method of **(new since the review)**
+  - why: a method's first parameter is the value before the dot, as `goblin` in `goblin.is_alive()`. **(new since the review)**
 - refused: `{word}` is one of Seal's own words, so a procedure can't be named `{word}`
 - refused: `{word}` is one of the host's doors, so a procedure can't be named `{word}`
 - refused: the procedure `{name}` is declared twice
+- refused: two type parameters are named `{}` **(new since the review)**
+  - why: each type parameter has a name of its own. **(new since the review)**
+- refused: there's no requirement named `{}` **(new since the review)**
+  - why: a type parameter requires `Number`, or a requirement the script declares with `requirement`. **(new since the review)**
 - refused: two parameters are named `{}`
   - why: each parameter has a name of its own.
+- refused: `{}` isn't in `{name}`'s parameters or result **(new since the review)**
+  - why: a call works a type parameter out from its arguments, or from where its result goes, so it's used in one of them. **(new since the review)**
 - refused: `{}` isn't one of `{name}`'s parameters
 - refused: two parameters have the label `{}`
   - why: each label names one argument.
@@ -802,26 +850,26 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: this default is {found}, but `{}` is {wanted}
 - refused: `{}` has two defaults
 - refused: a default is a value written out plainly, never a calculation or a call
-  - why: a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or a top-level name made from one with no `mut`.
+  - why: a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or an immutable top-level variable made from one. **(new since the review)**
 - refused: `{name}` is reached here before the top level has made it
 - refused: a name can't be `all`
   - why: `[all: value]` always means a list or array whose every item starts as `value`, so `all` can't name anything else.
 - refused: `{word}` is already {taken_by}, so nothing else can be named `{word}`
-- refused: `{}` is already a top-level name, so {what} can't be named `{}`
+- refused: `{}` is already a top-level variable, so {what} can't be named `{}` **(new since the review)**
 - refused: the case `{}` has no value `{}`
   - why: a case's values come out by name.
 - refused: the case `{}`'s values are taken out in the order they're declared: `{}`
   - why: a case's values come out in the order its type declares them, skipping any that aren't read.
 - refused: `{}` already exists, so it can't be made again
 - refused: `{name}` is never changed, so it's made without `mut` **(changed 2026-11-26)**
-  - why: `mut` marks a name that changes; one that never does is made without it.
+  - why: `mut` marks a mutable variable, one that changes; one that never does is made without it. **(new since the review)**
 - refused: `{name}` is never used
 - refused: `{name}` is never used
   - why: a parameter that's never read on purpose is marked, as `unused {name}`.
-- refused: `{name}` is never used **(changed 2026-11-26)**
-  - why: a `for_each` name that's never read on purpose is marked, as `for_each unused {name}`.
 - refused: `{name}` is never used
-  - why: an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out.
+  - why: a `for_each` variable that's never read on purpose is marked, as `for_each unused {name}`. **(new since the review)**
+- refused: `{name}` is never used
+  - why: an `at` variable that's never read is marked, as `at key unused {name}`, or the `at` part is left out. **(new since the review)**
 - refused: `{name}` is never used
   - why: a `case` takes out only the values it reads.
 - refused: `{}` gives a value, but it can reach its `end` without a `return`
@@ -834,9 +882,9 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: this line follows an `if` that can leave
 - refused: this line follows a `match` that can leave
 - refused: this line works out {found}, but nothing uses it
-  - why: a line that only works out a value does nothing; keep the value under a name, or give it to a `mut` name with `=`.
+  - why: a line that only works out a value does nothing; keep the value in a variable, or give it to a mutable variable with `=`. **(new since the review)**
 - refused: this call gives {found}, but nothing uses it
-  - why: a call that gives a value is used: kept under a name, passed on, or compared; `unused name = …` drops it on purpose.
+  - why: a call that gives a value is used: kept in a variable, passed on, or compared; `unused name = …` drops it on purpose. **(new since the review)**
 - refused: this `break` isn't inside a loop
   - why: `break` leaves the innermost loop it's in.
 - refused: `fail` hands a failure to a caller, and the top level has none
@@ -849,9 +897,9 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: a `Float` that changes each pass rarely lands exactly on a value, so the loop could never stop; `<`, `>`, `at_least` or `at_most` say "until it reaches".
 - refused: `{kind}` leaves out what it holds, and the value doesn't show it
   - why: a written type leaves out only what its value shows, so this one writes it, as `{example}`.
-- refused: `Maybe.none` can't say what the `Maybe` holds, so the name's type has to be written
+- refused: `Maybe.none` can't say what the `Maybe` holds, so the variable's type has to be written **(new since the review)**
   - why: a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.
-- refused: this gives nothing, so there's no value for the name
+- refused: this gives nothing, so there's no value for the variable **(new since the review)**
   - why: a procedure that gives nothing back can't be used as a value.
 - refused: `{name}` is being gone through by a `for_each`, so it can't change here **(changed 2026-11-26)**
   - why: what a `for_each` goes through can't change inside it.
@@ -863,8 +911,8 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: a dictionary's value is reached with `key:`
 - not built yet: working out a type from a later line (D5), which this change needs, isn't built yet
 - refused: {name} is {found}, which has no items to change
-- refused: a change reaches into a `mut` name, and this isn't a name
-  - why: a change is a name changing its own value.
+- refused: a change reaches into a mutable variable, and this isn't a variable **(new since the review)**
+  - why: a change is a variable changing its own value. **(new since the review)**
 - refused: this is {found}, which has no fields
 - refused: a change can't go through a `Dict`'s key on its way, since the key might be missing
   - why: a lookup is dealt with on its own line: the value is taken out, as `mut north = shops[key: "north"] ?? crash`, changed, and put back, as `shops[key: "north"] = north`.
@@ -973,7 +1021,7 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 
 **`crates/seal/src/compile/compiler.rs`**
 
-- not built yet: more than 65,000 top-level names used by procedures (D4) aren't built yet
+- not built yet: more than 65,000 top-level variables used by procedures (D4) aren't built yet **(new since the review)**
 - not built yet: {what} aren't built yet
 
 **`crates/seal/src/host/doors.rs`**
@@ -1002,6 +1050,11 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: a unit says what a number measures, as `secs` or `px per secs`.
 - refused (at a door): `{unit}` isn't written as a unit
   - why: a unit is written as a script writes it: `secs`, `px.point`, `px per secs`, or `time::secs`.
+
+**`crates/seal/src/host/script.rs`**
+
+- not designed yet: a host calling `{procedure}`, a method, which a script calls only with a dot isn't decided yet **(new since the review)**
+- not designed yet: a host calling `{procedure}`, a generic procedure, which needs its types worked out from the host's values isn't decided yet **(new since the review)**
 
 **`crates/seal/src/syntax/lexer.rs`**
 
@@ -1040,7 +1093,6 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: `{other}` is beyond the plain English letters a script is written in
   - why: outside text, a script is written in plain English letters, digits and symbols, for now.
 - refused: `{other}` can't be read here **(changed 2026-11-26)**
-  - why: `{other}` isn't one of Seal's symbols, so it goes only inside a text.
 - refused: `{}` closes nothing open here; the `{}` still open closes with `{closer}` **(changed 2026-11-26)**
 - refused: this `{}` closes nothing
 - refused: a type's name has no `_`, so `{word}` is written `{fixed}`
@@ -1071,6 +1123,10 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: this `end` is at the wrong depth
 - refused: the `{}` on line {} has no `end`
 - refused: this `end` closes `{}` on line {}, so its note is `\\ {}` (shown with a `fix:` line)
+- refused: a requirement holds only methods' first lines **(new since the review)**
+  - why: a requirement lists the methods a type meeting it has, as `proc score[item: ?Self] -> Whole`, each with no body. **(new since the review)**
+- refused: a type parameter is written with `?` in front, as `?{}` **(new since the review)**
+  - why: `?` marks a type that each call fills in, so it can't be mistaken for a real type. **(new since the review)**
 - refused: a procedure's parameters go in `[ ]`, not `( )`
   - why: `( )` calls a procedure; `[ ]` describes one.
 - refused: a procedure that takes nothing has no `[ ]`: it's written `{written}`
@@ -1090,14 +1146,16 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
 - refused: a family's member is written without `proc` (shown with a `fix:` line)
 - refused: a `fam.proc` block holds only procedures
   - why: a family holds only the kind of thing it's declared for.
-- not designed yet: a `///` before a name made inside a block isn't decided yet
+- refused: {what} comes after a method **(new since the review)**
+  - why: {belong} come first, then its methods, so a type's data reads before what it does. **(new since the review)**
+- not designed yet: a `///` before a variable made inside a block isn't decided yet **(new since the review)**
 - refused: a `{}` is declared at the top level, not inside a block
   - why: procedures, families, records and `one_of`s are declared at a script's top level only.
 - refused: a `{}` line goes at the top of a procedure's body
   - why: `labels` is the first line of a procedure's body, and `defaults` comes right after it.
 - refused: this `{}` has no block to belong to
 - refused: this can't be given a value
-  - why: `=` gives a value to a name, a field or an item.
+  - why: `=` gives a value to a variable, a field or an item. **(new since the review)**
 - refused: `otherwise` opens a block of cases; on one line, a handler follows `??` (shown with a `fix:` line)
 - refused: Seal writes `elif`, not `else if`
   - why: `elif` is short for "else if".
@@ -1156,3 +1214,43 @@ a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script,
   - why: `/` on whole numbers gives the exact answer or stops; `div.floor` and `div.trunc` say how to round.
 - check failed: this value is {side} its type's `{word}: {edge_text}`
   - why: a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.
+
+**`crates/seal-c/src/lib.rs`**
+
+- host mistake (C API): `seal_doors_add` was given a null pointer or text that isn't UTF-8 **(new since the review)**
+- host mistake (C API): `seal_doors_add` was given no function **(new since the review)**
+- host mistake (C API): a door's value type that's null or isn't UTF-8 **(new since the review)**
+- host mistake (C API): a door's failure that's null or isn't UTF-8 **(new since the review)**
+- host mistake (C API): a doors handle that's freed, or was never one **(new since the review)**
+- host mistake (C API): `seal_doors_labels` was given a null pointer or text that isn't UTF-8 **(new since the review)**
+- host mistake (C API): a label that's null or isn't UTF-8 **(new since the review)**
+- host mistake (C API): labels for a door that isn't open **(new since the review)**
+- host mistake (C API): nowhere to write the script's handle **(new since the review)**
+- host mistake (C API): `seal_script_load` was given a null pointer, or a name that isn't UTF-8 **(new since the review)**
+- host mistake (C API): a script's text that isn't UTF-8 **(new since the review)**
+- host mistake (C API): `seal_script_load_compiled` was given a null pointer, or a name that isn't UTF-8 **(new since the review)**
+- host mistake (C API): a script called again from inside one of its own doors **(new since the review)**
+- host mistake (C API): a script handle that's freed, or was never one **(new since the review)**
+- host mistake (C API): nowhere to write the call's result **(new since the review)**
+- host mistake (C API): nowhere to write the paused task **(new since the review)**
+- host mistake (C API): `seal_script_call` was given a null pointer, or a name that isn't UTF-8 **(new since the review)**
+- host mistake (C API): labels that aren't there **(new since the review)**
+- host mistake (C API): a label that isn't UTF-8 **(new since the review)**
+- host mistake (C API): `seal_build` was given a null pointer **(new since the review)**
+- host mistake (C API): a script's name or text that's null or isn't UTF-8 **(new since the review)**
+- host mistake (C API): nowhere to write the bytes **(new since the review)**
+- host mistake (C API): `seal_value_text` was given a null pointer **(new since the review)**
+- host mistake (C API): a text that isn't UTF-8 **(new since the review)**
+- host mistake (C API): `seal_value_number` was given a null pointer, or text that isn't UTF-8 **(new since the review)**
+- host mistake (C API): `seal_value_number` makes a `HugeWhole`, `Decimal` or `HugeDecimal` **(new since the review)**
+- host mistake (C API): a number that isn't written as Seal writes one **(new since the review)**
+- host mistake (C API): `seal_value_list` was given a null pointer **(new since the review)**
+- host mistake (C API): a value handle that's freed, or was never one **(new since the review)**
+- host mistake (C API): nowhere to write the kind **(new since the review)**
+- host mistake (C API): nowhere to write the text **(new since the review)**
+- host mistake (C API): `seal_value_get_text` on a value that isn't a text or a big number **(new since the review)**
+- host mistake (C API): nowhere to write the count **(new since the review)**
+- host mistake (C API): `seal_value_count` on a value with no items **(new since the review)**
+- host mistake (C API): nowhere to write the item **(new since the review)**
+- host mistake (C API): an item past the value's last **(new since the review)**
+- host mistake (C API): `seal_value_item` on a value with no items **(new since the review)**
