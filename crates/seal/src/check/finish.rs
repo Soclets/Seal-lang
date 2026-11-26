@@ -487,15 +487,15 @@ impl Visitor for LoopChecker<'_> {
                     Message::refused(place, format!("`{called}` can change `{name}`, which this `for_each` is going through"))
                         .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                         .with_why(format!(
-                            "what a loop goes through can't change under it; copy it into a name of its own first, as `{name}_now = {name}`."
+                            "what a loop goes through can't change under it; copy it into a variable of its own first, as `{name}_now = {name}`."
                         )),
                 );
             }
             Some((place, None)) => self.messages.push(
-                Message::refused(place, format!("this can pause, while a `for_each` is going through the top-level name `{name}`"))
+                Message::refused(place, format!("this can pause, while a `for_each` is going through the top-level variable `{name}`"))
                     .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                     .with_why(format!(
-                        "what a loop goes through can't change under it, and another task could change `{name}` during the pause; copy it into a name of its own first, as `{name}_now = {name}`."
+                        "what a loop goes through can't change under it, and another task could change `{name}` during the pause; copy it into a variable of its own first, as `{name}_now = {name}`."
                     )),
             ),
             None => {}

@@ -71,7 +71,7 @@ impl<'a> Checker<'a> {
                     Message::refused(
                         name.place,
                         format!(
-                            "`{}` is already a top-level name, so a handler group can't be named `{}`",
+                            "`{}` is already a top-level variable, so a handler group can't be named `{}`",
                             name.text, name.text
                         ),
                     )

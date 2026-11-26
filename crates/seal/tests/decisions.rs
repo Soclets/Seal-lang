@@ -131,7 +131,7 @@ fn d103_d104_settings_and_defaults_from_plain_values() {
     assert_eq!(shows(script), ["orc Color.red [\"Gem\"]", "[\"a\"]"]);
     assert!(
         refusal("mut limit = 2\nbag: List<Text>[len.max: limit] = []\nshow_msg(\"{bag}\")\n")
-            .contains("made with `mut`")
+            .contains("is a mutable variable")
     );
 }
 

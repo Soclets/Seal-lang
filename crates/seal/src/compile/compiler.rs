@@ -207,7 +207,7 @@ fn compile_parts(program: &Program, doors: &[DoorSignature], plain: bool) -> Res
     if compiler.globals.len() >= usize::from(u16::MAX) {
         return Err(Message::not_built_yet(
             Place::default(),
-            "more than 65,000 top-level names used by procedures (D4) aren't",
+            "more than 65,000 top-level variables used by procedures (D4) aren't",
         ));
     }
     compiler.out.global_count = u32::try_from(compiler.globals.len()).unwrap_or(u32::MAX);

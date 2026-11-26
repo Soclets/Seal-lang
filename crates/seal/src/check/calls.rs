@@ -146,7 +146,7 @@ impl<'a> Checker<'a> {
         if path.len() == 1 && self.visible(word).is_some() {
             self.refuse_why(
                 callee.place,
-                format!("`{word}` is a name, not a procedure, so it can't be called"),
+                format!("`{word}` is a variable, not a procedure, so it can't be called"),
                 "`( )` calls a procedure.",
             );
             return Self::error(place);

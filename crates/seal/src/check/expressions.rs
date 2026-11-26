@@ -87,7 +87,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         place,
                         "`_` is the value of what an `=` changes, and nothing is changed here",
-                        "on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.",
+                        "on the right of an `=` that changes a variable, `_` is what's on the left, as `score = _ + 10`.",
                     );
                     return Self::error(place);
                 };
@@ -133,7 +133,7 @@ impl<'a> Checker<'a> {
                             "every call writes `( )`, even with nothing inside.",
                         );
                     } else {
-                        self.refuse(receiver.place, format!("there's no name `{word}` here"));
+                        self.refuse(receiver.place, format!("there's no variable `{word}` here"));
                     }
                     return Self::error(place);
                 }
@@ -186,7 +186,7 @@ impl<'a> Checker<'a> {
                     // trace: D30
                     self.refuse_why(
                     place,
-                    "`[:]` can't say what the dictionary holds, so the name's type has to be written",
+                    "`[:]` can't say what the dictionary holds, so the variable's type has to be written",
                     "a type is written where the value can't say it, as in `name: Dict<key: Text, value: Whole> = [:]`.",
                 );
                     Self::error(place)
@@ -321,7 +321,7 @@ impl<'a> Checker<'a> {
                                 "this `{` opens braces that are never closed",
                             )
                             .with_fix(fixed.into_iter().collect::<String>())
-                            .with_why("braces in text fill in a name, as `{score}`; a brace shown as it is, is written `\\{`."),
+                            .with_why("braces in text fill in a variable, as `{score}`; a brace shown as it is, is written `\\{`."),
                         );
                         return Self::error(place);
                     };
@@ -344,7 +344,9 @@ impl<'a> Checker<'a> {
                                     "these braces are empty, so they fill in nothing",
                                 )
                                 .with_fix(fixed.into_iter().collect::<String>())
-                                .with_why("braces in text fill in a name; a brace shown as it is, is written `\\{`."),
+                                .with_why(
+                                    "braces in text fill in a variable; a brace shown as it is, is written `\\{`.",
+                                ),
                             );
                         }
                         _ => {
@@ -423,7 +425,7 @@ impl<'a> Checker<'a> {
                     self.refuse_why(
                         place,
                         format!("`{{{inside}}}` measures in `{unit}`, which isn't a unit's name"),
-                        "`to` in braces measures a name in one of its group's units, as `{total to secs}`.",
+                        "`to` in braces measures a variable in one of its group's units, as `{total to secs}`.",
                     );
                     return None;
                 };
@@ -434,8 +436,8 @@ impl<'a> Checker<'a> {
             // trace: D12, D28, D75
             self.refuse_why(
                 place,
-                format!("`{{{inside}}}` isn't a name with its fields and facts"),
-                "braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.",
+                format!("`{{{inside}}}` isn't a variable with its fields and facts"),
+                "braces in text hold a variable, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.",
             );
             return None;
         }
@@ -445,8 +447,8 @@ impl<'a> Checker<'a> {
             let first = path.split('.').next().unwrap_or(path);
             self.refuse_why(
                 place,
-                format!("there's no name `{first}` here"),
-                "a name in braces is checked when the script loads; a brace shown as it is, is written `\\{`.",
+                format!("there's no variable `{first}` here"),
+                "a variable in braces is checked when the script loads; a brace shown as it is, is written `\\{`.",
             );
             return None;
         }
@@ -522,7 +524,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     place,
                     format!("`{name}` is marked `unused`, so it can't be read"),
-                    "`unused` marks a name that's never read on purpose.",
+                    "`unused` marks a variable that's never read on purpose.",
                 );
                 return Self::error(place);
             }
@@ -550,7 +552,7 @@ impl<'a> Checker<'a> {
                 "every call writes `( )`, even with nothing inside.",
             );
         } else {
-            self.refuse(place, format!("there's no name `{name}` here"));
+            self.refuse(place, format!("there's no variable `{name}` here"));
         }
         Self::error(place)
     }
@@ -1037,7 +1039,7 @@ impl<'a> Checker<'a> {
                     // trace: D30
                     self.refuse_why(
                         place,
-                        "`[]` can't say what the list holds, so the name's type has to be written",
+                        "`[]` can't say what the list holds, so the variable's type has to be written",
                         "a type is written where the value can't say it, as in `name: List<Text> = []`.",
                     );
                     return Self::error(place);

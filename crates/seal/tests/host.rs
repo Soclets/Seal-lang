@@ -284,7 +284,7 @@ fn d17_a_refused_script_does_not_load_and_the_host_gets_the_messages() -> Result
     assert_eq!(
         messages.text(),
         "refused: goblin.seal:1:5, line 1 column 5\n 1 | mut tries = 0\n   |     ^^^^^\n fix:     `tries = 0`\n \
-         why:     `mut` marks a name that changes; one that never does is made without it.\n\
+         why:     `mut` marks a mutable variable, one that changes; one that never does is made without it.\n\
          refused: goblin.seal:4:5, line 4 column 5\n 4 |     tires = tries + 1\n   |     ^^^^^\n what:    `tires` is never used\n"
     );
     Ok(())

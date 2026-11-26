@@ -735,8 +735,8 @@ impl<'a> Checker<'a> {
                 let Some(value) = self.plain_names.get(name).copied() else {
                     self.refuse_why(
                         expression.place,
-                        format!("`{name}` isn't a top-level name made from a number written out, with no `mut`"),
-                        "a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.",
+                        format!("`{name}` isn't an immutable top-level variable made from a number written out"),
+                        "a number's limits are known while loading: a number written there, or an immutable top-level variable made from one.",
                     );
                     return None;
                 };
@@ -771,8 +771,8 @@ impl<'a> Checker<'a> {
                 let Some(value) = self.plain_names.get(name).copied() else {
                     self.refuse_why(
                         expression.place,
-                        format!("`{name}` isn't a top-level name made from a number written out, with no `mut`"),
-                        "a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.",
+                        format!("`{name}` isn't an immutable top-level variable made from a number written out"),
+                        "a number's limits are known while loading: a number written there, or an immutable top-level variable made from one.",
                     );
                     return None;
                 };
@@ -840,14 +840,14 @@ impl<'a> Checker<'a> {
                     }
                     // trace: D103
                     let what = if self.changing_names.contains(name) {
-                        format!("`{name}` is made with `mut`, so its value isn't known while loading")
+                        format!("`{name}` is a mutable variable, so its value isn't known while loading")
                     } else {
-                        format!("`{name}` isn't a top-level name made from a whole number written out")
+                        format!("`{name}` isn't an immutable top-level variable made from a whole number written out")
                     };
                     self.refuse_why(
                         expression.place,
                         what,
-                        "a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.",
+                        "a type's setting is a whole number written there, or an immutable top-level variable made from one, as `max_items = 10`.",
                     );
                     return None;
                 }
@@ -866,7 +866,7 @@ impl<'a> Checker<'a> {
             self.refuse_why(
                 expression.place,
                 "a type's setting is a whole number known while loading, never a calculation or a call",
-                "a type's setting is a whole number written there, or a name made at the top level from one, with no `mut`, as `max_items = 10`.",
+                "a type's setting is a whole number written there, or an immutable top-level variable made from one, as `max_items = 10`.",
             );
             None
         }
@@ -1347,7 +1347,7 @@ impl<'a> Checker<'a> {
             self.refuse_why(
                 expression.place,
                 "a default is a value written out plainly, never a calculation or a call",
-                "a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or a top-level name made from one with no `mut`.",
+                "a default is the same every time: a number, text, a `Bool`, a list, a record, a case, or an immutable top-level variable made from one.",
             );
             return None;
         }
@@ -1520,7 +1520,7 @@ impl<'a> Checker<'a> {
         self.messages.push(
             Message::refused(
                 name.place,
-                format!("`{}` is already a top-level name, so {what} can't be named `{}`", name.text, name.text),
+                format!("`{}` is already a top-level variable, so {what} can't be named `{}`", name.text, name.text),
             )
             .with_because(format!("line {} makes it", made.line), made)
             .with_why(NO_SHADOWING),
@@ -1573,7 +1573,7 @@ impl<'a> Checker<'a> {
             self.refuse_existing(name, existing);
         } else if self.context.procedure.is_some() && self.globals.contains_key(name.text) {
             // trace: D71
-            let what = if kind == VariableKind::CaseValue { "a `case`'s value" } else { "a `for_each` name" };
+            let what = if kind == VariableKind::CaseValue { "a `case`'s value" } else { "a `for_each` variable" };
             self.refuse_top_level_spelling(name, what);
         }
         self.check_new_name(name);
@@ -1600,7 +1600,7 @@ impl<'a> Checker<'a> {
         self.messages.push(
             Message::refused(name.place, format!("`{}` already exists, so it can't be made again", name.text))
                 .with_because(format!("line {} makes it", earlier.line), earlier)
-                .with_why("while a name exists, it can't be made again."),
+                .with_why("while a variable exists, it can't be made again."),
         );
     }
 
@@ -1620,7 +1620,7 @@ impl<'a> Checker<'a> {
             let line = self.source_line(place.line);
             let before: String = line.chars().take(place.column.saturating_sub(1) as usize).collect();
             let mut message = Message::refused(place, format!("`{name}` is never changed, so it's made without `mut`"))
-                .with_why("`mut` marks a name that changes; one that never does is made without it.");
+                .with_why("`mut` marks a mutable variable, one that changes; one that never does is made without it.");
             if let Some(start) = before.rfind("mut ") {
                 let fixed = format!("{}{}", line.get(..start).unwrap_or(""), line.get(start + 4..).unwrap_or(""));
                 message = message.with_fix(fixed);
@@ -1645,12 +1645,12 @@ impl<'a> Checker<'a> {
                 VariableKind::LoopItem => self.refuse_why(
                     place,
                     format!("`{name}` is never used"),
-                    &format!("a `for_each` name that's never read on purpose is marked, as `for_each unused {name}`."),
+                    &format!("a `for_each` variable that's never read on purpose is marked, as `for_each unused {name}`."),
                 ),
                 VariableKind::LoopPosition => self.refuse_why(
                     place,
                     format!("`{name}` is never used"),
-                    &format!("an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out."),
+                    &format!("an `at` variable that's never read is marked, as `at key unused {name}`, or the `at` part is left out."),
                 ),
                 VariableKind::CaseValue => self.refuse_why(
                     place,
@@ -1880,14 +1880,14 @@ impl<'a> Checker<'a> {
                         self.refuse_why(
                             expression.place,
                             format!("this line works out {found}, but nothing uses it"),
-                            "a line that only works out a value does nothing; keep the value under a name, or give it to a `mut` name with `=`.",
+                            "a line that only works out a value does nothing; keep the value in a variable, or give it to a mutable variable with `=`.",
                         );
                     } else if !self.program.types.unify(checked.type_id, NOTHING) {
                         let found = self.describe(checked.type_id);
                         self.refuse_why(
                             expression.place,
                             format!("this call gives {found}, but nothing uses it"),
-                            "a call that gives a value is used: kept under a name, passed on, or compared; `unused name = …` drops it on purpose.",
+                            "a call that gives a value is used: kept in a variable, passed on, or compared; `unused name = …` drops it on purpose.",
                         );
                     }
                 }
@@ -2102,7 +2102,7 @@ impl<'a> Checker<'a> {
             // trace: D30, D38
             self.refuse_why(
                 value.place,
-                "`Maybe.none` can't say what the `Maybe` holds, so the name's type has to be written",
+                "`Maybe.none` can't say what the `Maybe` holds, so the variable's type has to be written",
                 "a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.",
             );
             self.program.types.settle_as_error(checked.type_id);
@@ -2112,7 +2112,7 @@ impl<'a> Checker<'a> {
             // trace: Unio D38
             self.refuse_why(
                 value.place,
-                "this gives nothing, so there's no value for the name",
+                "this gives nothing, so there's no value for the variable",
                 "a procedure that gives nothing back can't be used as a value.",
             );
             return None;
@@ -2191,7 +2191,7 @@ impl<'a> Checker<'a> {
                     Message::refused(made_place, format!("`{name}` can't be given a new value"))
                         .with_fix(fixed)
                         .with_because(format!("line {} gives it a new value", place.line), place)
-                        .with_why("a name changes only when it's made with `mut`."),
+                        .with_why("a variable changes only when it's mutable, made with `mut`."),
                 );
             }
             return false;
@@ -2199,15 +2199,15 @@ impl<'a> Checker<'a> {
         let (because, why) = match kind {
             VariableKind::Parameter => (
                 format!("line {} makes it a parameter", made_place.line),
-                "a parameter never changes; a name made from it with `mut` can.",
+                "a parameter never changes; a mutable variable made from it can.",
             ),
             VariableKind::LoopItem | VariableKind::LoopPosition => (
                 format!("line {} makes it for each pass of the loop", made_place.line),
-                "a `for_each`'s names never change; each pass gives them their next values.",
+                "a `for_each`'s variables never change; each pass gives them their next values.",
             ),
             VariableKind::CaseValue | VariableKind::Named => (
                 format!("line {} takes it out of a case", made_place.line),
-                "a value taken out of a case never changes; a name made from it with `mut` can.",
+                "a value taken out of a case never changes; a mutable variable made from it can.",
             ),
         };
         self.messages.push(
@@ -2246,7 +2246,7 @@ impl<'a> Checker<'a> {
         // trace: D62. The change is made to a name's own value, or to a part of it reached through fields and places.
         let (variable, described, changeable, way) = if let syntax::ExpressionKind::Name(name) = &receiver.kind {
             let Some(variable) = self.lookup(name, receiver.place) else {
-                self.refuse(receiver.place, format!("there's no name `{name}` here"));
+                self.refuse(receiver.place, format!("there's no variable `{name}` here"));
                 return None;
             };
             (variable, format!("`{name}`"), self.check_changeable(variable, name, receiver.place), None)
@@ -2559,8 +2559,8 @@ impl<'a> Checker<'a> {
                 _ => {
                     self.refuse_why(
                         current.place,
-                        "a change reaches into a `mut` name, and this isn't a name",
-                        "a change is a name changing its own value.",
+                        "a change reaches into a mutable variable, and this isn't a variable",
+                        "a change is a variable changing its own value.",
                     );
                     return None;
                 }
@@ -2573,7 +2573,7 @@ impl<'a> Checker<'a> {
     pub(super) fn way_in(&mut self, receiver: &syntax::Expression<'a>) -> Option<(Inside, String, bool)> {
         let (name, name_place, written) = self.written_way(receiver)?;
         let Some(root) = self.lookup(name, name_place) else {
-            self.refuse(name_place, format!("there's no name `{name}` here"));
+            self.refuse(name_place, format!("there's no variable `{name}` here"));
             return None;
         };
         let changeable = self.check_changeable(root, name, name_place);
@@ -2791,7 +2791,7 @@ impl<'a> Checker<'a> {
                 self.messages.push(
                     Message::refused(source.place, format!("`at {word}` is for going through a list; a `Dict` is gone through `at key`"))
                         .with_fix(fixed)
-                        .with_why("a `Dict` is never reached by position, so going through one gives each key; a count for showing is kept with a `mut` name."),
+                        .with_why("a `Dict` is never reached by position, so going through one gives each key; a count for showing is kept in a mutable variable."),
                 );
             }
             (Type::Variable(_), Some(syntax::PositionKind::Key)) => {
@@ -3075,7 +3075,7 @@ impl<'a> Checker<'a> {
 
 /// Whether an expression is a value written out plainly, which is the same every time (D104): a number, text with
 /// nothing filled in, a `Bool`, a list, an array's `[all: …]`, a `Dict`, a record or a case built from plain values,
-/// or a top-level name made from one with no `mut`.
+/// or an immutable top-level variable made from one.
 fn is_plain(expression: &syntax::Expression, names: &Names<'_, &syntax::Expression>) -> bool {
     use syntax::ExpressionKind as Kind;
     match &expression.kind {
@@ -3341,7 +3341,7 @@ pub(crate) mod tests {
         let parameter = "results = [3]\nproc best[results: List<Whole>] -> Whole\n    return results.len\nend\nshow_msg(be.Text(results.len))\n";
         assert_eq!(
             whats(parameter),
-            vec!["refused: `results` is already a top-level name, so a parameter can't be named `results`"]
+            vec!["refused: `results` is already a top-level variable, so a parameter can't be named `results`"]
         );
         let procedure = "proc roll -> Whole\n    return 4\nend\nroll = roll()\nshow_msg(be.Text(roll))\n";
         assert_eq!(

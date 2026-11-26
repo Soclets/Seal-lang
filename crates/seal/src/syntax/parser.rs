@@ -1038,7 +1038,7 @@ impl<'a> Parser<'a> {
                     (Some(TokenKind::Name(_)), Some(TokenKind::Symbol(Symbol::Equals | Symbol::Colon)))
                 );
             if makes_a_name {
-                return Err(Message::not_designed_yet(doc, "a `///` before a name made inside a block"));
+                return Err(Message::not_designed_yet(doc, "a `///` before a variable made inside a block"));
             }
             return Err(self.refuse_doc(doc));
         }
@@ -1137,7 +1137,7 @@ impl<'a> Parser<'a> {
                         }
                         _ => {
                             return Err(Message::refused(target.place, "this can't be given a value")
-                                .with_why("`=` gives a value to a name, a field or an item."));
+                                .with_why("`=` gives a value to a variable, a field or an item."));
                         }
                     }
                 } else if self.at_keyword(Keyword::Otherwise) {
