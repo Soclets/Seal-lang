@@ -449,17 +449,17 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: not met in the latest run.**
-  0.64 µs against LuaJIT's 0.28 µs (2.3×; side by side, best of several, about 0.57 µs). From 2.1 µs this afternoon:
-  D173's block, the lists a dropped script recycles, one look at each instruction when verifying, Seal's own type
-  table as one flag. The same file loaded again reuses what was verified, in about 0.15 µs.
-- **`fib` against LuaJIT's interpreter: not met in the latest runs (101% to 109%), met before D173 (91%).** It runs
-  the same bytecode and the same machine instructions (4% fewer now, with call frames at the loop's own width); the
-  processor takes more cycles for where the run loop lands in the program. A harmless change in an unrelated file moves
-  it between 32.9 and 34.8 ms. A table for a base case's comparison was tried and made it slower, since the branch it
-  replaced is always predicted. LLVM's alignment flags (functions and blocks to 16, 32 or 64 bytes, tried through
-  RUSTFLAGS) neither brought it back nor steadied it: every build measured now lands at 33.2 to 34.3 ms against
-  LuaJIT's 33.6, so it stands at about 99% to 102% as measured. The design session has the numbers.
+- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: not met.** 0.66 µs against
+  LuaJIT's 0.29 µs (2.25×; side by side, best of several, about 0.61 µs). From 2.1 µs this afternoon: D173's block,
+  the lists a dropped script recycles, one look at each instruction when verifying, Seal's own type table as one flag.
+  The same file loaded again reuses what was verified, in about 0.15 µs.
+- **`fib` against LuaJIT's interpreter: met, 32.0 against 33.6 ms (95%; about 29.5 ms side by side).** After D173 it
+  fell to LuaJIT's time with the same instructions: D173's lists left in a file made each about 120 bytes inline in a
+  compiled script, which changed how the whole run loop was compiled (about 10% more cycles). With those lists behind
+  one shared allocation, the script is near its old size and `fib` is back, at the cost of about 37 ns on loading a
+  compiled file. Memory placement was ruled out first: shifting it moved neither build out of its range. LLVM's
+  alignment flags didn't help, and a table for a base case's comparison made it slower (the branch is always
+  predicted), so neither is in.
 - **Loading from a text of its own against Luau: met, thinly** (98% to 100% across today's runs).
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
