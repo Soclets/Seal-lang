@@ -108,7 +108,7 @@ impl Script {
         };
         let loaded = Loaded {
             source: ScriptText::InFile(script.block, script.source),
-            compiled: Arc::new(script.compiled),
+            compiled: script.compiled,
             name: Arc::from(script.name),
         };
         Self::from_loaded(loaded, name, doors, limits, true)

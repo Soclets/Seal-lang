@@ -326,7 +326,8 @@ pub struct FileScript<'b> {
     pub name: &'b str,
     pub block: Arc<[u8]>,
     pub source: std::ops::Range<usize>,
-    pub compiled: Compiled,
+    /// Shared from the moment it's verified, so it's never copied after (D173).
+    pub compiled: Arc<Compiled>,
 }
 
 /// One script to write into a file: its name, its source, and what it compiled to.
@@ -456,7 +457,7 @@ pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> R
         return Err(FileError::Damaged("bytes after a script"));
     }
     verify(&compiled, door_count).map_err(FileError::Unverified)?;
-    Ok(FileScript { name: written_name, block: blob, source, compiled })
+    Ok(FileScript { name: written_name, block: blob, source, compiled: Arc::new(compiled) })
 }
 
 // ---- the compiled script, field by field ----
