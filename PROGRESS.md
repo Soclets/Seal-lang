@@ -14,10 +14,8 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D176 are built, except the language server's parts and what's listed under "Not built
-   yet" below. D169's signing (D175's `fips204`) is built and checked but not committed: `sha3` brings in
-   `generic-array`, `block-buffer`, `cpufeatures` and `libc`, whose `unsafe` D175 didn't list, and Tankun's OK for
-   them was asked for through the design session. All 31 tests in `tests/` pass, from text and from compiled files.
+2. **Decisions built.** D1 to D177 are built, except the language server's parts and what's listed under "Not built
+   yet" below. All 31 tests in `tests/` pass, from text and from compiled files.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -324,8 +322,17 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   verifier that makes nothing for each instruction or type. LuaJIT loads its own bytecode in 0.28 µs. What's left is
   mostly the compiled script's ~25 separate lists, each an allocation; the design session has the numbers and a
   recommendation. The fuzzer caught a script's own unit groups being lost by the new format; a test covers it.
-- **D169** Not built: signing needs an ML-DSA crate, and every candidate has `unsafe` somewhere below it. The design
-  session has the choice for Tankun, with `fips204` recommended.
+- **D169, D175, D177: signed `.sealc` files** (`host/signing.rs`), ML-DSA-44 from `fips204` without its
+  random-number feature. `seal keygen NAME` writes `NAME.public` and `NAME.secret` from the system's randomness;
+  `seal build --sign NAME.secret` appends the signature over the whole file and `SEALSIG\x01`; `seal run --key
+  NAME.public` loads only a file signed with it. A host calls `Doors::require_signature` (C:
+  `seal_doors_require_signature`); a file that isn't signed, is changed in any byte, or is signed with another key is
+  refused, and each file that passes is kept whole, so it's checked once in a run (about 43 µs). A host that doesn't
+  require signatures loads a signed file as it is. The fuzzer signs one script in four and checks a change after
+  signing, or another key, is always refused.
+- **D176** Loading a compiled file is judged within twice LuaJIT's time. The same script's block, byte for byte, loaded
+  again with the same doors reuses what was read and verified (the last 8 files kept, matched by checksum, then byte
+  for byte), in about 0.15 µs; the benchmark's files differ, so its row still measures loading.
 - **The second wording review** (`design/wording-review-2026-11-26b.md`) is built: what a type parameter's
   requirement doesn't allow is refused ("`?Item` has no requirement that allows `+`"), the C API's host mistakes name
   their function and parameter with no why, and "already names a type or a requirement" says each name means one
@@ -443,7 +450,7 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
 - **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met.** About 0.60 to 0.70 µs
   against LuaJIT's 0.28 to 0.32 µs (2.1 µs before this afternoon's work, then D173's block). The same file loaded again
-  reuses what was verified, in about 0.15 µs (built with signing, not yet committed).
+  reuses what was verified, in about 0.15 µs.
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
