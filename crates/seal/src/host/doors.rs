@@ -230,6 +230,10 @@ pub(crate) struct Loaded {
 /// How many compiled scripts a set of doors keeps for loading again.
 const KEPT_SCRIPTS: usize = 64;
 
+/// How many scripts loaded from `.sealc` files a set of doors keeps for loading again: a game loading one file for
+/// many entities loads it again soon (D176).
+const KEPT_FILES: usize = 8;
+
 #[derive(Default)]
 struct Inner {
     doors: Vec<Door>,
@@ -239,11 +243,16 @@ struct Inner {
     unit_groups: Vec<HostUnitGroup>,
     /// The scripts compiled against these doors, most recently used last.
     kept: Mutex<std::collections::VecDeque<Loaded>>,
+    /// The scripts loaded from `.sealc` files with these doors, most recently used last (D176).
+    kept_files: Mutex<std::collections::VecDeque<(u64, Loaded)>>,
     /// What every load reads of the doors, worked out once until they change.
     signatures: OnceLock<Arc<[DoorSignature]>>,
     all_types: OnceLock<Arc<[HostType]>>,
     /// The key a compiled script's file is built for, worked out once until the doors change (D153).
     pub(crate) file_key: OnceLock<u64>,
+    /// The public key every `.sealc` file loaded with these doors must be signed with, when the host requires one
+    /// (D169).
+    pub(crate) required_key: Option<Arc<super::signing::RequiredKey>>,
 }
 
 /// The doors a host opens for a script (D11). A host chooses each script's doors when it loads it (D48).
@@ -415,6 +424,24 @@ impl Doors {
         }
     }
 
+    /// trace: D169. Requires every `.sealc` file loaded with these doors to be signed with the secret key matching
+    /// `public_key`, an ML-DSA-44 public key as `seal keygen` makes one. A file that isn't, or that was changed after
+    /// it was signed, is refused. Each file is checked once, however many scripts are loaded from it.
+    ///
+    /// # Errors
+    ///
+    /// When the bytes aren't an ML-DSA-44 public key.
+    pub fn require_signature(&mut self, public_key: &[u8]) -> Result<(), Message> {
+        let key = super::signing::RequiredKey::new(public_key)?;
+        self.inner_mut()?.required_key = Some(Arc::new(key));
+        Ok(())
+    }
+
+    /// The key files must be signed with, when the host requires one (D169).
+    pub(crate) fn required_key(&self) -> Option<&super::signing::RequiredKey> {
+        self.inner.required_key.as_deref()
+    }
+
     /// The options of a door already opened, to give it labels or units later (D136).
     pub fn options_of(&mut self, name: &str) -> Option<DoorOptions<'_>> {
         let inner = self.inner_mut().ok()?;
@@ -550,9 +577,11 @@ impl Doors {
                 types: self.inner.types.clone(),
                 unit_groups: self.inner.unit_groups.clone(),
                 kept: Mutex::default(),
+                kept_files: Mutex::default(),
                 signatures: OnceLock::new(),
                 all_types: OnceLock::new(),
                 file_key: OnceLock::new(),
+                required_key: self.inner.required_key.clone(),
             });
         }
         let Some(inner) = Arc::get_mut(&mut self.inner) else {
@@ -561,6 +590,9 @@ impl Doors {
         // What was compiled against the doors as they were may not fit them any more, and what was worked out
         // from them is worked out again.
         if let Ok(kept) = inner.kept.get_mut() {
+            kept.clear();
+        }
+        if let Ok(kept) = inner.kept_files.get_mut() {
             kept.clear();
         }
         inner.signatures = OnceLock::new();
@@ -618,6 +650,35 @@ impl Doors {
             kept.push_back(loaded);
         }
         kept.back().cloned()
+    }
+
+    /// trace: D176. What a script's block in a `.sealc` file was read to, when exactly the same block, byte for byte,
+    /// was loaded with these doors before and is still kept.
+    pub(crate) fn kept_file(&self, checksum: u64, block: &[u8]) -> Option<Loaded> {
+        let mut kept = self.inner.kept_files.lock().ok()?;
+        let position = kept.iter().rposition(|(known, loaded)| {
+            *known == checksum
+                && match &loaded.source {
+                    ScriptText::InFile(bytes, _) => **bytes == *block,
+                    ScriptText::Shared(_) => false,
+                }
+        })?;
+        if position + 1 != kept.len()
+            && let Some(entry) = kept.remove(position)
+        {
+            kept.push_back(entry);
+        }
+        kept.back().map(|(_, loaded)| loaded.clone())
+    }
+
+    /// Keeps what a script's block was read to, for the next time the same one is loaded with these doors.
+    pub(crate) fn keep_file(&self, checksum: u64, loaded: Loaded) {
+        if let Ok(mut kept) = self.inner.kept_files.lock() {
+            if kept.len() >= KEPT_FILES {
+                kept.pop_front();
+            }
+            kept.push_back((checksum, loaded));
+        }
     }
 
     /// Keeps what a source compiled to, for the next time it's loaded with these doors.

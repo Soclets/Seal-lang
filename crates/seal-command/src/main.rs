@@ -5,7 +5,11 @@
 //! seal check FILE.seal                   check the script against the test host's doors, without running it
 //! seal build FILE.seal... [-o OUT.sealc] compile scripts for the test host's doors into one `.sealc` file (D141, D153)
 //! seal run FILE.sealc [NAME]             load the script named NAME, or the file's only one, and run it the same way
+//! seal keygen NAME                       make a key pair for signing: NAME.public for hosts, NAME.secret (D169)
 //! ```
+//!
+//! `seal build` takes `--sign NAME.secret` to sign what it writes, and `seal run` takes `--key NAME.public` to load
+//! only a file signed with the matching key, as a host that requires signatures does (D169, D175).
 //!
 //! The test host's doors are a convention for tests, not part of Seal: `show_msg`, `show_msg.same_line`, `ask`,
 //! `rand` and `wait`. `ask` reads standard input, `rand` reads `random.txt` and the calls come from `calls.txt`,
@@ -158,10 +162,54 @@ fn report(error: &Error, output: &Mutex<Output>) -> ExitCode {
     })
 }
 
-const USAGE: &str = "usage: seal run FILE.seal, seal check FILE.seal, seal build FILE.seal... [-o OUT.sealc], or seal run FILE.sealc [NAME]";
+const USAGE: &str = "usage: seal run FILE.seal, seal check FILE.seal, seal build FILE.seal... [-o OUT.sealc] [--sign KEY.secret], seal run FILE.sealc [NAME] [--key KEY.public], or seal keygen NAME";
+
+/// Takes `flag` and the value after it out of the arguments, when they're there.
+fn take_option(arguments: &mut Vec<String>, flag: &str) -> Result<Option<String>, ExitCode> {
+    let Some(at) = arguments.iter().position(|argument| argument == flag) else { return Ok(None) };
+    if at + 1 >= arguments.len() {
+        eprintln!("seal: `{flag}` is followed by a file\n{USAGE}");
+        return Err(ExitCode::from(6));
+    }
+    let value = arguments.remove(at + 1);
+    arguments.remove(at);
+    Ok(Some(value))
+}
+
+/// 32 bytes from the system's randomness, for a key or a signature (D175).
+fn randomness() -> Result<[u8; 32], ExitCode> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).map_err(|error| {
+        eprintln!("seal: the system's randomness can't be read: {error}");
+        ExitCode::from(2)
+    })?;
+    Ok(bytes)
+}
+
+/// trace: D169, D175. `seal keygen NAME`: an ML-DSA-44 key pair, the public key for hosts and the secret one for the
+/// build that signs, which stays on the developer's machine.
+fn keygen_command(name: &str) -> ExitCode {
+    let seed = match randomness() {
+        Ok(seed) => seed,
+        Err(code) => return code,
+    };
+    let (public, secret) = seal::host::signing::keys_from_seed(&seed);
+    for (path, bytes) in [(format!("{name}.public"), public), (format!("{name}.secret"), secret)] {
+        if let Err(error) = std::fs::write(&path, bytes) {
+            eprintln!("seal: `{path}` can't be written: {error}");
+            return ExitCode::from(2);
+        }
+    }
+    ExitCode::SUCCESS
+}
 
 /// trace: D141, D153. `seal build`: one script to `FILE.sealc` beside it, or several, as a bundle, to `-o`.
 fn build_command(paths: &[String]) -> ExitCode {
+    let mut paths = paths.to_vec();
+    let secret = match take_option(&mut paths, "--sign") {
+        Ok(secret) => secret,
+        Err(code) => return code,
+    };
     let (scripts, out): (Vec<&String>, Option<&String>) = match paths.iter().position(|path| path == "-o") {
         Some(at) => (paths.iter().take(at).collect(), paths.get(at + 1)),
         None => (paths.iter().collect(), None),
@@ -192,7 +240,17 @@ fn build_command(paths: &[String]) -> ExitCode {
     };
     let named: Vec<(&str, &str)> =
         scripts.iter().map(|path| path.as_str()).zip(sources.iter().map(String::as_str)).collect();
-    match seal::build(&named, &doors) {
+    let built = seal::build(&named, &doors).and_then(|bytes| match &secret {
+        // trace: D169. Signed with the developer's secret key, when one is given.
+        Some(secret) => {
+            let key = std::fs::read(secret).unwrap_or_default();
+            let random = randomness().unwrap_or_default();
+            seal::host::signing::sign(&bytes, &key, &random)
+                .map_err(|message| Error::Refused(seal::Messages::one(message)))
+        }
+        None => Ok(bytes),
+    });
+    match built {
         Ok(bytes) => match std::fs::write(&out, bytes) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -209,11 +267,32 @@ fn is_compiled(path: &str) -> bool {
     Path::new(path).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("sealc"))
 }
 
+/// trace: D169. Loads only a file signed with the secret key matching the public key in `key`.
+fn require_key(doors: &mut Doors, key: &str) -> Result<(), ExitCode> {
+    let Ok(public) = std::fs::read(key) else {
+        eprintln!("seal: `{key}` can't be read");
+        return Err(ExitCode::from(2));
+    };
+    doors.require_signature(&public).map_err(|message| {
+        eprint!("{}", message.text());
+        ExitCode::from(7)
+    })
+}
+
 fn main() -> ExitCode {
-    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let mut arguments: Vec<String> = std::env::args().skip(1).collect();
     if arguments.first().map(String::as_str) == Some("build") && arguments.len() > 1 {
         return build_command(arguments.get(1..).unwrap_or(&[]));
     }
+    if let [command, name] = arguments.as_slice()
+        && command == "keygen"
+    {
+        return keygen_command(name);
+    }
+    let key = match take_option(&mut arguments, "--key") {
+        Ok(key) => key,
+        Err(code) => return code,
+    };
     let (command, path, wanted) = match arguments.as_slice() {
         [command, path] => (command, path, None),
         [command, path, name] if command == "run" && is_compiled(path) => (command, path, Some(name)),
@@ -245,13 +324,18 @@ fn main() -> ExitCode {
         .map(|text| text.lines().filter_map(|line| line.trim().parse().ok()).collect())
         .unwrap_or_default();
     let output = Arc::new(Mutex::new(Output::default()));
-    let doors = match test_doors(&output, random) {
+    let mut doors = match test_doors(&output, random) {
         Ok(doors) => doors,
         Err(message) => {
             eprint!("{message}");
             return ExitCode::from(7);
         }
     };
+    if let Some(key) = key
+        && let Err(code) = require_key(&mut doors, &key)
+    {
+        return code;
+    }
     if command == "check" && !compiled {
         return match Script::check(path, &source, &doors) {
             Ok(()) => ExitCode::SUCCESS,

@@ -608,6 +608,8 @@ impl Report {
                         (own_text, "load_own_text"),
                         (same_text, "load_same_text"),
                         ("load_compiled_each", "load_compiled"),
+                        ("load_signed_each", "load_signed"),
+                        ("load_same_file_each", "load_same_file"),
                         ("resume_each", "resume_each"),
                         ("call_each", "call_each"),
                     ] {
@@ -901,6 +903,19 @@ impl Report {
             shown(seal),
             shown(luajit),
             verdict(seal, luajit, 2.0),
+        );
+        // trace: D176. The same file loaded again reuses what was verified the first time; for reference.
+        let _ = writeln!(
+            out,
+            "| D176. Loading the same compiled file again | patrolling scripts, each loaded from one `.sealc` file, reusing what was verified | {} | | for reference, no target |",
+            shown(time("patrol.load_same_file", "Seal")),
+        );
+        // trace: D169, D171. A signed file's first load checks its signature: shown for reference, since LuaJIT has none,
+        // and paid once per file or bundle in a run.
+        let _ = writeln!(
+            out,
+            "| D171. Checking a `.sealc` file's signature, once per file | patrolling scripts, loading each signed file of its own, signature checked | {} | | for reference, no target |",
+            shown(time("patrol.load_signed", "Seal")),
         );
         // trace: D152. A door call through C aims at a Rust door's speed; LuaJIT's C API is beside it.
         let (c, rust) = (time("doors.c", "Seal"), time("doors.rust", "Seal"));

@@ -153,6 +153,40 @@ fn damage_is_refused(source: &str, seed: u64) -> Option<String> {
     }
 }
 
+/// trace: D169. A signed file loads, the same as unsigned, where its key is required; changed anywhere, even with its
+/// checksum remade, or signed with another key, it's always refused.
+fn signed_change_is_refused(source: &str, seed: u64) -> Option<String> {
+    static KEYS: std::sync::OnceLock<[(Vec<u8>, Vec<u8>); 2]> = std::sync::OnceLock::new();
+    let [(public, secret), (_, other_secret)] = KEYS.get_or_init(|| {
+        [seal::host::signing::keys_from_seed(&[42; 32]), seal::host::signing::keys_from_seed(&[43; 32])]
+    });
+    let output = Arc::new(Mutex::new(String::new()));
+    let plain_doors = doors(&output).ok()?;
+    let built = seal::build(&[("fuzz.seal", source)], &plain_doors).ok()?;
+    let mut doors = plain_doors.clone();
+    doors.require_signature(public).ok()?;
+    let randomness = [u8::try_from(seed % 256).unwrap_or(0); 32];
+    let signed = seal::host::signing::sign(&built, secret, &randomness).ok()?;
+    let unsigned_loads = Script::load_compiled(&built, "fuzz.seal", &plain_doors, LIMITS).is_ok();
+    if Script::load_compiled(&signed, "fuzz.seal", &doors, LIMITS).is_ok() != unsigned_loads {
+        return Some("a signed `.sealc` file loaded differently from the same file unsigned".to_owned());
+    }
+    let mut changed = built.clone();
+    tamper(&mut changed, seed);
+    let mut forged = changed.clone();
+    forged.extend_from_slice(signed.get(built.len()..).unwrap_or(&[]));
+    let refused =
+        |bytes: &[u8]| matches!(Script::load_compiled(bytes, "fuzz.seal", &doors, LIMITS), Err(Error::Refused(_)));
+    if changed != built && !refused(&forged) {
+        return Some("a signed `.sealc` file changed after signing wasn't refused".to_owned());
+    }
+    let elsewhere = seal::host::signing::sign(&built, other_secret, &randomness).ok()?;
+    if !refused(&elsewhere) || !refused(&built) {
+        return Some("a `.sealc` file not signed with the host's key wasn't refused".to_owned());
+    }
+    None
+}
+
 /// Loads a script the way asked. Compiled plainly, it must give the same answers as with the compiler's shortcuts;
 /// from a `.sealc` file, exactly the same as from its text.
 fn load(source: &str, doors: &Doors, how: Loading) -> Result<Script, Error> {
@@ -378,6 +412,12 @@ fn judge(source: &str, generated: bool) -> Option<String> {
     let seed = seal::compile::file::hash(source.as_bytes());
     if let Some(damaged) = damage_is_refused(source, seed) {
         return Some(damaged);
+    }
+    // A signature costs far more than a load, so one script in four is signed.
+    if seed.is_multiple_of(4)
+        && let Some(signed) = signed_change_is_refused(source, seed)
+    {
+        return Some(signed);
     }
     run_as(source, true, false, Loading::Tampered(seed)).broken
 }

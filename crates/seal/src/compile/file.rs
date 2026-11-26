@@ -320,10 +320,9 @@ impl<'b> Reader<'b> {
     }
 }
 
-/// One script in a file, read back: its name as it is in the file, the block its text and compiled bytes are kept
-/// in, where its text is in that block, and what it compiled to (D173).
-pub struct FileScript<'b> {
-    pub name: &'b str,
+/// One script in a file, read back: the block its text and compiled bytes are kept in, where its text is in that
+/// block, and what it compiled to (D173).
+pub struct FileScript {
     pub block: Arc<[u8]>,
     pub source: std::ops::Range<usize>,
     /// Shared from the moment it's verified, so it's never copied after (D173).
@@ -432,7 +431,18 @@ pub fn names(bytes: &[u8], doors: u64) -> Result<Vec<String>, FileError> {
 /// # Errors
 ///
 /// When the file isn't one this Seal built for these doors, is damaged, has no such script, or fails verifying.
-pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> Result<FileScript<'b>, FileError> {
+pub fn read(bytes: &[u8], name: &str, doors: u64, door_count: usize) -> Result<FileScript, FileError> {
+    read_block(script_block(bytes, name, doors)?.0, door_count)
+}
+
+/// trace: D153, D176. The bytes of the script named `name` in a file, its text and compiled script, after checking
+/// the file's header, checksum and index: what [`read_block`] reads, and what a host that loads the same file again
+/// is matched by.
+///
+/// # Errors
+///
+/// When the file isn't one this Seal built for these doors, is damaged, or has no such script.
+pub fn script_block<'b>(bytes: &'b [u8], name: &str, doors: u64) -> Result<(&'b [u8], u64), FileError> {
     let mut found = None;
     index(bytes, doors, |written, range| {
         if found.is_none() && written == name {
@@ -445,9 +455,21 @@ pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> R
     if written_name != name {
         return Err(FileError::Damaged("a script that isn't what its index says"));
     }
+    // The file's checksum, checked by `index`, picks out a file loaded before at a glance.
+    let mut sum = [0u8; 8];
+    sum.copy_from_slice(bytes.get(bytes.len().saturating_sub(8)..).unwrap_or(&[0; 8]));
+    Ok((input.rest(), u64::from_le_bytes(sum)))
+}
+
+/// Reads and verifies a script's block, from [`script_block`].
+///
+/// # Errors
+///
+/// When it's damaged, or fails verifying.
+pub fn read_block(block: &[u8], door_count: usize) -> Result<FileScript, FileError> {
     // The script's text and compiled bytes, kept as one block, which what's needed only now and then is read from
     // (D173).
-    let blob: Arc<[u8]> = Arc::from(input.rest());
+    let blob: Arc<[u8]> = Arc::from(block);
     let mut input = Reader::new(&blob);
     let length = input.count(1)?;
     let source = input.at..input.at + length;
@@ -457,7 +479,7 @@ pub fn read<'b>(bytes: &'b [u8], name: &str, doors: u64, door_count: usize) -> R
         return Err(FileError::Damaged("bytes after a script"));
     }
     verify(&compiled, door_count).map_err(FileError::Unverified)?;
-    Ok(FileScript { name: written_name, block: blob, source, compiled: Arc::new(compiled) })
+    Ok(FileScript { block: blob, source, compiled: Arc::new(compiled) })
 }
 
 // ---- the compiled script, field by field ----

@@ -44,6 +44,11 @@ fn d141_d153_a_bundle_loads_each_script_by_name_running_as_its_text_does() {
         assert!(Script::load_compiled(&bytes, name, &doors, LIMITS).is_ok(), "{name} didn't load");
         assert_eq!(taken(&shown), from_text, "{name}");
     }
+    // trace: D176. The same file loaded again reuses what was verified, and runs the same.
+    for _ in 0..3 {
+        assert!(Script::load_compiled(&bytes, "counter.seal", &doors, LIMITS).is_ok());
+        assert_eq!(taken(&shown), ["265252859812191058636308480000000"]);
+    }
     let missing = Script::load_compiled(&bytes, "orc.seal", &doors, LIMITS);
     assert!(
         matches!(&missing, Err(Error::Refused(messages)) if messages.text().contains("no script named `orc.seal`"))
@@ -97,4 +102,49 @@ fn d154_a_cache_keeps_compiled_scripts_and_never_changes_what_they_mean() {
     assert_eq!(taken(&shown), ["265252859812191058636308480000000"]);
     assert_eq!(std::fs::read_dir(&folder).map_or(0, Iterator::count), 2);
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+// trace: D169, D175
+#[test]
+fn d169_a_host_can_require_files_signed_with_its_key() {
+    use seal::host::signing::{keys_from_seed, sign};
+    let (public, secret) = keys_from_seed(&[7; 32]);
+    let (other_public, _) = keys_from_seed(&[8; 32]);
+    let (mut doors, shown) = doors();
+    let Ok(built) = seal::build(&[("goblin.seal", GOBLIN), ("counter.seal", COUNTER)], &doors) else {
+        panic!("the scripts didn't build");
+    };
+    let Ok(signed) = sign(&built, &secret, &[1; 32]) else { panic!("the file didn't sign") };
+    assert!(sign(&signed, &secret, &[1; 32]).is_err(), "a file is signed once");
+    assert!(sign(&built, &public, &[1; 32]).is_err(), "a public key doesn't sign");
+    // A host that doesn't require signatures loads a signed file as it is.
+    assert!(Script::load_compiled(&signed, "counter.seal", &doors, LIMITS).is_ok());
+    assert_eq!(seal::names(&signed, &doors).ok().map(|names| names.len()), Some(2));
+    assert!(doors.require_signature(&public[..100]).is_err(), "a key of the wrong size is refused");
+    assert!(doors.require_signature(&public).is_ok());
+    let _ = taken(&shown);
+    for name in ["goblin.seal", "counter.seal", "goblin.seal"] {
+        assert!(Script::load_compiled(&signed, name, &doors, LIMITS).is_ok(), "{name} didn't load");
+    }
+    assert_eq!(taken(&shown).len(), 3);
+    let refusal = |bytes: &[u8], doors: &Doors| match Script::load_compiled(bytes, "counter.seal", doors, LIMITS) {
+        Err(Error::Refused(messages)) => messages.text(),
+        _ => String::new(),
+    };
+    assert!(refusal(&built, &doors).contains("isn't signed"), "{}", refusal(&built, &doors));
+    // Any byte changed, in the file or its signature, is refused.
+    for at in [10, built.len() / 2, built.len() + 5, signed.len() - 9] {
+        let mut changed = signed.clone();
+        if let Some(byte) = changed.get_mut(at) {
+            *byte ^= 1;
+        }
+        let refused = refusal(&changed, &doors);
+        assert!(
+            refused.contains("doesn't match the host's key") || refused.contains("isn't signed"),
+            "{at}: {refused}"
+        );
+    }
+    let mut elsewhere = doors.clone();
+    assert!(elsewhere.require_signature(&other_public).is_ok());
+    assert!(refusal(&signed, &elsewhere).contains("doesn't match the host's key"));
 }

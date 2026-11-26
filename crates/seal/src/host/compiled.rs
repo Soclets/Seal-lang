@@ -44,7 +44,7 @@ pub fn build(scripts: &[(&str, &str)], doors: &Doors) -> Result<Vec<u8>, Error> 
 ///
 /// [`Error::Refused`] when it wasn't, or is.
 pub fn names(bytes: &[u8], doors: &Doors) -> Result<Vec<String>, Error> {
-    file::names(bytes, doors.file_key()).map_err(|error| refused("the `.sealc` file", &error))
+    file::names(super::signing::split(bytes).0, doors.file_key()).map_err(|error| refused("the `.sealc` file", &error))
 }
 
 /// trace: D154. A folder of compiled scripts a host keeps, so a script loaded from its text is read, checked and
@@ -99,17 +99,36 @@ impl Script {
     /// [`Error::Refused`] when the file isn't one this Seal built for these doors, is damaged, has no script of that
     /// name, or doesn't pass verifying; as [`Script::load`] once the script starts.
     pub fn load_compiled(bytes: &[u8], name: &str, doors: &Doors, limits: Limits) -> Result<Script, Error> {
+        // trace: D169. A host that requires signatures loads only a file signed with its key; any other loads a
+        // signed file as it is.
+        let bytes = match doors.required_key() {
+            Some(key) => key.check(bytes).map_err(|mut message| {
+                name.clone_into(&mut message.file);
+                Error::Refused(Messages::one(message))
+            })?,
+            None => super::signing::split(bytes).0,
+        };
         let door_count = doors.shared_signatures().len();
-        let read = catch_unwind(AssertUnwindSafe(|| file::read(bytes, name, doors.file_key(), door_count)));
-        let script = match read {
-            Ok(Ok(script)) => script,
+        let read = catch_unwind(AssertUnwindSafe(|| {
+            let (block, checksum) = file::script_block(bytes, name, doors.file_key())?;
+            // trace: D176. The same script, byte for byte, loaded again with these doors reuses what was read and
+            // verified the first time, as loading the same text again does (D58).
+            if let Some(loaded) = doors.kept_file(checksum, block) {
+                return Ok(loaded);
+            }
+            let script = file::read_block(block, door_count)?;
+            let loaded = Loaded {
+                source: ScriptText::InFile(script.block, script.source),
+                compiled: script.compiled,
+                name: Arc::from(name),
+            };
+            doors.keep_file(checksum, loaded.clone());
+            Ok(loaded)
+        }));
+        let loaded = match read {
+            Ok(Ok(loaded)) => loaded,
             Ok(Err(error)) => return Err(refused(name, &error)),
             Err(_) => return Err(refused(name, &FileError::Damaged("reading it went wrong"))),
-        };
-        let loaded = Loaded {
-            source: ScriptText::InFile(script.block, script.source),
-            compiled: script.compiled,
-            name: Arc::from(script.name),
         };
         Self::from_loaded(loaded, name, doors, limits, true)
     }

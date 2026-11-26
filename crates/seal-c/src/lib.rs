@@ -737,6 +737,37 @@ pub unsafe extern "C" fn seal_doors_add(
     })
 }
 
+/// `seal_doors_require_signature` (D169).
+///
+/// # Safety
+///
+/// `public_key` points at `length` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn seal_doors_require_signature(
+    doors: *mut seal_doors,
+    public_key: *const u8,
+    length: usize,
+) -> seal_status {
+    guarded(|| {
+        const REQUIRE: &str = "seal_doors_require_signature";
+        // SAFETY: the header's rule for the pointer.
+        let key = match unsafe { array_in(REQUIRE, "public_key", "length", public_key, length) } {
+            Ok(key) => key,
+            Err(status) => return status,
+        };
+        let required =
+            DOORS.with(|table| table.borrow_mut().get_mut(number_of(doors)).map(|doors| doors.require_signature(key)));
+        match required {
+            Some(Ok(())) => SEAL_OK,
+            Some(Err(message)) => {
+                say(&message);
+                SEAL_REFUSED
+            }
+            None => not_a_handle(REQUIRE, "doors"),
+        }
+    })
+}
+
 /// `seal_doors_labels`.
 ///
 /// # Safety

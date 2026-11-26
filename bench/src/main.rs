@@ -25,6 +25,9 @@ use std::time::Instant;
 
 use seal::{Argument, Called, Doors, Limits, Pause, Script, TaskId, Value};
 
+/// How many files the patrol benchmark signs and loads, each checked once (D169).
+const SIGNED_FILES: usize = 200;
+
 /// Generous limits: the benchmarks measure speed, not the limits. Every check stays on (D17, D57).
 const LIMITS: Limits = Limits { steps: u64::MAX, memory: 1 << 30 };
 
@@ -135,6 +138,32 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
         Script::load_compiled(bytes, path, &doors, limits).map_err(|error| error.to_string())?;
     }
     let loaded_compiled = started.elapsed().as_secs_f64();
+    // trace: D176. One file loaded again and again, as a game loading a script for each entity does: what was read and
+    // verified the first time is reused, as for the same text.
+    let same_file = files.first().cloned().unwrap_or_default();
+    let started = Instant::now();
+    for _ in 0..count {
+        Script::load_compiled(&same_file, path, &doors, limits).map_err(|error| error.to_string())?;
+    }
+    let loaded_same_file = started.elapsed().as_secs_f64();
+
+    // trace: D169, D171. Each file signed, then loaded where a signature is required: a file's first load checks its
+    // signature, which is timed for reference, apart from loading. Each file is checked once in a run, so every one
+    // here is new.
+    let (public, secret) = seal::host::signing::keys_from_seed(&[7; 32]);
+    let mut signing_doors = doors.clone();
+    signing_doors.require_signature(&public).map_err(|message| message.to_string())?;
+    let signed: Vec<Vec<u8>> = files
+        .iter()
+        .take(SIGNED_FILES)
+        .map(|bytes| seal::host::signing::sign(bytes, &secret, &[1; 32]).map_err(|message| message.to_string()))
+        .collect::<Result<_, _>>()?;
+    let started = Instant::now();
+    for bytes in &signed {
+        Script::load_compiled(bytes, path, &signing_doors, limits).map_err(|error| error.to_string())?;
+    }
+    #[allow(clippy::cast_precision_loss)] // a count of files, far below 2^52
+    let signed_each = started.elapsed().as_secs_f64() / signed.len().max(1) as f64;
     drop(files);
 
     let resident_before = resident_bytes();
@@ -180,6 +209,8 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     let _ = writeln!(out, "load_each {:.9}", loaded / each);
     let _ = writeln!(out, "load_fresh_each {:.9}", loaded_fresh / each);
     let _ = writeln!(out, "load_compiled_each {:.9}", loaded_compiled / each);
+    let _ = writeln!(out, "load_same_file_each {:.9}", loaded_same_file / each);
+    let _ = writeln!(out, "load_signed_each {signed_each:.9}");
     let _ = writeln!(out, "resume_each {:.9}", resumed / every);
     let _ = writeln!(out, "call_each {:.9}", called / every);
     let _ = writeln!(out, "memory_each {}", counted_memory / count.max(1));

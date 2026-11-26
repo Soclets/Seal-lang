@@ -193,6 +193,14 @@ static void test_calls(void) {
     CHECK(seal_script_load_compiled(bytes, size, "game.seal", doors, LIMITS, &compiled) == SEAL_OK);
     CHECK(seal_script_call(compiled, "fight", NULL, &four, 1, &result, &task) == SEAL_OK && result.as.whole == 10);
     seal_script_free(compiled);
+    /* D169: doors that require a signature refuse a key of the wrong size, and then any file not signed with it. */
+    static const uint8_t short_key[10] = {0};
+    CHECK(seal_doors_require_signature(doors, short_key, sizeof short_key) == SEAL_REFUSED);
+    static uint8_t key[1312];
+    for (size_t at = 0; at < sizeof key; at++) key[at] = (uint8_t)(at * 7);
+    if (seal_doors_require_signature(doors, key, sizeof key) == SEAL_OK) {
+        CHECK(seal_script_load_compiled(bytes, size, "game.seal", doors, LIMITS, &compiled) == SEAL_REFUSED);
+    }
     seal_bytes_free(bytes);
 
     seal_script_free(script);

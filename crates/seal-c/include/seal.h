@@ -72,6 +72,9 @@ seal_status seal_doors_add(seal_doors *doors, const char *name, const char *cons
                            const char *result_type, const char *const *failures, size_t failure_count,
                            int can_pause, seal_door_function function, void *host_data);
 seal_status seal_doors_labels(seal_doors *doors, const char *name, const char *const *labels, size_t count);
+/* D169: every .sealc file loaded with these doors must be signed with the secret key matching this ML-DSA-44 public
+ * key, as `seal keygen` makes it (1312 bytes). A file that isn't is refused. */
+seal_status seal_doors_require_signature(seal_doors *doors, const uint8_t *public_key, size_t length);
 
 /* ---- scripts ---- */
 seal_status seal_script_load(const char *name, const char *source, size_t length, const seal_doors *doors,

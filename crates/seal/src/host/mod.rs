@@ -5,6 +5,7 @@ pub mod compiled;
 pub mod convert;
 pub mod doors;
 pub mod script;
+pub mod signing;
 pub mod value;
 
 pub use compiled::{Cache, build, names};

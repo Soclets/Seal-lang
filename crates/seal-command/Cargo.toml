@@ -11,6 +11,8 @@ workspace = true
 
 [dependencies]
 seal = { path = "../seal" }
+# trace: D175. Randomness for `seal keygen`'s keys and for signing, from the system; Tankun allowed its `unsafe`.
+getrandom = "0.2"
 
 [[bin]]
 name = "seal"
