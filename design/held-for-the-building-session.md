@@ -12,6 +12,10 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 - D160 (no macros or comptime), D161 (generic procedures, `<?Item>`), D162 ("variable", mutable and immutable, in
   messages where they mean one) are in DECISIONS.md; it finds them by Building rule 10.
 
+- Its D164 build and four draft wordings, reviewed: all fine. One more: calling a method as a plain procedure,
+  `is_alive(goblin)`, deserves its own refusal, "`is_alive` is a method of `Enemy`, so it's called on one, as
+  `goblin.is_alive()`", not the general "no procedure named". Its two catches in `d164_methods` are fixed (my slips).
+
 ## Still to settle with Tankun
 
 - A `Whole` with a unit into a `Float` with a unit of its group (asked; recommended yes, whenever exact).
