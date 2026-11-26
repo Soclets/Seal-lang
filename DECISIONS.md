@@ -5317,6 +5317,8 @@ On 2026-11-26 a `.sealc` patrolling script loaded in 0.92 µs, down from 2.1 µs
 **Tankun's words.** "2 to 3 days?", then, asked "Should D171 keep LuaJIT's compiled bytecode as the bar, with Seal Opus
 Claude rebuilding compiled scripts as flat blocks to reach it?", the owner chose: "yea"
 
+(Changed by D176: met within twice LuaJIT's time.)
+
 ## D174. Seal's ML-DSA is its own, written and proven in SPARK; D169 waits for it
 
 2026-11-26.
@@ -5381,3 +5383,29 @@ needs more.
 **Tankun's words.** "Or should we fuck SPARK crypto, and just save that card for Ngin?", then, asked "Should the card go
 to NginSeal, with D169's signing waiting until the SPARK checker is built on a later week?", the owner chose: "No, we
 should just use Rust's crate"
+
+## D176. D171 is met within twice LuaJIT's time, since Seal checks each file and LuaJIT doesn't
+
+2026-11-26.
+
+**Chosen.** Loading a `.sealc` meets D171 when it's within twice LuaJIT's time for loading its own compiled bytecode,
+with LuaJIT's time shown beside it, replacing D173's bar of beating it.
+
+Where D173's work ended, on 2026-11-26: a `.sealc` patrolling script loaded in 0.60 µs, from 2.1 µs that afternoon,
+against LuaJIT's 0.28 to 0.32 µs, met within twice. The building session put the floor at about 0.4 µs in safe Rust
+while every load reads and checks its file, which LuaJIT never does.
+
+The building session may also reuse a verified compiled script when exactly the same bytes load again, as Seal already
+reuses what it compiled for the same text, since a game loading one file per entity gains from it; the benchmark row
+keeps files that differ, so it goes on measuring loading.
+
+**Weighed.**
+- LuaJIT's time as the bar, as D173 had it, left not met. The gap is the checking D141 and D170 rest on.
+- Reusing identical files and counting that on the row. The row's files compile to identical bytes, so it would
+  measure reuse, not loading.
+
+**Why this won.** As D150 judged fresh loading: the time left is Seal checking what LuaJIT trusts, and half of
+LuaJIT's speed with checks is the honest goal.
+
+**Tankun's words.** Asked "Should D171 count as met when a `.sealc` loads within twice LuaJIT's bytecode time, with
+LuaJIT's time shown beside it?", the owner chose: "yea"
