@@ -1147,10 +1147,11 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Re
         let after_labels = index == 2
             && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
             && matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::Labels)));
-        // trace: D110. `handles [ … ]`, a handler group's first line, is spaced as `labels [ … ]` is.
+        // trace: D110, D167. `handles [ … ]`, a handler group's first line, and `meets [ … ]`, a record's or a
+        // `one_of`'s, are spaced as `labels [ … ]` is.
         let after_handles = index == 0
             && matches!(after.kind, TokenKind::Symbol(Symbol::OpenSquare))
-            && matches!(&before.kind, TokenKind::Name(word) if *word == "handles");
+            && matches!(&before.kind, TokenKind::Name(word) if *word == "handles" || *word == "meets");
         // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
         let jump_mark = index >= 1
             && matches!(before.kind, TokenKind::Symbol(Symbol::Star))

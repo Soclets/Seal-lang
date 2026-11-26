@@ -9,7 +9,7 @@ use super::tree::{
     BinaryOperator, Block, CaseDeclaration, DefaultDeclaration, Entry, Expression, ExpressionKind, Fallback, Family,
     FieldDeclaration, Handler, HandlerGroup, HandlerUse, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration,
     OtherwiseCase, Parameter, PositionKind, Procedure, RecordDeclaration, Script, SlideStep, Statement, StatementKind,
-    TypeExpression, UnaryOperator, UnitGroup, UnitMember, UnitName, UnitWritten, Word,
+    TypeExpression, TypeParameter, UnaryOperator, UnitGroup, UnitMember, UnitName, UnitWritten, Word,
 };
 use crate::message::{Message, Place};
 
@@ -477,7 +477,14 @@ impl<'a> Parser<'a> {
                     )
                     .with_why("`?` marks a type that each call fills in, so it can't be mistaken for a real type."));
                 }
-                type_parameters.push(parameter);
+                // trace: D166. What the type must be able to do, after `:`, as `?Item: Number`.
+                let requirement = if self.at_symbol(Symbol::Colon) {
+                    self.advance();
+                    Some(self.expect_type_name()?)
+                } else {
+                    None
+                };
+                type_parameters.push(TypeParameter { name: parameter, requirement });
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();
                 } else {
@@ -928,6 +935,7 @@ impl<'a> Parser<'a> {
         self.end_line()?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let meets = self.meets(&opener)?;
         while self.in_body(&opener)? {
             // trace: D164. A method is a `proc` inside its record, after the fields.
             if self.first_keyword() == Some(Keyword::Proc) {
@@ -941,7 +949,7 @@ impl<'a> Parser<'a> {
             self.end_line()?;
         }
         self.end_of(&opener)?;
-        Ok(RecordDeclaration { name, fields, methods })
+        Ok(RecordDeclaration { name, fields, methods, meets })
     }
 
     /// trace: D35, D36
@@ -953,6 +961,7 @@ impl<'a> Parser<'a> {
         self.end_line()?;
         let mut cases = Vec::new();
         let mut methods = Vec::new();
+        let meets = self.meets(&opener)?;
         while self.in_body(&opener)? {
             // trace: D164. A method is a `proc` inside its `one_of`, after the cases.
             if self.first_keyword() == Some(Keyword::Proc) {
@@ -980,7 +989,31 @@ impl<'a> Parser<'a> {
             cases.push(CaseDeclaration { name: case_name, fields });
         }
         self.end_of(&opener)?;
-        Ok(OneOfDeclaration { name, cases, methods })
+        Ok(OneOfDeclaration { name, cases, methods, meets })
+    }
+
+    /// trace: D167. A record's or `one_of`'s first line, `meets [ … ]`, naming the requirements it meets.
+    fn meets(&mut self, opener: &Opener<'a>) -> Result<Vec<Word<'a>>, Message> {
+        let starts = self.in_body(opener)?
+            && matches!(self.peek_kind(), Some(TokenKind::Name("meets")))
+            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::OpenSquare)));
+        if !starts {
+            return Ok(Vec::new());
+        }
+        self.advance();
+        self.advance();
+        let mut names = Vec::new();
+        loop {
+            names.push(self.expect_type_name()?);
+            if self.at_symbol(Symbol::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        self.expect_symbol(Symbol::CloseSquare)?;
+        self.end_line()?;
+        Ok(names)
     }
 
     /// trace: D164. A field or case written after a method.

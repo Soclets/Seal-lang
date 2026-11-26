@@ -278,6 +278,8 @@ pub struct TypeTable {
     big_edges: Vec<crate::big::Big>,
     /// Each generic procedure's type parameters, as written, `?` and all, each a [`Type::Parameter`] (D161).
     pub parameters: Vec<String>,
+    /// Whether each type parameter requires a `Number` (D166).
+    pub numbers_only: Vec<bool>,
 }
 
 impl Default for TypeTable {
@@ -293,6 +295,7 @@ impl Default for TypeTable {
             unit_groups: NO_UNIT_GROUPS.get_or_init(std::sync::Arc::default).clone(),
             big_edges: Vec::new(),
             parameters: Vec::new(),
+            numbers_only: Vec::new(),
         }
     }
 }
@@ -383,10 +386,17 @@ impl TypeTable {
     }
 
     /// trace: D161. A new type parameter, as `?Item`, of one generic procedure.
-    pub fn new_parameter(&mut self, name: &str) -> TypeId {
+    pub fn new_parameter(&mut self, name: &str, numbers_only: bool) -> TypeId {
         let number = u32::try_from(self.parameters.len()).unwrap_or(u32::MAX);
         self.parameters.push(name.to_owned());
+        self.numbers_only.push(numbers_only);
         self.intern(Type::Parameter(number))
+    }
+
+    /// trace: D166. Whether a type is a type parameter that requires a `Number`.
+    #[must_use]
+    pub fn is_number_parameter(&self, id: TypeId) -> bool {
+        matches!(self.get(id), Type::Parameter(parameter) if self.numbers_only.get(*parameter as usize) == Some(&true))
     }
 
     /// trace: D161. The type with each type parameter in `map` put in place of what it stands for, all the way down.
@@ -896,8 +906,9 @@ impl TypeTable {
             edge.write_file(out);
         }
         out.count(self.parameters.len());
-        for parameter in &self.parameters {
+        for (parameter, &numbers_only) in self.parameters.iter().zip(&self.numbers_only) {
             out.text(parameter);
+            out.flag(numbers_only);
         }
     }
 
@@ -1000,8 +1011,10 @@ impl TypeTable {
         }
         let count = input.count(4)?;
         let mut parameters = Vec::with_capacity(count);
+        let mut numbers_only = Vec::with_capacity(count);
         for _ in 0..count {
             parameters.push(input.text()?);
+            numbers_only.push(input.flag()?);
         }
         // What's looked up by its kind is found again in the table, as interning would find it.
         let interned = types
@@ -1019,6 +1032,7 @@ impl TypeTable {
             unit_groups: std::sync::Arc::new(unit_groups),
             big_edges,
             parameters,
+            numbers_only,
         })
     }
 

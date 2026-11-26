@@ -371,6 +371,30 @@ impl Visit for Unsettled<'_> {
         let ExpressionKind::Call { procedure, types, .. } = &expression.kind else { return };
         let Some(generic) = self.program.procedure(*procedure) else { return };
         for (&filled, &parameter) in types.iter().zip(&generic.type_parameters) {
+            // trace: D166. A type parameter that requires a `Number` is filled in with one, at each call.
+            if self.program.types.is_number_parameter(parameter)
+                && self.program.types.is_settled(filled)
+                && !self.program.types.is_number_parameter(filled)
+                && !matches!(
+                    self.program.types.get(filled),
+                    Type::Whole | Type::Float | Type::HugeWhole | Type::Decimal | Type::HugeDecimal
+                )
+            {
+                let (name, found) = (self.program.types.written(parameter), self.program.types.describe(filled));
+                self.found.push(
+                    Message::refused(
+                        expression.place,
+                        format!(
+                            "`{}`'s `{name}` must be a `Number`, but this call fills it in with {found}",
+                            generic.name
+                        ),
+                    )
+                    .with_why(
+                        "a `Number` is a `Whole`, `Float`, `HugeWhole`, `Decimal` or `HugeDecimal`, with no unit.",
+                    ),
+                );
+                return;
+            }
             if !self.program.types.is_settled(filled) {
                 let name = self.program.types.written(parameter);
                 self.found.push(

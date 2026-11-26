@@ -358,14 +358,6 @@ impl<'a> Checker<'a> {
                                 });
                             }
                             if let Some(part) = self.brace(inside, brace_place) {
-                                // trace: D161. Showing a type parameter's value is part of what one can do.
-                                if self.program.types.has_parameter(part.type_id) {
-                                    let found = self.describe(part.type_id);
-                                    self.not_designed(
-                                        brace_place,
-                                        format!("showing {found} in braces: what a type parameter can do"),
-                                    );
-                                }
                                 parts.push(part);
                             }
                         }
@@ -755,11 +747,6 @@ impl<'a> Checker<'a> {
             return;
         }
         let checked = self.expression(expression, None);
-        // trace: D161. Showing a type parameter's value is part of what a type parameter can do, decided separately.
-        if self.program.types.has_parameter(checked.type_id) {
-            let found = self.describe(checked.type_id);
-            self.not_designed(checked.place, format!("showing {found} in braces: what a type parameter can do"));
-        }
         parts.push(checked);
     }
 

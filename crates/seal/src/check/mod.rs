@@ -1165,11 +1165,18 @@ impl<'a> Checker<'a> {
         }
         // trace: D164. Each record's and `one_of`'s methods, known by their type and their own name.
         for item in &script.items {
-            let (type_name, methods) = match item {
-                syntax::Item::Record(record) => (record.name.text, &record.methods),
-                syntax::Item::OneOf(one_of) => (one_of.name.text, &one_of.methods),
+            let (type_name, methods, meets) = match item {
+                syntax::Item::Record(record) => (record.name.text, &record.methods, &record.meets),
+                syntax::Item::OneOf(one_of) => (one_of.name.text, &one_of.methods, &one_of.meets),
                 _ => continue,
             };
+            // trace: D166, D167. How a requirement that lists methods is written isn't decided, so none can be met.
+            for requirement in meets {
+                self.not_designed(
+                    requirement.place,
+                    format!("meeting `{}`: how a requirement listing methods is written", requirement.text),
+                );
+            }
             let owner = if let Some(&index) = self.record_names.get(type_name) {
                 self.program.types.intern(Type::Record(index))
             } else if let Some(&index) = self.one_of_names.get(type_name) {
@@ -1260,15 +1267,28 @@ impl<'a> Checker<'a> {
         // trace: D161. A generic procedure's type parameters, each its own type, used in its first line and body.
         let mut type_parameters: Vec<TypeId> = Vec::new();
         for written in &procedure.type_parameters {
-            if type_parameters.iter().any(|&earlier| self.program.types.written(earlier) == written.text) {
+            let name = &written.name;
+            if type_parameters.iter().any(|&earlier| self.program.types.written(earlier) == name.text) {
                 self.refuse_why(
-                    written.place,
-                    format!("two type parameters are named `{}`", written.text),
+                    name.place,
+                    format!("two type parameters are named `{}`", name.text),
                     "each type parameter has a name of its own.",
                 );
                 continue;
             }
-            type_parameters.push(self.program.types.new_parameter(written.text));
+            // trace: D166. `Number` is Seal's first built-in requirement; ones listing methods aren't written yet.
+            let numbers_only = match &written.requirement {
+                None => false,
+                Some(requirement) if requirement.text == "Number" => true,
+                Some(requirement) => {
+                    self.not_designed(
+                        requirement.place,
+                        format!("the requirement `{}`: how a requirement listing methods is written", requirement.text),
+                    );
+                    false
+                }
+            };
+            type_parameters.push(self.program.types.new_parameter(name.text, numbers_only));
         }
         self.header_parameters.clone_from(&type_parameters);
         let mut parameters: Vec<VariableId> = Vec::new();
@@ -1318,7 +1338,9 @@ impl<'a> Checker<'a> {
         };
         self.header_parameters.clear();
         // trace: D161. A type parameter its parameters and result never use could never be worked out at a call.
-        for (&parameter, written) in type_parameters.iter().zip(&procedure.type_parameters) {
+        for (&parameter, written) in
+            type_parameters.iter().zip(procedure.type_parameters.iter().map(|written| &written.name))
+        {
             let used = parameters.iter().any(|&variable| {
                 let type_id = self.variable_type(variable);
                 self.program.types.mentions_parameter(type_id, parameter)

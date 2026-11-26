@@ -96,13 +96,22 @@ pub struct Word<'a> {
     pub place: Place,
 }
 
+/// A generic procedure's type parameter, as `?Item: Number` (D161, D166).
+#[derive(Clone, Debug)]
+pub struct TypeParameter<'a> {
+    /// As written, `?` and all.
+    pub name: Word<'a>,
+    /// What its type must be able to do, as `Number` (D166).
+    pub requirement: Option<Word<'a>>,
+}
+
 /// `proc name[parameters] -> Type ! [failures]` and its body (D21, D45).
 #[derive(Clone, Debug)]
 pub struct Procedure<'a> {
     /// The name with its narrowings, as `spawn` and `boss` for `spawn.boss` (D43).
     pub path: Vec<Word<'a>>,
     /// A generic procedure's type parameters, as `?Item`, in the order written (D161).
-    pub type_parameters: Vec<Word<'a>>,
+    pub type_parameters: Vec<TypeParameter<'a>>,
     pub parameters: Vec<Parameter<'a>>,
     pub result: Option<TypeExpression<'a>>,
     pub failures: Option<Vec<Word<'a>>>,
@@ -174,6 +183,8 @@ pub struct RecordDeclaration<'a> {
     pub fields: Vec<FieldDeclaration<'a>>,
     /// Its methods, each a procedure whose first parameter is a value of the record (D164).
     pub methods: Vec<Procedure<'a>>,
+    /// The requirements it says it meets, on its first line (D167).
+    pub meets: Vec<Word<'a>>,
 }
 
 #[derive(Clone, Debug)]
@@ -189,6 +200,8 @@ pub struct OneOfDeclaration<'a> {
     pub cases: Vec<CaseDeclaration<'a>>,
     /// Its methods, each a procedure whose first parameter is a value of the `one_of` (D164).
     pub methods: Vec<Procedure<'a>>,
+    /// The requirements it says it meets, on its first line (D167).
+    pub meets: Vec<Word<'a>>,
 }
 
 #[derive(Clone, Debug)]

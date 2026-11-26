@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D165 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D167 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -265,6 +265,24 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   as used. A method that reaches the lent top-level variable itself, or through what it calls, is refused. `mut` on
   any other parameter, a lending method called on anything but a variable, and one that can fail stop as not
   designed yet. The fuzzer's `Hero` has `heal`, called on mutable variables.
+- **D166, D167** A type parameter's requirement after `:`. With none, its values are kept, passed, given back,
+  compared with `eq` and `not_eq` and shown in braces; `?Item: Number` adds maths, ordering, `abs`, `min` and
+  `max`, and each call's type is checked to be a `Whole`, `Float`, `HugeWhole`, `Decimal` or `HugeDecimal` with no
+  unit. A requirement listing methods, and `meets [ … ]` (spaced as `handles [ … ]`), stop as not designed yet:
+  how one is written isn't decided. The fuzzer has a `Number` generic.
+- **D141, D153, D154** `.sealc` files (`compile/file.rs`, `host/compiled.rs`): `seal build a.seal [b.seal …]
+  [-o out.sealc]` and `seal::build` write one script or a bundle with an index; `Script::load_compiled` loads one by
+  name; `Cache` and `Script::load_cached` keep them in a folder the host names, keyed by text, this Seal and the
+  doors, falling back to the text when a cache file is bad. Each load checks this exact Seal's fingerprint (its
+  version and the source of what decides a script's meaning), the doors' key, a checksum, every count against the
+  file and every text as UTF-8; then the verifier checks every register against its frame, every jump inside its
+  procedure, every table number (constants, texts, layouts, sites, globals, procedures, failures) and the type
+  table (all in range, no loops, at most 256 deep). How instructions are written and read is made by
+  `compile/make_instruction_file.py` from `bytecode.rs`. The one command runs every test from compiled files too;
+  the fuzzer loads every script compiled (exactly the same as from text), damaged (always refused) and tampered
+  with a remade checksum (never harming the host). Not done: following each register's kind, so a tampered file
+  that swaps registers can still pass and stop with an internal message, which then says the file may have been
+  changed; and the loading row in `bench/RESULTS.md`.
 - **D157, D158** `return`, `include` and `instead` again, and `eq` and `not_eq` as keywords in place of `==` and
   `!=`, which no longer read as one symbol. `ret`, `incl` and `use` are plain names again. Messages, the fuzzer and
   `bench/programs/` use the new words; the Unio translator already wrote Unio's.
@@ -437,6 +455,7 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - what a type parameter can do (D161): maths, comparing, converting, showing, reaching into one's value
 - a host calling a generic procedure, which would need its types worked out from the host's values (D161)
 - a host calling a method (D164)
+- a requirement listing methods, and `meets [ … ]` (D166, D167)
 - `mut` on a parameter other than a method's first (Unio D130's parameter words); a method that changes its value
   called on something other than a variable, or able to fail (D165)
 - a `\r` that isn't right before a line break

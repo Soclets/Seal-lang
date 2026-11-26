@@ -570,12 +570,19 @@ impl Checker<'_> {
             return;
         }
         let purpose = pending.purpose.as_str();
-        // trace: D161. What a type parameter can do is decided separately, so a value of one is only passed along,
-        // kept and given back; a list of them is still gone through, reached and counted.
+        // trace: D161, D166. Any type parameter's value is passed along, kept, given back, compared with `eq` and
+        // `not_eq` and shown; one that requires a `Number` does maths and ordering too. A list of them is still
+        // gone through, reached and counted. Anything else waits on requirements listing methods.
+        if matches!(pending.requirement, Requirement::Number | Requirement::Ordered)
+            && self.program.types.is_number_parameter(pending.subject)
+        {
+            return;
+        }
         let on_parameter = match &pending.requirement {
             Requirement::Member { .. } | Requirement::Indexable { .. } | Requirement::Iterable { .. } => {
                 matches!(kind, Type::Parameter(_))
             }
+            Requirement::Comparable => false,
             _ => self.program.types.has_parameter(pending.subject),
         };
         if on_parameter {

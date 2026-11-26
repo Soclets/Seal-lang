@@ -433,15 +433,11 @@ fn d161_generic_procedures_fill_in_their_types_at_each_call() {
     assert_eq!(shows(from_result), ["nobody"]);
     let recursive = "proc count<?Item>[items: List<?Item>, n: Whole] -> Whole\n    if n eq 0\n        return items.len\n    else\n        return count(items, n - 1)\n    end\nend\nc = count([\"a\"], 3)\nshow_msg(\"{c}\")\n";
     assert_eq!(shows(recursive), ["1"]);
-    for (operation, what) in [("return a + b", "`+`"), ("return a eq b", "`eq`")] {
-        let script = format!(
-            "proc both<?Item>[a: ?Item, b: ?Item] -> ?Item\n    {operation}\nend\nx = both(1, 2)\nshow_msg(\"{{x}}\")\n"
-        );
-        let refused = refusal(&script);
-        assert!(refused.contains(what) && refused.contains("what a type parameter can do"), "{refused}");
-    }
-    let shown = "proc say<?Item>[a: ?Item]\n    show_msg(\"{a}\")\nend\nsay(1)\n";
-    assert!(refusal(shown).contains("showing `?Item` in braces"), "{}", refusal(shown));
+    // Maths on a type parameter with no requirement waits on what one can require (D166).
+    let maths =
+        "proc both<?Item>[a: ?Item, b: ?Item] -> ?Item\n    return a + b\nend\nx = both(1, 2)\nshow_msg(\"{x}\")\n";
+    let refused = refusal(maths);
+    assert!(refused.contains("`+`") && refused.contains("what a type parameter can do"), "{refused}");
     let unused = "proc keep<?Item, ?Other>[a: ?Item] -> ?Item\n    return a\nend\nx = keep(1)\nshow_msg(\"{x}\")\n";
     assert!(refusal(unused).contains("`?Other` isn't in `keep`'s parameters or result"), "{}", refusal(unused));
     let outside = "x: ?Item = 3\nshow_msg(\"{x}\")\n";
@@ -507,4 +503,20 @@ fn d165_a_mut_first_parameter_changes_the_variable_it_is_called_on() {
     assert!(refusal(reaching).contains("`put` reaches `bag1` itself"), "{}", refusal(reaching));
     let elsewhere = "proc bump[mut n: Whole]\n    n = n + 1\nend\nmut x = 1\nbump(x)\n";
     assert!(refusal(elsewhere).contains("a `mut` parameter other than a method's first"), "{}", refusal(elsewhere));
+}
+
+// trace: D166, D167. Requirements: none lets any type in, to be kept, passed, compared and shown; `Number` adds maths
+// and ordering, checked at each call; ones listing methods, and meeting them, wait on how they're written.
+#[test]
+fn d166_d167_requirements_on_type_parameters() {
+    let script = "proc spread<?Item: Number>[a: ?Item, b: ?Item] -> ?Item\n    return max(a, b) - min(a, b) + abs(a - a)\nend\nproc same<?Item>[a: ?Item, b: ?Item] -> Bool\n    show_msg(\"{a}\")\n    return a eq b\nend\nx = spread(3, 9)\ny = spread(2.5, 4.5)\nbig: HugeWhole = 10\nz = spread(big, big)\nw = same([1], [1])\nshow_msg(\"{x} {y} {z} {w}\")\n";
+    assert_eq!(shows(script), ["[1]", "6 2.0 0 true"]);
+    let text = "proc spread<?Item: Number>[a: ?Item, b: ?Item] -> ?Item\n    return max(a, b)\nend\nx = spread(\"a\", \"b\")\nshow_msg(x)\n";
+    assert!(refusal(text).contains("must be a `Number`, but this call fills it in with `Text`"), "{}", refusal(text));
+    let unit = "proc spread<?Item: Number>[a: ?Item, b: ?Item] -> ?Item\n    return max(a, b)\nend\nx = spread(2 secs, 3 secs)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(unit).contains("must be a `Number`"), "{}", refusal(unit));
+    let methods = "proc best<?Item: Scored>[a: ?Item] -> ?Item\n    return a\nend\nx = best(1)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(methods).contains("how a requirement listing methods is written"), "{}", refusal(methods));
+    let meets = "record Player\n    meets [Scored]\n    name: Text\nend\n";
+    assert!(refusal(meets).contains("meeting `Scored`"), "{}", refusal(meets));
 }
