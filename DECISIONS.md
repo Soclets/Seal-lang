@@ -5034,3 +5034,35 @@ memory model stays whole.
 **Tankun's words.** "?", "why?", "Is it a mut var?", "Wait, does that break our memory model?", then, asked "Should a
 method that changes its value mark its first parameter `mut`, and only work on a mutable variable?", the owner chose:
 "yea"
+
+## D166. Requirements on type parameters: built-ins starting with `Number`, and ones listing methods
+
+2026-11-26.
+
+**Chosen.** A type parameter can say what its type must be able to do, after `:`, and the body may then do it:
+- **No requirement means any type,** as `first<?Item>` (D161): anything can be passed in, and inside, a value can only
+  be stored, passed on, returned, compared with `eq` and `not_eq`, and shown in braces, since every type can.
+- **`Number` is the first built-in requirement:** `Whole`, `Float`, `HugeWhole`, `Decimal` and `HugeDecimal`, allowing
+  `+`, `-`, `*`, `/`, `<`, `>`, `at_least`, `at_most`, `abs`, `min` and `max`, as `largest<?Item: Number>`. One
+  call's `?Item` is one type, so `Whole` and `Float` still don't mix (D16). Values with units aren't among them, since
+  `secs` times `secs` isn't `secs`; generics over units are a question of their own. More built-ins come when a real
+  need shows.
+- **A script can write requirements that list methods** a type must have (D163), so one generic serves every type
+  with, say, a `score()`, as `best<?Item: Scored>`.
+- **Each call is checked:** a type that doesn't meet the requirement is refused at the call, before anything runs.
+
+How a requirement is written and named, and how a type comes to meet one, are decided separately.
+
+**Weighed.**
+- A small built-in list only, as the design session first proposed while Seal had no methods. With methods (D163),
+  a list would leave a script's own types out of generics that need behaviour.
+- Cyborg's `type_set`, a closed list of types as a requirement (its D235). The built-ins cover what Seal's own types
+  can do; a script's types are reached through methods.
+- Writing "any type" out, as Cyborg's `any.type` (its D239). Seal leaves out what goes without saying (D2).
+
+**Why this won.** A generic says what it needs, a script's own types can meet it, and a wrong type is caught at the
+call.
+
+**Tankun's words.** "What are these for, again?", "What are the built-in ones", "What does no `:` on gener mean?",
+"Wait, what? Is it all or nah", then, asked "Should Seal have requirements that list the methods a type must have,
+which a generic can ask for, alongside built-ins starting with `Number`?", the owner chose: "yea"

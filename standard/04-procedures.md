@@ -59,8 +59,28 @@ name = first(["Ann", "Bo"])       // ?Item is Text
 - **A call never writes the type:** it's worked out from the arguments, or from where the result goes, and refused
   where nothing says it.
 
-**Not decided:** what a type parameter must be able to do, as being compared with `<`; generic records and `one_of`s;
-how generics are compiled.
+- **A type parameter with no requirement takes any type,** and inside, its values can only be stored, passed on,
+  returned, compared with `eq` and `not_eq`, and shown in braces (D166).
+- **A requirement after `:` says what the type must be able to do,** and lets the body do it: `<?Item: Number>` allows
+  maths and ordering on `?Item` (D166). Each call is checked: a type that doesn't meet it is refused at the call.
+
+```
+proc largest<?Item: Number>[a: ?Item, b: ?Item] -> ?Item
+    if a > b
+        return a
+    else
+        return b
+    end
+end
+```
+
+- **`Number`,** the first built-in requirement: `Whole`, `Float`, `HugeWhole`, `Decimal` and `HugeDecimal`, with `+`,
+  `-`, `*`, `/`, `<`, `>`, `at_least`, `at_most`, `abs`, `min` and `max`. One call's `?Item` is one type, so `Whole`
+  and `Float` still don't mix (D16). Values with units aren't among them (D166).
+- **A script can write its own requirements,** listing methods a type must have, so a generic can call them (D166).
+
+**Not decided:** how a requirement is written and named, and how a type comes to meet one; generics over units;
+generic records and `one_of`s; how generics are compiled.
 
 **Not decided:** parameter words for reading, changing or taking over (Unio D130).
 A procedure's failures: chapter 7.

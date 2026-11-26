@@ -1,0 +1,1 @@
+A type parameter's requirement, Number, allows maths and ordering; none allows any type. D166, D161.

@@ -1,0 +1,19 @@
+proc largest<?Item: Number>[a: ?Item, b: ?Item] -> ?Item
+    if a > b
+        return a
+    else
+        return b
+    end
+end
+
+proc first<?Item>[items: List<?Item>] -> Maybe<?Item>
+    for_each item in items
+        return Maybe.some[value: item]
+    end
+    return Maybe.none
+end
+
+big = largest(3, 9)
+wide = largest(2.5, 1.5)
+name = first(["Ann"]) ?? "nobody"
+show_msg("{big} {wide} {name}")
