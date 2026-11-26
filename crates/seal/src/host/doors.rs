@@ -348,13 +348,69 @@ impl Doors {
         }
     }
 
+    /// trace: D136, D152. Opens a door whose shape the host gives while it runs, as the C API's doors are: what it
+    /// takes and gives as [`HostType`]s, its failures, and whether it pauses. `function` is called with every
+    /// argument's bare bits, a plain number or `Bool` being only that, and, for each argument that's more than its
+    /// bits, its value in the same place, to take; it answers as the VM takes an answer.
+    ///
+    /// # Errors
+    ///
+    /// As [`Doors::add`].
+    pub fn add_raw(
+        &mut self,
+        name: &str,
+        shape: (Vec<HostType>, HostType, Vec<String>, bool),
+        function: impl Fn(&[u64], &mut Vec<Value>) -> DoorAnswer + Send + Sync + 'static,
+    ) -> Result<DoorOptions<'_>, Message> {
+        for word in name.split('.') {
+            check_spelling(name, word)?;
+        }
+        let first = name.split('.').next().unwrap_or(name);
+        if ["fmt", "range", "sqrt"].contains(&first) {
+            return Err(door_refusal(
+                name,
+                format!("`{first}` is one of Seal's own words, so it can't name a door"),
+                "each word has one meaning.",
+            ));
+        }
+        let (parameters, result, failures, can_pause) = shape;
+        for failure in &failures {
+            check_spelling(name, failure)?;
+        }
+        let inner = self.inner_mut()?;
+        if inner.doors.iter().any(|door| door.signature.name == name) {
+            return Err(door_refusal(name, format!("the door `{name}` is opened twice"), "each door is opened once."));
+        }
+        let signature = DoorSignature {
+            name: name.to_owned(),
+            parameters: parameters.into_iter().map(|host_type| DoorParameter { label: None, host_type }).collect(),
+            result,
+            failures,
+            can_pause,
+        };
+        inner.doors.push(Door { signature, function: Arc::new(function) });
+        match inner.doors.last_mut() {
+            Some(door) => Ok(DoorOptions { signature: &mut door.signature }),
+            None => Err(Message::internal("a door went missing as it was opened")),
+        }
+    }
+
+    /// The options of a door already opened, to give it labels or units later (D136).
+    pub fn options_of(&mut self, name: &str) -> Option<DoorOptions<'_>> {
+        let inner = self.inner_mut().ok()?;
+        inner
+            .doors
+            .iter_mut()
+            .find(|door| door.signature.name == name)
+            .map(|door| DoorOptions { signature: &mut door.signature })
+    }
+
     /// What a script sees of each door.
     #[must_use]
     pub fn signatures(&self) -> Vec<DoorSignature> {
         self.inner.doors.iter().map(|door| door.signature.clone()).collect()
     }
 
-    /// What a script sees of each door, shared, worked out once until the doors change.
     /// trace: D153, D154. What a compiled script was compiled against: every door, type and unit group the host
     /// opens, worked out once until the doors change. A file built for other doors is refused.
     pub(crate) fn file_key(&self) -> u64 {
@@ -364,6 +420,7 @@ impl Doors {
         })
     }
 
+    /// What a script sees of each door, shared, worked out once until the doors change.
     pub(crate) fn shared_signatures(&self) -> Arc<[DoorSignature]> {
         Arc::clone(self.inner.signatures.get_or_init(|| self.signatures().into()))
     }
@@ -617,6 +674,25 @@ impl DoorOptions<'_> {
     /// Refuses units that don't match the door's values in number, a unit on a value that isn't an `i64` or an
     /// `f64`, and a unit that isn't written as a script writes one.
     pub fn units<const COUNT: usize>(self, units: [Option<&str>; COUNT]) -> Result<Self, Message> {
+        self.units_of(&units)
+    }
+
+    /// The labels of [`DoorOptions::labels`], from a list as long as the door's values, for a host whose doors are
+    /// known only while it runs, as the C API's are (D136).
+    ///
+    /// # Errors
+    ///
+    /// As [`DoorOptions::labels`].
+    pub fn labels_of(self, labels: &[&str]) -> Result<Self, Message> {
+        self.set_labels(0, labels)
+    }
+
+    /// The units of [`DoorOptions::units`], from a list as long as the door's values (D136).
+    ///
+    /// # Errors
+    ///
+    /// As [`DoorOptions::units`].
+    pub fn units_of(self, units: &[Option<&str>]) -> Result<Self, Message> {
         let name = self.signature.name.clone();
         if units.len() != self.signature.parameters.len() {
             return Err(door_refusal(
@@ -630,7 +706,7 @@ impl DoorOptions<'_> {
             ));
         }
         for (parameter, unit) in self.signature.parameters.iter_mut().zip(units) {
-            if let Some(unit) = unit {
+            if let Some(unit) = *unit {
                 parameter.host_type = measured(&name, parameter.host_type.clone(), unit)?;
             }
         }

@@ -58,6 +58,21 @@ pub struct TaskId {
     generation: u32,
 }
 
+impl TaskId {
+    /// The task as one number, for a host that holds it outside Rust, as the C API does (D136).
+    #[must_use]
+    pub fn to_bits(self) -> u64 {
+        (u64::from(self.generation) << 32) | u64::from(self.index)
+    }
+
+    /// A task from [`TaskId::to_bits`]'s number. One that was never a task's is refused where it's used.
+    #[must_use]
+    pub fn from_bits(bits: u64) -> TaskId {
+        let low = bits & u64::from(u32::MAX);
+        TaskId { index: u32::try_from(low).unwrap_or(0), generation: u32::try_from(bits >> 32).unwrap_or(0) }
+    }
+}
+
 /// How a call into a script came back.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Called<R> {

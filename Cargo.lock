@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "seal-c"
+version = "0.1.0"
+dependencies = [
+ "seal",
+]
+
+[[package]]
 name = "seal-check-all"
 version = "0.1.0"
 
