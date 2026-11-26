@@ -518,9 +518,9 @@ impl Report {
         );
         let _ = writeln!(
             self.out,
-            "| Engine | Kind | Load, each from its own text | Load, each from the same text | Resume, each | Call, each | Memory, each script | Peak memory | Notes |"
+            "| Engine | Kind | Load, each from its own text | Load, each from the same text | Load, each from a compiled file (D141) | Resume, each | Call, each | Memory, each script | Peak memory | Notes |"
         );
-        let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|---|");
+        let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|---|---|");
         let script = self.root.join("bench/programs/patrol.normal.seal");
         for (kind, (count, rounds)) in [("Purpose", PATROL_PURPOSE), ("Normal", PATROL), ("Ceil", PATROL)] {
             let wanted = (count + 2 * count * rounds).to_string();
@@ -599,6 +599,7 @@ impl Report {
                     for (name, kept_as) in [
                         (own_text, "load_own_text"),
                         (same_text, "load_same_text"),
+                        ("load_compiled_each", "load_compiled"),
                         ("resume_each", "resume_each"),
                         ("call_each", "call_each"),
                     ] {
@@ -611,9 +612,10 @@ impl Report {
                 }
                 let _ = writeln!(
                     self.out,
-                    "| {engine} | {label} | {} | {} | {} | {} | {} | {} | {memory_note}{}{stand_in} |",
+                    "| {engine} | {label} | {} | {} | {} | {} | {} | {} | {} | {memory_note}{}{stand_in} |",
                     cell(own_text),
                     cell(same_text),
+                    cell("load_compiled_each"),
                     cell("resume_each"),
                     cell("call_each"),
                     bytes(memory),
@@ -797,6 +799,14 @@ impl Report {
                 );
             }
         }
+        // trace: D141. Loading a compiled file has no target; LuaJIT's bytecode, as `luajit -b` writes it, is beside it.
+        let (seal, luajit) = (time("patrol.load_compiled", "Seal"), time("patrol.load_compiled", "LuaJIT `-joff`"));
+        let _ = writeln!(
+            out,
+            "| D141. Loading a compiled file | patrolling scripts, loading each from a compiled file of its own | {} | LuaJIT's bytecode: {} | for reference, no target |",
+            shown(seal),
+            shown(luajit),
+        );
         // trace: D155, D159
         for benchmark in NUMBER_BENCHMARKS.iter().filter(|benchmark| benchmark.python) {
             let (seal, python) = (time(benchmark.name, "Seal"), time(benchmark.name, "Python"));

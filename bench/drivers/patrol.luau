@@ -65,6 +65,18 @@ local called = os.clock() - started
 print("result " .. walks)
 print(string.format("load_each %.9f", loaded / count))
 print(string.format("load_shared_each %.9f", loaded_shared / count))
+-- Loading each from bytecode, as `luajit -b` writes it, where the engine can: LuaJIT's `string.dump`. Luau can't.
+if string.dump then
+    local dumped = {}
+    for guard = 1, count do
+        dumped[guard] = string.dump(loadstring("-- guard " .. guard .. "\n" .. source))
+    end
+    local started_compiled = os.clock()
+    for guard = 1, count do
+        local patrol = loadstring(dumped[guard])(walk_to, coroutine.yield)
+    end
+    print(string.format("load_compiled_each %.9f", (os.clock() - started_compiled) / count))
+end
 print(string.format("resume_each %.9f", resumed / (count * rounds)))
 print(string.format("call_each %.9f", called / (count * rounds)))
 print(string.format("memory_each %.0f", (after - before) * 1024 / count))

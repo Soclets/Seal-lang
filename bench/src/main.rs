@@ -123,6 +123,19 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     }
     let loaded_fresh = started.elapsed().as_secs_f64();
 
+    // trace: D141. Each of those texts built into a `.sealc` of its own first, then each loaded from its bytes.
+    let mut files = Vec::with_capacity(count);
+    for guard in 0..count {
+        let own_text = format!("// guard {guard}\n{source}");
+        files.push(seal::build(&[(path, &own_text)], &doors).map_err(|error| error.to_string())?);
+    }
+    let started = Instant::now();
+    for bytes in &files {
+        Script::load_compiled(bytes, path, &doors, limits).map_err(|error| error.to_string())?;
+    }
+    let loaded_compiled = started.elapsed().as_secs_f64();
+    drop(files);
+
     let resident_before = resident_bytes();
     let started = Instant::now();
     let mut scripts: Vec<(Script, TaskId)> = Vec::with_capacity(count);
@@ -165,6 +178,7 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     let _ = writeln!(out, "result {}", walks.load(Ordering::Relaxed));
     let _ = writeln!(out, "load_each {:.9}", loaded / each);
     let _ = writeln!(out, "load_fresh_each {:.9}", loaded_fresh / each);
+    let _ = writeln!(out, "load_compiled_each {:.9}", loaded_compiled / each);
     let _ = writeln!(out, "resume_each {:.9}", resumed / every);
     let _ = writeln!(out, "call_each {:.9}", called / every);
     let _ = writeln!(out, "memory_each {}", counted_memory / count.max(1));

@@ -9,15 +9,6 @@ use super::script::{Error, Limits, Script};
 use crate::compile::file::{self, FileError, ToWrite};
 use crate::message::{Message, Messages, Place};
 
-impl Doors {
-    /// trace: D153, D154. What a compiled script was compiled against: every door, type and unit group the host
-    /// opens. A file built for other doors is refused, as a call to a door that isn't there would be.
-    pub(crate) fn file_key(&self) -> u64 {
-        let described = format!("{:?}{:?}{:?}", self.shared_signatures(), self.shared_types(), self.unit_groups());
-        file::hash(described.as_bytes())
-    }
-}
-
 /// A file's problem as the refusal a host gets.
 fn refused(name: &str, error: &FileError) -> Error {
     let mut message = Message::refused(Place::default(), error.to_string()).with_why(match error {

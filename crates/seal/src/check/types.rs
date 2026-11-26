@@ -1016,16 +1016,11 @@ impl TypeTable {
             parameters.push(input.text()?);
             numbers_only.push(input.flag()?);
         }
-        // What's looked up by its kind is found again in the table, as interning would find it.
-        let interned = types
-            .iter()
-            .enumerate()
-            .filter(|(_, kind)| !matches!(kind, Type::Variable(_)))
-            .filter_map(|(index, kind)| Some((kind.clone(), TypeId(u32::try_from(index).ok()?))))
-            .collect();
+        // Only checking looks types up by their kind, and a script from a file is checked already, so its table
+        // has nothing to look up with: anything made from it later is simply a new type.
         Ok(TypeTable {
             types,
-            interned,
+            interned: HashMap::new(),
             bindings,
             records,
             one_ofs,

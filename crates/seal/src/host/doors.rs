@@ -222,6 +222,8 @@ struct Inner {
     /// What every load reads of the doors, worked out once until they change.
     signatures: OnceLock<Arc<[DoorSignature]>>,
     all_types: OnceLock<Arc<[HostType]>>,
+    /// The key a compiled script's file is built for, worked out once until the doors change (D153).
+    pub(crate) file_key: OnceLock<u64>,
 }
 
 /// The doors a host opens for a script (D11). A host chooses each script's doors when it loads it (D48).
@@ -353,6 +355,15 @@ impl Doors {
     }
 
     /// What a script sees of each door, shared, worked out once until the doors change.
+    /// trace: D153, D154. What a compiled script was compiled against: every door, type and unit group the host
+    /// opens, worked out once until the doors change. A file built for other doors is refused.
+    pub(crate) fn file_key(&self) -> u64 {
+        *self.inner.file_key.get_or_init(|| {
+            let described = format!("{:?}{:?}{:?}", self.shared_signatures(), self.shared_types(), self.unit_groups());
+            crate::compile::file::hash(described.as_bytes())
+        })
+    }
+
     pub(crate) fn shared_signatures(&self) -> Arc<[DoorSignature]> {
         Arc::clone(self.inner.signatures.get_or_init(|| self.signatures().into()))
     }
@@ -464,6 +475,7 @@ impl Doors {
                 kept: Mutex::default(),
                 signatures: OnceLock::new(),
                 all_types: OnceLock::new(),
+                file_key: OnceLock::new(),
             });
         }
         let Some(inner) = Arc::get_mut(&mut self.inner) else {
@@ -476,6 +488,7 @@ impl Doors {
         }
         inner.signatures = OnceLock::new();
         inner.all_types = OnceLock::new();
+        inner.file_key = OnceLock::new();
         Ok(inner)
     }
 

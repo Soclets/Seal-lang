@@ -62,15 +62,22 @@ impl std::fmt::Display for FileError {
     }
 }
 
-/// 64-bit FNV-1a, for the checksum and the keys: quick, and the same everywhere.
+/// A 64-bit hash, for the checksum and the keys, eight bytes at a time: quick, and the same everywhere. It finds a
+/// file damaged by chance, never one changed on purpose (D141).
 #[must_use]
 pub fn hash(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ (bytes.len() as u64);
+    let mut words = bytes.chunks_exact(8);
+    for word in &mut words {
+        let mut eight = [0u8; 8];
+        eight.copy_from_slice(word);
+        hash = (hash ^ u64::from_le_bytes(eight)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        hash ^= hash >> 29;
     }
-    hash
+    for &byte in words.remainder() {
+        hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+    }
+    hash ^ (hash >> 32)
 }
 
 /// This build of Seal: its version, and the code that decides what a compiled script means, so a file built by any
