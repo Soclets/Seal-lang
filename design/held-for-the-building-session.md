@@ -18,5 +18,5 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 - Batch 4 (number types): how a whole `Decimal` shows; `Float` to `HugeWhole` and `HugeDecimal`; units and limits on
   decimals; `HugeWhole` measured in a coarser unit; `be.Decimal` past 34 digits; `be.Float` past a `Float`'s range.
 - Its 373 draft wordings: reviewed on 2026-11-26, in `design/wording-review-2026-11-26.md`, none needing Tankun;
-  not sent yet.
+  sent the same day.
 - Rocq extracted to OCaml for a future oracle (asked; not answered).
