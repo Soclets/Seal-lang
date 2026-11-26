@@ -14,9 +14,10 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D173 are built, except the language server's parts, D169's signing (waiting on Tankun's
-   OK for its crate), and what's listed under "Not built yet" below. D171's goal isn't met (see "Benchmarks"); D173's
-   numbers went to the design session. All 31 tests in `tests/` pass, from text and from compiled files.
+2. **Decisions built.** D1 to D176 are built, except the language server's parts and what's listed under "Not built
+   yet" below. D169's signing (D175's `fips204`) is built and checked but not committed: `sha3` brings in
+   `generic-array`, `block-buffer`, `cpufeatures` and `libc`, whose `unsafe` D175 didn't list, and Tankun's OK for
+   them was asked for through the design session. All 31 tests in `tests/` pass, from text and from compiled files.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -440,9 +441,9 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, loading a compiled file faster than LuaJIT loading its own bytecode: not met.** About 0.60 µs against
-  LuaJIT's 0.28 to 0.32 µs (2.1 µs before this afternoon's work, then D173's block). The design session has the numbers
-  and a recommendation.
+- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met.** About 0.60 to 0.70 µs
+  against LuaJIT's 0.28 to 0.32 µs (2.1 µs before this afternoon's work, then D173's block). The same file loaded again
+  reuses what was verified, in about 0.15 µs (built with signing, not yet committed).
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
