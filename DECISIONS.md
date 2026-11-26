@@ -5384,6 +5384,8 @@ needs more.
 to NginSeal, with D169's signing waiting until the SPARK checker is built on a later week?", the owner chose: "No, we
 should just use Rust's crate"
 
+(Corrected by D177: checking a signature does run a little `unsafe`, in `generic-array` and `block-buffer`, which D177 allows.)
+
 ## D176. D171 is met within twice LuaJIT's time, since Seal checks each file and LuaJIT doesn't
 
 2026-11-26.
@@ -5409,3 +5411,27 @@ LuaJIT's speed with checks is the honest goal.
 
 **Tankun's words.** Asked "Should D171 count as met when a `.sealc` loads within twice LuaJIT's bytecode time, with
 LuaJIT's time shown beside it?", the owner chose: "yea"
+
+## D177. `fips204`'s hashing crates are allowed too, and checking a signature does run a little `unsafe`
+
+2026-11-26.
+
+**Chosen.** Under Building rule 2, Seal may also depend on the crates `sha3` brings in through `digest`:
+`generic-array` 0.14 (about 78 lines of `unsafe`, for arrays whose size is a type) and `block-buffer` 0.10 (4 lines),
+both run on every hash and so on every signature check, and `cpufeatures` 0.2 and `libc`, built in on Apple's ARM
+chips for `keccak` and likely unused without its assembly. They're the RustCrypto project's foundation crates, under
+nearly every hash function in Rust.
+
+This corrects D175, which said checking a signature uses no `unsafe`: the design session had looked at `fips204`,
+`sha3` and `keccak`, not at what `sha3` brings in. The building session found it before committing D169. `fips204` is
+used without its own random-number feature, so only `seal keygen` and `seal build --sign` draw randomness, through
+`getrandom` in the `seal` command.
+
+**Weighed.**
+- Another SHA-3 without them. `fips204` is built on `sha3`; every pure-Rust ML-DSA goes through these crates except
+  `libcrux`, which has more `unsafe` of its own.
+
+**Why this won.** The `unsafe` is small, long used and in the most reviewed corner of Rust's cryptography.
+
+**Tankun's words.** Asked "Should Seal also depend on `generic-array`, `block-buffer`, `cpufeatures` and `libc`, which
+come in through `sha3`?", the owner chose: "yea"
