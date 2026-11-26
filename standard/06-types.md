@@ -188,7 +188,32 @@ goblin.hp = goblin.hp - 5
 - **A record can hold a record,** and a type can hold itself where a value can end, through a `one_of` case, a
   `List`, a `Dict` or a `Maybe`; with no way to end, as a field `next: Node` in `record Node`, it's refused (D72).
 
-**Not decided:** defaults for fields; methods on records.
+### Methods
+
+A record or a `one_of` can have methods: `proc`s written inside its block, after its fields or cases, each taking a
+value of the type as its first parameter, and called only with a dot on such a value (D163, D164):
+
+```
+record Enemy
+    name: Text
+    hp: Whole
+
+    proc is_alive[enemy: Enemy] -> Bool
+        return enemy.hp > 0
+    end
+end
+
+goblin = Enemy[name: "Goblin", hp: 30]
+alive = goblin.is_alive()
+```
+
+- **The value before the dot is the first parameter,** and the rest are given in `( )` as any call's are.
+- **Two types can each have a method of the same name,** as `size` on `Enemy` and on `Tree`, since a method is only
+  ever reached through a value of its type.
+- **A method that changes its value works only on a mutable variable,** as `bag.add` does (Unio D77).
+
+**Not decided:** defaults for fields; how a method that changes its value is written; methods on types a script didn't
+declare.
 
 ## Dictionaries
 

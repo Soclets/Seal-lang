@@ -4946,3 +4946,46 @@ that's not what I meant either. There was another case that we tried to checked 
 "What about just say the meth in record?", "Should it be `proc` or `method`?", "How does it get call", "Why don't they
 just use normal proc?", then, after D162's questions, asked "should Seal have methods on records and `one_of`s at all,
 so two types can share a method name and generics can require methods?", the owner chose: "yea"
+
+## D164. Methods are `proc`s inside their record or `one_of`, called only with a dot
+
+2026-11-26.
+
+**Chosen.**
+
+```
+record Enemy
+    name: Text
+    hp: Whole
+
+    proc is_alive[enemy: Enemy] -> Bool
+        return enemy.hp > 0
+    end
+end
+
+alive = goblin.is_alive()
+```
+
+- **A method is written inside its record's or `one_of`'s block,** after the fields or cases, so everything about a
+  type is in one place and no block of methods needs a name of its own.
+- **It's written with `proc`,** an ordinary procedure, its first parameter a value of the type, named as any
+  parameter is; the record already says what it belongs to.
+- **It's called only with a dot,** the value before the dot being its first parameter, so two types can each have a
+  method of the same name without clashing (D71).
+
+How a method that changes its value is written, and methods on types a script didn't declare, are decided separately.
+
+**Weighed.**
+- A separate `methods Enemy` block, as Cyborg has (its D481), which the design session proposed. `Enemy` would mean
+  both the record and the block, the D110 slip of naming one thing after another.
+- An unnamed `methods` block, each method belonging to its first parameter's type. A block with nothing to say.
+- A `method` keyword. A method is a procedure, and one name per idea.
+- Calling a method as a plain procedure too, as `is_alive(goblin)`. Two ways to call it, and same-named methods would
+  clash.
+- Losing methods on host types and Seal's own, which a separate block could in principle add: a rare need, and a host
+  can give its own types theirs.
+
+**Why this won.** A type's behaviour sits with its data, written with the procedures a reader already knows.
+
+**Tankun's words.** Asked "Should methods be written as `proc`s inside their record or `one_of`, after its fields or
+cases, and called only with a dot?", the owner chose: "yea"
