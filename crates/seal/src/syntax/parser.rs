@@ -331,7 +331,7 @@ impl<'a> Parser<'a> {
             // trace: D20
             Message::refused(line.place, "this `end` is at the wrong depth")
                 .with_because(format!("line {} opens the block it would close", opener.place.line), opener.place)
-                .with_why("an `end` goes at the depth of the line that opened its block.")
+                .with_why("an `end` lines up with the line that opened its block.")
         };
         if line.indentation == body {
             if self.first_keyword() == Some(Keyword::End) {

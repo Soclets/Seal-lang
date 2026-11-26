@@ -68,7 +68,7 @@ fn decimal_stop(error: NumberError, when: String) -> Stop {
         NumberError::Negative => failed(
             "a negative number has no square root",
             when,
-            "the square root is taken of a number that isn't negative.",
+            "the square root of a negative number isn't a real number.",
         ),
     }
 }

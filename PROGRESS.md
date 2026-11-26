@@ -433,12 +433,14 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 Refusals, failed checks and stops whose wording no decision gives, drafted in Unio's layout (Unio D54): `what:` says
 what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole line, `fix:` stands in place of `what:`
-(Unio D101), as for indentation, spacing, a `return`'s header or a `mut` that goes; those are marked.
+(Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
+marked.
 
-375 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26. The design session is reviewing
-the list as of 384d500; the 14 marked **(changed 2026-11-26)** differ from it, almost all only by D157's and D158's
-words (`return`, `instead`, `not_eq`); two are D115's limits past a `Whole`'s range, and one is new: a handler used after `??` that misses a case is named as a
-handler, not an `otherwise`. `{…}` stands for what the message fills in.
+374 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26, after the design session's
+review (`design/wording-review-2026-11-26.md`) was built. The 37 marked **(changed 2026-11-26)** differ from the list
+it reviewed (384d500): its corrections, D157's and D158's words, D115's limits past a `Whole`'s range, and a handler
+used after `??` that misses a case, named as a handler. `{…}` stands for what the message fills in; a `why:` held in
+a constant (as a `Whole`'s and a `Float`'s range) isn't picked up by the script, so it doesn't show here.
 
 **`crates/seal/src/check/calls.rs`**
 
@@ -484,21 +486,21 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: `{name}` takes {} argument{}, but this call gives {}
 - refused: `be` is narrowed by the type the value becomes, as in `be.Whole`
   - why: `be.Type(value)` converts a value to a type.
-- refused: there's no conversion to `{target}`
-  - why: `be` converts to `Text`, `Whole`, `Float` and `Bool`; other values are built as they're written.
-- refused: there's no `{full}`
-  - why: `be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
-- refused: there's no conversion from {found} to a `Bool`
+- refused: there's no conversion to `{target}` **(changed 2026-11-26)**
+  - why: `be` converts to `Text`, `Whole`, `Float`, `Bool`, `HugeWhole`, `Decimal` and `HugeDecimal`; other values are built as they're written.
+- refused: there's no `{full}` **(changed 2026-11-26)**
+  - why: `be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.HugeWhole`, `be.Decimal`, `be.HugeDecimal`, `be.Decimal.shown` and `be.Decimal.nearest`, and `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` after `be.Whole` or `be.HugeWhole`.
+- refused: there's no conversion from {found} to a `Bool` **(changed 2026-11-26)**
   - why: a number is compared, as `n not_eq 0`, for a `Bool`.
-- refused: this is already a `{target}`, so `be.{target}` does nothing
-  - why: converting a value to the type it already is, is refused.
-- refused: there's no conversion from {written} to a `Bool`
+- refused: this is already a `{target}`, so `be.{target}` does nothing **(changed 2026-11-26)**
+  - why: it gives back the same value, so the `be.` can go.
+- refused: there's no conversion from {written} to a `Bool` **(changed 2026-11-26)**
   - why: `be.Bool` reads `"true"` or `"false"` from text; a number is compared, as `n not_eq 0`, for a `Bool`.
 - refused: there's no conversion from {written} to a `Float`
   - why: `be.Float` turns a `Whole` into a `Float`.
 - refused: `{full}` takes a `Float`, but this is {written}
   - why: `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` say how a `Float`'s fraction goes.
-- refused: `be.Whole` on a `Float` says how the fraction goes
+- refused: `be.Whole` on a `Float` needs to say how the fraction goes **(changed 2026-11-26)**
   - why: the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
 - refused: there's no conversion from {written} to a `Whole`
   - why: `be.Whole` reads a `Whole` from text, and turns a `Float` into one with `.floor`, `.trunc`, `.ceil`, `.nearest` or `.nearest.even`.
@@ -506,7 +508,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: `.has` takes `key:` and its value
 - refused: `{name}` splits a text, but this is {found}
 - refused: `{name}` takes `by:` and the text to split at
-- refused: this splits a text by an empty text
+- refused: this splits a text by an empty text **(changed 2026-11-26)**
   - why: an empty text is never found between two pieces; `for_each` goes through a text's characters, as `for_each letter in name`.
 - refused: {found} has no method `{}`
 - refused: `.add` takes the item, then `pos:` or `offset:` when it goes at a place
@@ -521,7 +523,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 
 - refused: `{digits}` is too big for a `Whole`
   - why: a `Whole` goes up to 9223372036854775807.
-- refused: `_` is the value of what an `=` changes, and nothing is changed here
+- refused: `_` is the value of what an `=` changes, and nothing is changed here **(changed 2026-11-26)**
   - why: on the right of an `=` that changes a name, `_` is what's on the left, as `score = _ + 10`.
 - refused: a `{name}` is built with `[ ]`, naming every field
   - why: a record is built as `Name[field: value]`.
@@ -543,7 +545,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a unit says what a number counts, so it goes with one.
 - refused: `places:` takes a whole number written out, but this is `{places}`
   - why: `places:` says how many digits a `Float` shows after its point, as `{speed, places: 2}`.
-- refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name
+- refused: `{{inside}}` measures in `{unit}`, which isn't a unit's name **(changed 2026-11-26)**
   - why: `to` in braces measures a name in one of its group's units, as `{total to secs}`.
 - refused: `{{inside}}` isn't a name with its fields and facts
   - why: braces in text hold a name, which may be followed by its fields and facts, never a calculation or a call; a `Float` can add `, places: 2`.
@@ -621,7 +623,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: an `otherwise` handles each failure once, with its own `case` or an included handler's.
 - refused: the failure `{}` is handled twice
   - why: an `otherwise` has one `case` for each failure.
-- refused: this call gives nothing, so there's no value to give `instead` **(changed 2026-11-26)**
+- refused: this call gives nothing, so there's no value to give `instead`
   - why: after a call that gives nothing, a case may just end.
 - refused: the case `{}` can reach its end without giving a value
   - why: each case ends with `instead` and a value, `return`, `break` or `fail`.
@@ -638,13 +640,13 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a handler used after `??` covers every failure the call can give.
 - refused: this `otherwise` has a `case` for {}, which the call can't fail with
   - why: the call can fail with {}.
-- refused: `{called}` can change `{name}`, which this `for_each` is going through
-- refused: this can pause, while a `for_each` is going through the top-level name `{name}`
+- refused: `{called}` can change `{name}`, which this `for_each` is going through **(changed 2026-11-26)**
+- refused: this can pause, while a `for_each` is going through the top-level name `{name}` **(changed 2026-11-26)**
 - refused: {purpose}, but this is {found}
 - refused: two texts aren't put in order with `<`, `>`, `at_least` or `at_most`
   - why: text has no one right order: by character codes `"Zebra"` comes before `"apple"`, and alphabetical order differs between languages.
-- refused: this is already a `Text`, so `be.Text` does nothing
-  - why: converting a value to the type it already is, is refused.
+- refused: this is already a `Text`, so `be.Text` does nothing **(changed 2026-11-26)**
+  - why: it gives back the same value, so the `be.` can go.
 - refused: a `Dict`'s value is reached with `key:`
 - refused: this is {found}, but {} is {wanted}
 - refused: what `{name}` gives back can't be worked out from its body
@@ -703,9 +705,9 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a ranged number's `min` is at most its `max`, so some value fits.
 - refused: `{name}` isn't a top-level name made from a number written out, with no `mut`
   - why: a number's limits are known while loading: a number written there, or a name made at the top level from one, with no `mut`.
-- refused: this number's limit is a `HugeWhole` written out **(changed 2026-11-26)**
+- refused: this number's limit has to be a `HugeWhole`, written out **(changed 2026-11-26)**
   - why: a number's limits are known while loading, and are of its own type.
-- refused: this number's limit is {wanted} written out
+- refused: this number's limit has to be {wanted}, written out **(changed 2026-11-26)**
   - why: a number's limits are known while loading, and are of its own type.
 - refused: this is {side} its type's `{word}: {shown}` **(changed 2026-11-26)**
   - why: a ranged number's `min:` and `max:` are hard limits, and one written past them never fits; `min.clamp:` and `max.clamp:` pull a value back instead.
@@ -716,12 +718,12 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: `{name}` has no setting `{setting}`
 - refused: `{setting}` can't be less than 0
 - refused: `{setting}` is written twice
-- refused: `{name}` has one blank, so it takes no label
-  - why: a type with a single blank leaves it unlabelled, since nothing can be mixed up.
+- refused: `{name}` holds one type, written without a label, as `List<Text>` **(changed 2026-11-26)**
+  - why: a type that holds one type needs no label, since nothing can be mixed up.
 - refused: an `Array` says how many items it holds, as in `Array<Whole>[len: 64]`
   - why: an array's length is part of its type.
-- refused: a `Dict`'s blanks are labelled `key:` and `value:`, as in `Dict<key: Text, value: Whole>`
-  - why: a type with more than one blank labels each one.
+- refused: a `Dict` labels the two types it holds, `key:` and `value:`, as `Dict<key: Text, value: Whole>` **(changed 2026-11-26)**
+  - why: a type that holds more than one type labels each.
 - refused: there's no type named `{name}`
 - refused: a `Float` can't be a `Dict`'s key
   - why: two neighbouring floats that print alike would be different keys.
@@ -755,22 +757,22 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: the case `{}`'s values are taken out in the order they're declared: `{}`
   - why: a case's values come out in the order its type declares them, skipping any that aren't read.
 - refused: `{}` already exists, so it can't be made again
-- refused: `{name}` is never changed, so it isn't `mut`
+- refused: `{name}` is never changed, so it's made without `mut` **(changed 2026-11-26)**
   - why: `mut` marks a name that changes; one that never does is made without it.
 - refused: `{name}` is never used
 - refused: `{name}` is never used
   - why: a parameter that's never read on purpose is marked, as `unused {name}`.
-- refused: `{name}` is never used
+- refused: `{name}` is never used **(changed 2026-11-26)**
   - why: a `for_each` name that's never read on purpose is marked, as `for_each unused {name}`.
 - refused: `{name}` is never used
   - why: an `at` name that's never read is marked, as `at key unused {name}`, or the `at` part is left out.
 - refused: `{name}` is never used
   - why: a `case` takes out only the values it reads.
-- refused: `{}` gives a value, but it can reach its `end` without a `return` **(changed 2026-11-26)**
+- refused: `{}` gives a value, but it can reach its `end` without a `return`
   - why: when any `return` in a procedure gives a value, every way through ends in one; a `while` counts as able to end, whatever its condition.
-- refused: this `return` is the procedure's last line, where the procedure ends anyway **(changed 2026-11-26)**
+- refused: this `return` is the procedure's last line, where the procedure ends anyway
   - why: a bare `return` leaves a procedure early.
-- refused: `{}` says it gives {wanted}, but it has no `return` with a value **(changed 2026-11-26)**
+- refused: `{}` says it gives {wanted}, but it has no `return` with a value
   - why: a procedure's result comes from its `return`s.
 - refused: this line can never run
 - refused: this line follows an `if` that can leave
@@ -782,12 +784,12 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: this `break` isn't inside a loop
   - why: `break` leaves the innermost loop it's in.
 - refused: `fail` hands a failure to a caller, and the top level has none
-- refused: this `instead` isn't inside an `otherwise` case **(changed 2026-11-26)**
+- refused: this `instead` isn't inside an `otherwise` case
   - why: `instead` gives the value an `otherwise` case carries on with.
 - refused: this is {found}, but {role} is {wanted_text}
 - refused: `{word}` checks a `Bool`, but this is {found}
   - why: a number or text doesn't stand for true or false; compare it{hint}.
-- refused: `{}` between two `Float`s in a `while` condition
+- refused: `{}` compares two `Float`s in a `while` condition **(changed 2026-11-26)**
   - why: a `Float` that changes each pass rarely lands exactly on a value, so the loop could never stop; `<`, `>`, `at_least` or `at_most` say "until it reaches".
 - refused: `{kind}` leaves out what it holds, and the value doesn't show it
   - why: a written type leaves out only what its value shows, so this one writes it, as `{example}`.
@@ -795,9 +797,9 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a type is written where the value can't say it, as in `name: Maybe<Whole> = Maybe.none`.
 - refused: this gives nothing, so there's no value for the name
   - why: a procedure that gives nothing back can't be used as a value.
-- refused: `{name}` is being gone through by a `for_each`, so it can't change here
+- refused: `{name}` is being gone through by a `for_each`, so it can't change here **(changed 2026-11-26)**
   - why: what a `for_each` goes through can't change inside it.
-- refused: `{name}` can't be given a new value
+- refused: `{name}` can't be given a new value (shown with a `fix:` line) **(changed 2026-11-26)**
 - refused: {name} is {found}, which has no fields to change
 - refused: {found} has no field `{}`
 - refused: a list's item is reached with `pos:` or `offset:`
@@ -811,13 +813,13 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: a change can't go through a `Dict`'s key on its way, since the key might be missing
   - why: a lookup is dealt with on its own line: the value is taken out, as `mut north = shops[key: "north"] ?? crash`, changed, and put back, as `shops[key: "north"] = north`.
 - refused: this is {found}, which has no items
-- refused: `return` hands a value to a caller, and the top level has none **(changed 2026-11-26)**
-- refused: this `return` gives back {}, but the procedure's header has no `-> Type` **(changed 2026-11-26)**
-- refused: this `return` gives a value, but an earlier one gives none **(changed 2026-11-26)**
+- refused: `return` hands a value to a caller, and the top level has none
+- refused: this `return` gives back {}, but the procedure's header has no `-> Type`
+- refused: this `return` gives a value, but an earlier one gives none
 - refused: this gives nothing, so there's nothing to return
   - why: a procedure that gives nothing back can't be used as a value.
-- refused: this `return` gives {found}, but the procedure gives {wanted} **(changed 2026-11-26)**
-- refused: this `return` gives no value, but the procedure gives one **(changed 2026-11-26)**
+- refused: this `return` gives {found}, but the procedure gives {wanted}
+- refused: this `return` gives no value, but the procedure gives one
 - refused: `at key` is for going through a `Dict`
 - refused: `at {word}` is for going through a list; a `Dict` is gone through `at key` (shown with a `fix:` line)
 - refused: `at key` is for going through a `Dict`, but this is {found}
@@ -847,24 +849,24 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a number becomes a bigger type by itself only where it always fits; `be.` converts the other ways, and a `Float` mixes with none of these.
 - refused: `**` on a `{}` takes a whole power, but this is {found}
   - why: a `HugeWhole`, `Decimal` or `HugeDecimal` is raised to a `Whole` power.
-- refused: a `HugeWhole` to a negative power isn't a whole number
-  - why: a negative power is one over the number; a `HugeDecimal` can hold it when it has an end.
+- refused: a `HugeWhole` to a negative power isn't a whole number **(changed 2026-11-26)**
+  - why: a negative power is one over the number, as `2 ** -3` is `1 / 8`; a `HugeDecimal` holds it when its digits end, as `0.125` does.
 - refused: there's no `{full}`
   - why: `be.HugeWhole` takes `.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even` for a decimal, and `be.Decimal` takes `.shown` and `.nearest` for a `Float`.
 - refused: there's no conversion from {found} to a `{name}`
   - why: a number type converts from text and from the other number types.
-- refused: this is already a `{name}`, so `be.{name}` does nothing
-  - why: converting a value to the type it already is, is refused.
+- refused: this is already a `{name}`, so `be.{name}` does nothing **(changed 2026-11-26)**
+  - why: it gives back the same value, so the `be.` can go.
 - not designed yet: converting a `Float` to a `{name}` isn't decided yet
-- refused: `be.Decimal` on a `Float` says which `Decimal` it becomes
+- refused: `be.Decimal` on a `Float` needs to say which `Decimal` it becomes **(changed 2026-11-26)**
   - why: `be.Decimal.shown` takes the number the `Float` shows, so `~0.1` gives `0.1`; `be.Decimal.nearest` takes the `Decimal` nearest the value it holds.
 - refused: `{full}` takes a `Float`, but this is a `{}`
   - why: `.shown` and `.nearest` say which `Decimal` a `Float` becomes.
-- refused: `be.HugeWhole` on a `{}` says how the fraction goes
+- refused: `be.HugeWhole` on a `{}` needs to say how the fraction goes **(changed 2026-11-26)**
   - why: the ways are `be.HugeWhole.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even`.
 - refused: `{full}` rounds a fraction, and a `{}` has none
   - why: `be.HugeWhole` converts a whole number or text with nothing to round.
-- refused: `be.Whole` on a `{source}` says how the fraction goes
+- refused: `be.Whole` on a `{source}` needs to say how the fraction goes **(changed 2026-11-26)**
   - why: the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.
 - refused: `{full}` rounds a fraction, and a `HugeWhole` has none
   - why: `be.Whole` converts a `HugeWhole`, failing with `too_big` when it doesn't fit.
@@ -890,9 +892,9 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: units of one group convert by themselves only where nothing is lost: into a `Whole`, a finer unit; into a `Float`, any unit with a fixed size.
 - refused: this plain number goes where `{unit_text}` is wanted
   - why: where something takes a unit, the number says it, so seconds and milliseconds, or degrees and radians, can't be mixed up.
-- refused: this has a unit, `{unit_text}`, where a plain number goes
+- refused: this has a unit, `{unit_text}`, where a plain number goes **(changed 2026-11-26)**
   - why: a value with a unit gives its plain number when it's measured in one, as `value to {unit_text}`.
-- refused: `to` measures a value with a unit, but this is {found}
+- refused: `to` measures a value with a unit, but this is {found} **(changed 2026-11-26)**
   - why: `value to unit` gives the plain number a value with a unit is, as `total to secs`.
 - refused: a value in `{from_text}` isn't measured in `{to_text}`
   - why: only a unit of the value's own group measures it, and only one with a fixed size, which `frames` and `tiles` haven't.
@@ -904,7 +906,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused: {quoted} can't mix a `Whole` and a `Float`
   - why: `Whole` and `Float` don't mix quietly, units or not.
 - not designed yet: {quoted} on these units, whose answer's unit has no written form, isn't decided yet
-- refused: `+` adds two points, two places, which has no meaning
+- refused: `+` adds two points, and two places can't be added **(changed 2026-11-26)**
   - why: a point plus an amount is a point, and a point minus a point is the amount between them; two points aren't added.
 - refused: {quoted} has a value with a unit on one side and a plain number on the other
   - why: a number with a unit is added only to another of its group, so the unit is written on both, as `2 secs + 500 ms`.
@@ -932,7 +934,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 - refused (at a door): the unit group `{name}` is declared twice, or is one of Seal's own
   - why: each unit group is declared once; `time`, `angle` and `distance` are Seal's own.
 - refused (at a door): the unit `{unit}` is listed twice in `{name}`
-- refused (at a door): `{unit}`'s size, `{size}`, isn't a size
+- refused (at a door): `{unit}`'s size, `{size}`, isn't a whole number above 0 **(changed 2026-11-26)**
 - refused (at a door): `{name}` needs exactly one unit marked `base`
 - refused (at a door): `{name}` takes {} values, but {} labels are given
   - why: each of a door's values has one label, or none.
@@ -981,13 +983,14 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: Seal's names are plain words.
 - refused: `{other}` is beyond the plain English letters a script is written in
   - why: outside text, a script is written in plain English letters, digits and symbols, for now.
-- refused: `{other}` can't be read here
-- refused: `{}` closes a `{}`
+- refused: `{other}` can't be read here **(changed 2026-11-26)**
+  - why: `{other}` isn't one of Seal's symbols, so it goes only inside a text.
+- refused: `{}` closes nothing open here; the `{}` still open closes with `{closer}` **(changed 2026-11-26)**
 - refused: this `{}` closes nothing
 - refused: a type's name has no `_`, so `{word}` is written `{fixed}`
   - why: a type's name joins its words with capitals, as `HighScore`.
 - refused: the name `{word}` {problem}
-- refused: a letter comes right after this number
+- refused: a letter comes right after this number (shown with a `fix:` line) **(changed 2026-11-26)**
 - refused: `~` goes in front of a number with a point, as in `~0.1`
 - refused: a number has no leading zero, so this is written `{shown}`
   - why: a number is written without zeros in front, as `7`, not `007`.
@@ -1047,7 +1050,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a slide's step is a procedure, so anything after the slide needs the slide in `( )`.
 - refused: two comparisons in a row
   - why: each comparison stands alone; join two with `and`, as in `1 < x and x < 10`.
-- refused: this is maths measured with `to`, without brackets
+- refused: this is maths measured with `to`, without brackets **(changed 2026-11-26)**
   - why: `to` has no place in maths' order, so the maths it measures is in brackets, as `(a + b) to ms`.
 - refused: `&` doesn't join text; text is joined by filling it in with braces
   - why: text is joined only with braces, as in `"Score: {score}"`, which looks like what it shows.
@@ -1060,7 +1063,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 
 - check failed: the result is too big for a `Whole`
 - check failed: this divides by zero
-  - why: nothing can be divided by zero.
+  - why: dividing by zero has no answer.
 - check failed: the result isn't a real number a `Float` can hold
 - check failed: there's no item at this place
   - why: an item is reached at a place the list has.
@@ -1074,7 +1077,7 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
   - why: a `Whole`'s power is 0 or more, since a negative one isn't a whole number; `be.Float(…)` gives `Float`s.
 - check failed: `{name}` takes a value from -1 to 1
   - why: no angle has a sine or cosine past 1 or below -1.
-- check failed: this splits a text by an empty text
+- check failed: this splits a text by an empty text **(changed 2026-11-26)**
   - why: an empty text is never found between two pieces; `for_each` goes through a text's characters.
 - check failed: this division leaves a remainder
   - why: `/` on two `Whole`s divides exactly; `div.floor` and `div.trunc` say how a fraction goes.
@@ -1087,14 +1090,10 @@ handler, not an `otherwise`. `{…}` stands for what the message fills in.
 
 **`crates/seal/src/vm/numbers.rs`**
 
-- check failed: this divides by zero
-  - why: dividing by zero has no answer.
 - check failed: the result is too big for a `Decimal`
   - why: a `Decimal` keeps 34 digits, up to almost 10 to the 6145; a `HugeDecimal` has no limit.
 - check failed: this has no exact decimal answer
   - why: a `HugeDecimal` is exact, so `/` and `sqrt` give the exact answer or stop; a `Decimal` rounds to 34 digits.
-- check failed: a negative number has no square root
-  - why: the square root is taken of a number that isn't negative.
 - check failed: this raises a `HugeWhole` to a negative power
   - why: a whole number's power is 0 or more, since a negative one isn't a whole number.
 - check failed: this division leaves a remainder

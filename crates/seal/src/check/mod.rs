@@ -742,7 +742,7 @@ impl<'a> Checker<'a> {
             _ => {
                 self.refuse_why(
                     expression.place,
-                    "this number's limit is a `HugeWhole` written out",
+                    "this number's limit has to be a `HugeWhole`, written out",
                     "a number's limits are known while loading, and are of its own type.",
                 );
                 None
@@ -779,7 +779,7 @@ impl<'a> Checker<'a> {
                 let wanted = if float { "a `Float`" } else { "a `Whole`" };
                 self.refuse_why(
                     expression.place,
-                    format!("this number's limit is {wanted} written out"),
+                    format!("this number's limit has to be {wanted}, written out"),
                     "a number's limits are known while loading, and are of its own type.",
                 );
                 None
@@ -951,8 +951,8 @@ impl<'a> Checker<'a> {
                         // trace: D31
                         self.refuse_why(
                             label.place,
-                            format!("`{name}` has one blank, so it takes no label"),
-                            "a type with a single blank leaves it unlabelled, since nothing can be mixed up.",
+                            format!("`{name}` holds one type, written without a label, as `List<Text>`"),
+                            "a type that holds one type needs no label, since nothing can be mixed up.",
                         );
                         return ERROR;
                     }
@@ -992,8 +992,8 @@ impl<'a> Checker<'a> {
                             // trace: D31
                             self.refuse_why(
                                 inner.place,
-                                "a `Dict`'s blanks are labelled `key:` and `value:`, as in `Dict<key: Text, value: Whole>`",
-                                "a type with more than one blank labels each one.",
+                                "a `Dict` labels the two types it holds, `key:` and `value:`, as `Dict<key: Text, value: Whole>`",
+                                "a type that holds more than one type labels each.",
                             );
                             return ERROR;
                         }
@@ -1546,7 +1546,7 @@ impl<'a> Checker<'a> {
             // trace: D135. `mut` promises a change; the fix takes it away.
             let line = self.source_line(place.line);
             let before: String = line.chars().take(place.column.saturating_sub(1) as usize).collect();
-            let mut message = Message::refused(place, format!("`{name}` is never changed, so it isn't `mut`"))
+            let mut message = Message::refused(place, format!("`{name}` is never changed, so it's made without `mut`"))
                 .with_why("`mut` marks a name that changes; one that never does is made without it.");
             if let Some(start) = before.rfind("mut ") {
                 let fixed = format!("{}{}", line.get(..start).unwrap_or(""), line.get(start + 4..).unwrap_or(""));
@@ -1696,13 +1696,13 @@ impl<'a> Checker<'a> {
             Leaving::Always => self.messages.push(
                 Message::refused(place, "this line can never run")
                     .with_because(format!("line {} always leaves this block", before.line), before)
-                    .with_why("nothing follows `return`, `break` or `fail` in the same block."),
+                    .with_why("it comes after a `return`, `break` or `fail` in the same block."),
             ),
             Leaving::SomeWayOfIf => self.messages.push(
                 Message::refused(place, "this line follows an `if` that can leave")
                     .with_because(format!("line {} opens that `if`", before.line), before)
                     .with_why(
-                        "when any way through an `if` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the ways that don't leave.",
+                        "when any way through an `if` leaves, nothing may follow its `end`; what runs afterwards goes in the ways that don't leave.",
                     ),
             ),
             // trace: D86. D68's rule covers `match`.
@@ -1710,7 +1710,7 @@ impl<'a> Checker<'a> {
                 Message::refused(place, "this line follows a `match` that can leave")
                     .with_because(format!("line {} opens that `match`", before.line), before)
                     .with_why(
-                        "when any case of a `match` leaves, by `return`, `break` or `fail`, nothing follows its `end`; what runs afterwards goes in the cases that don't leave.",
+                        "when any case of a `match` leaves, nothing may follow its `end`; what runs afterwards goes in the cases that don't leave.",
                     ),
             ),
             // trace: D80, Unio D57
@@ -1934,7 +1934,7 @@ impl<'a> Checker<'a> {
                     if left_type == Some(FLOAT) && right_type == Some(FLOAT) {
                         self.refuse_why(
                             *operator_place,
-                            format!("`{}` between two `Float`s in a `while` condition", operator.text()),
+                            format!("`{}` compares two `Float`s in a `while` condition", operator.text()),
                             "a `Float` that changes each pass rarely lands exactly on a value, so the loop could never \
                              stop; `<`, `>`, `at_least` or `at_most` say \"until it reaches\".",
                         );
@@ -2102,20 +2102,40 @@ impl<'a> Checker<'a> {
             }
             return true;
         }
+        // trace: D2. A name made with `=` is refused where it's made, with that line and `mut` as the fix; the
+        // others can never change, and their `why:` says so.
+        if kind == VariableKind::Named {
+            let line = self.source_line(made_place.line);
+            let at =
+                line.char_indices().nth(made_place.column.saturating_sub(1) as usize).map_or(line.len(), |(at, _)| at);
+            let fixed = format!("{}mut {}", line.get(..at).unwrap_or(""), line.get(at..).unwrap_or(""));
+            let already = self
+                .messages
+                .iter()
+                .any(|message| message.place == made_place && message.fix.as_deref() == Some(fixed.as_str()));
+            if !already {
+                self.messages.push(
+                    Message::refused(made_place, format!("`{name}` can't be given a new value"))
+                        .with_fix(fixed)
+                        .with_because(format!("line {} gives it a new value", place.line), place)
+                        .with_why("a name changes only when it's made with `mut`."),
+                );
+            }
+            return false;
+        }
         let (because, why) = match kind {
-            VariableKind::Parameter => {
-                (format!("line {} makes it a parameter", made_place.line), "a parameter is read-only.")
-            }
-            VariableKind::Named => {
-                (format!("line {} makes it without `mut`", made_place.line), "only a name made with `mut` can change.")
-            }
+            VariableKind::Parameter => (
+                format!("line {} makes it a parameter", made_place.line),
+                "a parameter never changes; a name made from it with `mut` can.",
+            ),
             VariableKind::LoopItem | VariableKind::LoopPosition => (
                 format!("line {} makes it for each pass of the loop", made_place.line),
-                "a `for_each`'s names are read-only.",
+                "a `for_each`'s names never change; each pass gives them their next values.",
             ),
-            VariableKind::CaseValue => {
-                (format!("line {} takes it out of a case", made_place.line), "a case's values are read-only.")
-            }
+            VariableKind::CaseValue | VariableKind::Named => (
+                format!("line {} takes it out of a case", made_place.line),
+                "a value taken out of a case never changes; a name made from it with `mut` can.",
+            ),
         };
         self.messages.push(
             Message::refused(place, format!("`{name}` can't be given a new value"))
@@ -3327,7 +3347,7 @@ pub(crate) mod tests {
         // trace: D135. The misspelt change leaves `tries` unchanged too.
         assert_eq!(
             whats("mut tries = 0\ntires = tries + 1\n"),
-            vec!["refused: `tries` is never changed, so it isn't `mut`", "refused: `tires` is never used"]
+            vec!["refused: `tries` is never changed, so it's made without `mut`", "refused: `tires` is never used"]
         );
         assert_eq!(
             whats("lives = 3\nlives = 4\nshow_msg(\"{lives}\")\n"),

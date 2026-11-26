@@ -134,8 +134,9 @@ fn check_failed(what: &str, when: String, why: &str, pc: usize) -> Stopped {
 /// check costs (D58): a script never runs without it (D17).
 const FLOAT_CHECKS: bool = !cfg!(seal_measure_without_float_checks);
 
-const WHOLE_RANGE: &str = "a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.";
-const FLOAT_RANGE: &str = "a `Float` is always a real number, never infinite and never not-a-number.";
+const WHOLE_RANGE: &str =
+    "a `Whole` goes from -9223372036854775808 up to 9223372036854775807; a `HugeWhole` has no limit.";
+const FLOAT_RANGE: &str = "a `Float` stops at its largest value, and never holds infinity or \"not a number\".";
 
 #[cold]
 fn overflow(left: i64, operator: &str, right: i64, pc: usize) -> Stopped {
@@ -146,7 +147,7 @@ fn overflow(left: i64, operator: &str, right: i64, pc: usize) -> Stopped {
 #[cold]
 fn divided_by_zero(left: &str, operator: &str, pc: usize) -> Stopped {
     // trace: Unio D46, D72
-    check_failed("this divides by zero", format!("`{left} {operator} 0`"), "nothing can be divided by zero.", pc)
+    check_failed("this divides by zero", format!("`{left} {operator} 0`"), "dividing by zero has no answer.", pc)
 }
 
 #[cold]

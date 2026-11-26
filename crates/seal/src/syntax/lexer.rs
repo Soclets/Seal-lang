@@ -916,7 +916,10 @@ impl<'a> Lexer<'a> {
                             .with_why("outside text, a script is written in plain English letters, digits and symbols, for now."));
                         }
                         (other, _) => {
-                            return Err(Message::refused(place_of(1), format!("`{other}` can't be read here")));
+                            return Err(Message::refused(place_of(1), format!("`{other}` can't be read here"))
+                                .with_why(format!(
+                                    "`{other}` isn't one of Seal's symbols, so it goes only inside a text."
+                                )));
                         }
                     };
                     let place = place_of(length);
@@ -930,9 +933,14 @@ impl<'a> Lexer<'a> {
                             match self.open_brackets.pop() {
                                 Some((open, _)) if open == wanted => {}
                                 Some((open, open_place)) => {
+                                    let closer = if open == Symbol::OpenRound { ")" } else { "]" };
                                     return Err(Message::refused(
                                         place,
-                                        format!("`{}` closes a `{}`", symbol.text(), open.text()),
+                                        format!(
+                                            "`{}` closes nothing open here; the `{}` still open closes with `{closer}`",
+                                            symbol.text(),
+                                            open.text()
+                                        ),
                                     )
                                     .with_because(format!("line {} opens it", open_place.line), open_place));
                                 }
@@ -1056,7 +1064,12 @@ fn number_token<'a>(
     let place = Place::new(number, column_of(start), u32::try_from(length).unwrap_or(u32::MAX));
     let text = slice(digits_start, end);
     if characters.get(end).is_some_and(|&next| next.is_ascii_alphabetic() || next == '_') {
-        return Err(Message::refused(place, "a letter comes right after this number"));
+        // The fix puts a space before the letters, since a unit after its number is what it almost always is (D112).
+        let before: String = characters.iter().take(end).collect();
+        let after: String = characters.iter().skip(end).take_while(|&&character| character != '\n').collect();
+        return Err(Message::refused(place, "a letter comes right after this number")
+            .with_fix(format!("{before} {}", after.trim_end_matches('\r')))
+            .with_why("a unit is written after its number with a space, as `2 secs`."));
     }
     if end == digits_start {
         return Err(Message::refused(place, "`~` goes in front of a number with a point, as in `~0.1`"));

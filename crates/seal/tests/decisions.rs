@@ -311,9 +311,10 @@ fn d116_d119_d124_d125_decimals_are_exact_and_keep_their_places() {
 fn d126_converting_between_number_types() {
     let script = "price: Decimal = 4.99\nf = be.Whole.floor(price) ?? 0\nn = be.Whole.nearest(price) ?? 0\nfloat = be.Float(price) ?? 0.0\nshown = be.Decimal.shown(~0.1)\nnearest = be.Decimal.nearest(~0.1)\nread = be.Decimal(\" 12.50 \") ?? 0.0\nbad = be.Decimal(\"twelve\") ?? 0.0\nhuge: HugeDecimal = 1.25\nback = be.Decimal(huge) ?? 0.0\nwhole = be.HugeWhole.ceil(huge)\nshow_msg(\"{f} {n} {float} {shown} {nearest} {read} {bad} {back} {whole}\")\n";
     assert_eq!(shows(script), ["4 5 ~4.99 0.1 0.1000000000000000055511151231257827 12.50 0.0 1.25 2"]);
-    assert!(refusal("x = be.Decimal(~0.1)\nshow_msg(\"{x}\")\n").contains("says which `Decimal`"));
+    assert!(refusal("x = be.Decimal(~0.1)\nshow_msg(\"{x}\")\n").contains("needs to say which `Decimal`"));
     assert!(
-        refusal("x: Decimal = 2.5\ny = be.Whole(x) ?? 0\nshow_msg(\"{y}\")\n").contains("says how the fraction goes")
+        refusal("x: Decimal = 2.5\ny = be.Whole(x) ?? 0\nshow_msg(\"{y}\")\n")
+            .contains("needs to say how the fraction goes")
     );
 }
 

@@ -430,7 +430,11 @@ impl Doors {
                         && members.iter().any(|(known, _)| known == earlier)
                 });
                 if !fits {
-                    return Err(door_refusal(name, format!("`{unit}`'s size, `{size}`, isn't a size"), why));
+                    return Err(door_refusal(
+                        name,
+                        format!("`{unit}`'s size, `{size}`, isn't a whole number above 0"),
+                        why,
+                    ));
                 }
             }
             members.push(((*unit).to_owned(), (*size).to_owned()));

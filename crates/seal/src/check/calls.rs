@@ -737,7 +737,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     place,
                     format!("there's no conversion to `{target}`"),
-                    "`be` converts to `Text`, `Whole`, `Float` and `Bool`; other values are built as they're written.",
+                    "`be` converts to `Text`, `Whole`, `Float`, `Bool`, `HugeWhole`, `Decimal` and `HugeDecimal`; other values are built as they're written.",
                 );
                 return Self::error(place);
             }
@@ -745,8 +745,9 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     place,
                     format!("there's no `{full}`"),
-                    "`be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.Whole.floor`, \
-                     `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.",
+                    "`be`'s narrowings are `be.Text`, `be.Float`, `be.Whole`, `be.Bool`, `be.HugeWhole`, `be.Decimal`, \
+                     `be.HugeDecimal`, `be.Decimal.shown` and `be.Decimal.nearest`, and `.floor`, `.trunc`, `.ceil`, \
+                     `.nearest` and `.nearest.even` after `be.Whole` or `be.HugeWhole`.",
                 );
                 return Self::error(place);
             }
@@ -778,7 +779,7 @@ impl<'a> Checker<'a> {
             checker.refuse_why(
                 argument.place,
                 format!("this is already a `{target}`, so `be.{target}` does nothing"),
-                "converting a value to the type it already is, is refused.",
+                "it gives back the same value, so the `be.` can go.",
             );
             Self::error(place)
         };
@@ -849,7 +850,7 @@ impl<'a> Checker<'a> {
                     // trace: Unio D178
                     self.refuse_why(
                         place,
-                        "`be.Whole` on a `Float` says how the fraction goes",
+                        "`be.Whole` on a `Float` needs to say how the fraction goes",
                         "the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.",
                     );
                     return Self::error(place);

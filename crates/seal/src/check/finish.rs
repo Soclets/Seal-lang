@@ -20,6 +20,9 @@ trait Visitor {
 }
 
 /// Two visitors looking at a block in one walk, each seeing everything in the order it would alone.
+/// Why a type that can't be worked out is written (D30).
+const TYPE_WRITTEN: &str = "a type is written where nothing says it, as `name: Type = …`.";
+
 struct Both<'v>(&'v mut dyn Visitor, &'v mut dyn Visitor);
 
 impl Visitor for Both<'_> {
@@ -484,7 +487,7 @@ impl Visitor for LoopChecker<'_> {
                     Message::refused(place, format!("`{called}` can change `{name}`, which this `for_each` is going through"))
                         .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                         .with_why(format!(
-                            "what a `for_each` goes through can't change inside it; copying `{name}` into a name of its own first lets the loop go through the copy."
+                            "what a loop goes through can't change under it; copy it into a name of its own first, as `{name}_now = {name}`."
                         )),
                 );
             }
@@ -492,7 +495,7 @@ impl Visitor for LoopChecker<'_> {
                 Message::refused(place, format!("this can pause, while a `for_each` is going through the top-level name `{name}`"))
                     .with_because(format!("line {} opens the `for_each`", statement.place.line), statement.place)
                     .with_why(format!(
-                        "another task could change `{name}` during the pause; copying it into a name of its own first lets the loop go through the copy."
+                        "what a loop goes through can't change under it, and another task could change `{name}` during the pause; copy it into a name of its own first, as `{name}_now = {name}`."
                     )),
             ),
             None => {}
@@ -552,7 +555,7 @@ impl Checker<'_> {
                     self.refuse_why(
                         place,
                         "this is already a `Text`, so `be.Text` does nothing",
-                        "converting a value to the type it already is, is refused.",
+                        "it gives back the same value, so the `be.` can go.",
                     );
                 }
             }
@@ -804,7 +807,7 @@ impl Checker<'_> {
         for pending in std::mem::take(&mut self.pending) {
             if self.program.types.is_open(pending.subject) {
                 if !self.has_refusals() {
-                    self.refuse(pending.place, "this value's type can't be worked out");
+                    self.refuse_why(pending.place, "this value's type can't be worked out", TYPE_WRITTEN);
                 }
                 self.program.types.settle_as_error(pending.subject);
             }
@@ -823,7 +826,7 @@ impl Checker<'_> {
             .collect();
         for (type_id, place, name) in open {
             if self.messages.is_empty() {
-                self.refuse(place, format!("`{name}`'s type can't be worked out"));
+                self.refuse_why(place, format!("`{name}`'s type can't be worked out"), TYPE_WRITTEN);
             }
             self.program.types.settle_as_error(type_id);
         }

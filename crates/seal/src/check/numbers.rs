@@ -224,7 +224,7 @@ impl<'a> Checker<'a> {
             self.refuse_why(
                 right.place,
                 "a `HugeWhole` to a negative power isn't a whole number",
-                "a negative power is one over the number; a `HugeDecimal` can hold it when it has an end.",
+                "a negative power is one over the number, as `2 ** -3` is `1 / 8`; a `HugeDecimal` holds it when its digits end, as `0.125` does.",
             );
             return Self::error(place);
         }
@@ -299,7 +299,7 @@ impl<'a> Checker<'a> {
             self.refuse_why(
                 argument.place,
                 format!("this is already a `{name}`, so `be.{name}` does nothing"),
-                "converting a value to the type it already is, is refused.",
+                "it gives back the same value, so the `be.` can go.",
             );
             return Self::error(place);
         }
@@ -313,7 +313,7 @@ impl<'a> Checker<'a> {
                 // trace: D126, Unio D178. Which `Decimal` a `Float` becomes is said.
                 self.refuse_why(
                     place,
-                    "`be.Decimal` on a `Float` says which `Decimal` it becomes",
+                    "`be.Decimal` on a `Float` needs to say which `Decimal` it becomes",
                     "`be.Decimal.shown` takes the number the `Float` shows, so `~0.1` gives `0.1`; `be.Decimal.nearest` takes the `Decimal` nearest the value it holds.",
                 );
                 Self::error(place)
@@ -331,7 +331,7 @@ impl<'a> Checker<'a> {
                 // trace: D126
                 self.refuse_why(
                     place,
-                    format!("`be.HugeWhole` on a `{}` says how the fraction goes", written(from)),
+                    format!("`be.HugeWhole` on a `{}` needs to say how the fraction goes", written(from)),
                     "the ways are `be.HugeWhole.floor`, `.trunc`, `.ceil`, `.nearest` and `.nearest.even`.",
                 );
                 Self::error(place)
@@ -369,7 +369,7 @@ impl<'a> Checker<'a> {
             (_, None) if from != NumberType::Huge => {
                 self.refuse_why(
                     place,
-                    format!("`be.Whole` on a `{source}` says how the fraction goes"),
+                    format!("`be.Whole` on a `{source}` needs to say how the fraction goes"),
                     "the ways are `be.Whole.floor`, `be.Whole.trunc`, `be.Whole.ceil`, `be.Whole.nearest` and `be.Whole.nearest.even`.",
                 );
                 Self::error(place)

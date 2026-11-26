@@ -627,7 +627,7 @@ impl<'a> Checker<'a> {
                         // trace: D121. Two places added is the classic slip.
                         self.refuse_why(
                             operator_place,
-                            "`+` adds two points, two places, which has no meaning",
+                            "`+` adds two points, and two places can't be added",
                             "a point plus an amount is a point, and a point minus a point is the amount between them; two points aren't added.",
                         );
                         return Self::error(place);

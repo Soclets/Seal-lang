@@ -266,7 +266,7 @@ fn d17_a_failed_check_stops_the_script_at_its_exact_line() -> Result<(), Box<dyn
         message.text(),
         "check failed: goblin.seal:57:12, line 57 column 12\n 57 |     return n * 9223372036854775807\n    |            ^^^^^^^^^^^^^^^^^^^^^^^\n \
          what:    the result is too big for a `Whole`\n when:    `2 * 9223372036854775807`\n \
-         why:     a `Whole` holds whole numbers from -9223372036854775808 to 9223372036854775807.\n"
+         why:     a `Whole` goes from -9223372036854775808 up to 9223372036854775807; a `HugeWhole` has no limit.\n"
     );
     Ok(())
 }
