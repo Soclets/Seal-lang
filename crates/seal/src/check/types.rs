@@ -79,6 +79,9 @@ pub enum Type {
 }
 
 /// One unit: a member of a unit group, by their numbers in [`TypeTable::unit_groups`] (D111, D113, D123).
+/// The built-in requirement `Number` (D166), beside the script's own, which are numbered from 0 (D168).
+pub const NUMBER: u32 = u32::MAX;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct UnitRef {
     pub group: u16,
@@ -278,8 +281,12 @@ pub struct TypeTable {
     big_edges: Vec<crate::big::Big>,
     /// Each generic procedure's type parameters, as written, `?` and all, each a [`Type::Parameter`] (D161).
     pub parameters: Vec<String>,
-    /// Whether each type parameter requires a `Number` (D166).
-    pub numbers_only: Vec<bool>,
+    /// What each type parameter requires: [`NUMBER`], or one of the script's requirements by its number (D166).
+    pub required: Vec<Option<u32>>,
+    /// The script's requirements' names, by their numbers (D168).
+    pub requirement_names: Vec<String>,
+    /// Which of the script's types meets which requirement (D167).
+    pub meets: Vec<(TypeId, u32)>,
 }
 
 impl Default for TypeTable {
@@ -295,7 +302,9 @@ impl Default for TypeTable {
             unit_groups: NO_UNIT_GROUPS.get_or_init(std::sync::Arc::default).clone(),
             big_edges: Vec::new(),
             parameters: Vec::new(),
-            numbers_only: Vec::new(),
+            required: Vec::new(),
+            requirement_names: Vec::new(),
+            meets: Vec::new(),
         }
     }
 }
@@ -386,17 +395,52 @@ impl TypeTable {
     }
 
     /// trace: D161. A new type parameter, as `?Item`, of one generic procedure.
-    pub fn new_parameter(&mut self, name: &str, numbers_only: bool) -> TypeId {
+    pub fn new_parameter(&mut self, name: &str, required: Option<u32>) -> TypeId {
         let number = u32::try_from(self.parameters.len()).unwrap_or(u32::MAX);
         self.parameters.push(name.to_owned());
-        self.numbers_only.push(numbers_only);
+        self.required.push(required);
         self.intern(Type::Parameter(number))
+    }
+
+    /// trace: D166, D168. What a type parameter requires, when the type is one that requires something.
+    #[must_use]
+    pub fn requirement_of(&self, id: TypeId) -> Option<u32> {
+        match self.get(id) {
+            Type::Parameter(parameter) => self.required.get(*parameter as usize).copied().flatten(),
+            _ => None,
+        }
     }
 
     /// trace: D166. Whether a type is a type parameter that requires a `Number`.
     #[must_use]
     pub fn is_number_parameter(&self, id: TypeId) -> bool {
-        matches!(self.get(id), Type::Parameter(parameter) if self.numbers_only.get(*parameter as usize) == Some(&true))
+        self.requirement_of(id) == Some(NUMBER)
+    }
+
+    /// trace: D166, D167. Whether a type meets a requirement: a number type meets `Number`, a script's type meets what
+    /// its `meets [ … ]` line names, and a type parameter meets what it requires.
+    #[must_use]
+    pub fn meets_requirement(&self, id: TypeId, requirement: u32) -> bool {
+        if self.requirement_of(id) == Some(requirement) {
+            return true;
+        }
+        if requirement == NUMBER {
+            return matches!(
+                self.get(id),
+                Type::Whole | Type::Float | Type::HugeWhole | Type::Decimal | Type::HugeDecimal
+            );
+        }
+        let id = self.resolve(id);
+        self.meets.iter().any(|&(meets, what)| self.resolve(meets) == id && what == requirement)
+    }
+
+    /// A requirement's name, `Number` included.
+    #[must_use]
+    pub fn requirement_name(&self, requirement: u32) -> &str {
+        if requirement == NUMBER {
+            return "Number";
+        }
+        self.requirement_names.get(requirement as usize).map_or("?", String::as_str)
     }
 
     /// trace: D161. The type with each type parameter in `map` put in place of what it stands for, all the way down.
@@ -906,9 +950,19 @@ impl TypeTable {
             edge.write_file(out);
         }
         out.count(self.parameters.len());
-        for (parameter, &numbers_only) in self.parameters.iter().zip(&self.numbers_only) {
+        for (parameter, &required) in self.parameters.iter().zip(&self.required) {
             out.text(parameter);
-            out.flag(numbers_only);
+            out.flag(required.is_some());
+            out.u32(required.unwrap_or(0));
+        }
+        out.count(self.requirement_names.len());
+        for name in &self.requirement_names {
+            out.text(name);
+        }
+        out.count(self.meets.len());
+        for &(meets, requirement) in &self.meets {
+            out.u32(meets.0);
+            out.u32(requirement);
         }
     }
 
@@ -1011,10 +1065,22 @@ impl TypeTable {
         }
         let count = input.count(4)?;
         let mut parameters = Vec::with_capacity(count);
-        let mut numbers_only = Vec::with_capacity(count);
+        let mut required = Vec::with_capacity(count);
         for _ in 0..count {
             parameters.push(input.text()?);
-            numbers_only.push(input.flag()?);
+            let has = input.flag()?;
+            let requirement = input.u32()?;
+            required.push(has.then_some(requirement));
+        }
+        let count = input.count(4)?;
+        let mut requirement_names = Vec::with_capacity(count);
+        for _ in 0..count {
+            requirement_names.push(input.text()?);
+        }
+        let count = input.count(8)?;
+        let mut meets = Vec::with_capacity(count);
+        for _ in 0..count {
+            meets.push((TypeId(input.u32()?), input.u32()?));
         }
         // Only checking looks types up by their kind, and a script from a file is checked already, so its table
         // has nothing to look up with: anything made from it later is simply a new type.
@@ -1027,7 +1093,9 @@ impl TypeTable {
             unit_groups: std::sync::Arc::new(unit_groups),
             big_edges,
             parameters,
-            numbers_only,
+            required,
+            requirement_names,
+            meets,
         })
     }
 

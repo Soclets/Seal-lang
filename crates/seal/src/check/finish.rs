@@ -1029,7 +1029,14 @@ impl Checker<'_> {
         messages.append(&mut loops.messages);
 
         // trace: D84. A procedure that can fail writes `! [ … ]` in its header, matching what the body does exactly.
-        for (procedure, written) in self.program.procedures.iter().zip(&self.written_failures) {
+        // A requirement's method has no body: its failures are what it lists (D168).
+        for (procedure, written) in self
+            .program
+            .procedures
+            .iter()
+            .zip(&self.written_failures)
+            .filter(|(procedure, _)| procedure.requirement.is_none())
+        {
             // The header put right, only worked out when it's shown.
             let header = || {
                 let list = procedure

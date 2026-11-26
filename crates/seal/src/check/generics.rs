@@ -274,6 +274,29 @@ impl Visit for Point<'_> {
             // A call inside a generic procedure, made concrete with its instance.
             return;
         }
+        // trace: D168. A requirement's method, filled in with a type, is that type's own method.
+        if let Some(header) = self.program.procedure(*procedure)
+            && header.requirement.is_some()
+        {
+            let method = header.name.rsplit('.').next().unwrap_or_default().to_owned();
+            let owner = filled.first().map(|&owner| self.program.types.written(owner)).unwrap_or_default();
+            let full = format!("{owner}.{method}");
+            match self
+                .program
+                .procedures
+                .iter()
+                .position(|found| found.method && found.requirement.is_none() && found.name == full)
+            {
+                Some(index) => {
+                    *procedure = ProcedureId(u32::try_from(index).unwrap_or(u32::MAX));
+                    types.clear();
+                }
+                None => {
+                    self.problem = Some(Message::internal(format!("a type meeting a requirement with no `{full}`")));
+                }
+            }
+            return;
+        }
         let key = (*procedure, filled.clone());
         let instance = if let Some(&instance) = self.instances.get(&key) {
             instance
@@ -345,6 +368,7 @@ fn make_instance(program: &mut Program, generic: ProcedureId, filled: &[TypeId])
         type_parameters: Vec::new(),
         instance_of: Some(generic),
         method,
+        requirement: None,
         parameters,
         labels,
         labels_any_order,
@@ -371,28 +395,31 @@ impl Visit for Unsettled<'_> {
         let ExpressionKind::Call { procedure, types, .. } = &expression.kind else { return };
         let Some(generic) = self.program.procedure(*procedure) else { return };
         for (&filled, &parameter) in types.iter().zip(&generic.type_parameters) {
-            // trace: D166. A type parameter that requires a `Number` is filled in with one, at each call.
-            if self.program.types.is_number_parameter(parameter)
+            // trace: D166, D167. A type parameter's requirement is met by what each call fills it in with.
+            if let Some(requirement) = self.program.types.requirement_of(parameter)
                 && self.program.types.is_settled(filled)
-                && !self.program.types.is_number_parameter(filled)
-                && !matches!(
-                    self.program.types.get(filled),
-                    Type::Whole | Type::Float | Type::HugeWhole | Type::Decimal | Type::HugeDecimal
-                )
+                && !self.program.types.meets_requirement(filled, requirement)
             {
                 let (name, found) = (self.program.types.written(parameter), self.program.types.describe(filled));
-                self.found.push(
-                    Message::refused(
-                        expression.place,
+                let wanted = self.program.types.requirement_name(requirement).to_owned();
+                let (what, why) = if requirement == super::types::NUMBER {
+                    (
                         format!(
                             "`{}`'s `{name}` must be a `Number`, but this call fills it in with {found}",
                             generic.name
                         ),
-                    )
-                    .with_why(
                         "a `Number` is a `Whole`, `Float`, `HugeWhole`, `Decimal` or `HugeDecimal`, with no unit.",
-                    ),
-                );
+                    )
+                } else {
+                    (
+                        format!(
+                            "`{}`'s `{name}` must meet `{wanted}`, but this call fills it in with {found}",
+                            generic.name
+                        ),
+                        "a type meets a requirement by saying so, with `meets [ … ]` as its first line.",
+                    )
+                };
+                self.found.push(Message::refused(expression.place, what).with_why(why));
                 return;
             }
             if !self.program.types.is_settled(filled) {

@@ -906,12 +906,17 @@ impl<'a> Checker<'a> {
         arguments: &[syntax::Entry<'a>],
         place: Place,
     ) -> Option<Expression> {
-        if self.methods.is_empty() {
+        if self.methods.is_empty() && self.requirement_methods.is_empty() {
             return None;
         }
         let owner = self.receiver_type(receiver)?;
-        let &(_, procedure) =
-            self.methods.iter().find(|((type_id, name), _)| *type_id == owner && name == method.text)?;
+        // trace: D168. On a type parameter's value, the method its requirement lists.
+        let procedure = match self.program.types.requirement_of(owner) {
+            Some(requirement) if requirement != super::types::NUMBER => {
+                self.requirement_methods.iter().find(|((of, name), _)| *of == requirement && name == method.text)?.1
+            }
+            _ => self.methods.iter().find(|((type_id, name), _)| *type_id == owner && name == method.text)?.1,
+        };
         // trace: D165. A method that changes its value is called on a mutable variable, which it's lent for the call.
         let changes = self.program.procedure(procedure).is_some_and(|found| {
             found.parameters.first().and_then(|&first| self.program.variable(first)).is_some_and(|first| first.mutable)

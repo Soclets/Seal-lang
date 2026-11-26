@@ -65,6 +65,8 @@ pub struct Procedure {
     pub instance_of: Option<ProcedureId>,
     /// A method of one of the script's records or `one_of`s, called only with a dot (D164).
     pub method: bool,
+    /// For a method a requirement lists, with no body: the requirement's number (D168).
+    pub requirement: Option<u32>,
     pub parameters: Vec<VariableId>,
     /// Each parameter's label, when it has one (D41); empty when none has one.
     pub labels: Vec<Option<String>>,

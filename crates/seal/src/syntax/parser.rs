@@ -8,8 +8,9 @@ use super::spare::SpareLists;
 use super::tree::{
     BinaryOperator, Block, CaseDeclaration, DefaultDeclaration, Entry, Expression, ExpressionKind, Fallback, Family,
     FieldDeclaration, Handler, HandlerGroup, HandlerUse, Item, LabelDeclaration, Marker, MatchCase, OneOfDeclaration,
-    OtherwiseCase, Parameter, PositionKind, Procedure, RecordDeclaration, Script, SlideStep, Statement, StatementKind,
-    TypeExpression, TypeParameter, UnaryOperator, UnitGroup, UnitMember, UnitName, UnitWritten, Word,
+    OtherwiseCase, Parameter, PositionKind, Procedure, RecordDeclaration, RequirementDeclaration, Script, SlideStep,
+    Statement, StatementKind, TypeExpression, TypeParameter, UnaryOperator, UnitGroup, UnitMember, UnitName,
+    UnitWritten, Word,
 };
 use crate::message::{Message, Place};
 
@@ -411,6 +412,12 @@ impl<'a> Parser<'a> {
             Some(Keyword::Fam) => Ok(Item::Family(self.family()?)),
             Some(Keyword::Record) => Ok(Item::Record(self.record()?)),
             Some(Keyword::OneOf) => Ok(Item::OneOf(self.one_of()?)),
+            // trace: D168. `requirement Name`, listing the methods a type meeting it has; read as such only here.
+            _ if matches!(self.peek_kind(), Some(TokenKind::Name("requirement")))
+                && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::TypeName(_))) =>
+            {
+                Ok(Item::Requirement(self.requirement()?))
+            }
             // trace: D110. `group.handler name` declares a handler group; `group` is read as such only here.
             _ if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "group")
                 && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Dot)))
@@ -453,6 +460,30 @@ impl<'a> Parser<'a> {
     /// way without `proc` (D21, D41, D42, D45, D81, D84, D88, D97).
     #[allow(clippy::too_many_lines)] // the first line, then the `labels` and `defaults` lines, read in order
     fn procedure(&mut self, member: bool) -> Result<Procedure<'a>, Message> {
+        self.procedure_written(member, false)
+    }
+
+    /// trace: D168. `requirement Name`, and the headers of the methods a type meeting it has, each with no body.
+    fn requirement(&mut self) -> Result<RequirementDeclaration<'a>, Message> {
+        let mut opener = self.opener("requirement");
+        self.advance();
+        let name = self.expect_type_name()?;
+        opener.note = Note::new("requirement ", name.text);
+        self.end_line()?;
+        let mut methods = Vec::new();
+        while self.in_body(&opener)? {
+            if self.first_keyword() != Some(Keyword::Proc) {
+                return Err(Message::refused(self.here(), "a requirement holds only methods' first lines")
+                    .with_why("a requirement lists the methods a type meeting it has, as `proc score[item: ?Self] -> Whole`, each with no body."));
+            }
+            methods.push(self.procedure_written(false, true)?);
+        }
+        self.end_of(&opener)?;
+        Ok(RequirementDeclaration { name, methods })
+    }
+
+    /// A procedure, or with `header_only`, only its first line, as a requirement lists it (D168).
+    fn procedure_written(&mut self, member: bool, header_only: bool) -> Result<Procedure<'a>, Message> {
         let mut opener = self.opener("proc");
         if !member {
             self.expect_keyword(Keyword::Proc)?;
@@ -526,6 +557,21 @@ impl<'a> Parser<'a> {
             None
         };
         self.end_line()?;
+        if header_only {
+            return Ok(Procedure {
+                path,
+                type_parameters,
+                parameters,
+                result,
+                failures,
+                labels: Vec::new(),
+                labels_any_order: false,
+                defaults: Vec::new(),
+                body: Vec::new(),
+                place: opener.place,
+                end_place: opener.place,
+            });
+        }
         let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
         let body = self.body(&opener)?;
         let end_place = self.end_of(&opener)?;

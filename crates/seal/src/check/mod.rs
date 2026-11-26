@@ -206,6 +206,10 @@ pub(crate) struct Checker<'a> {
     methods: Vec<((TypeId, String), ProcedureId)>,
     /// The type whose method is being declared, and its name (D164).
     method_owner: Option<(TypeId, &'a str)>,
+    /// The requirement whose method's first line is being read, and its name (D168).
+    requirement_owner: Option<(u32, &'a str)>,
+    /// Each requirement's methods, by the requirement's number and the method's name (D168).
+    requirement_methods: Vec<((u32, String), ProcedureId)>,
 }
 
 /// Checks a script against the doors its host opened.
@@ -264,6 +268,8 @@ pub fn check(
         header_parameters: Vec::new(),
         methods: Vec::new(),
         method_owner: None,
+        requirement_owner: None,
+        requirement_methods: Vec::new(),
     };
     checker.run(script);
     // The tables are emptied and kept for the next script this thread checks, when they're not too big to keep.
@@ -369,6 +375,7 @@ impl<'a> Checker<'a> {
         self.declare_globals(script);
         self.declare_unit_groups(script);
         self.declare_types(script);
+        self.declare_requirements(script);
         self.declare_procedures(script);
         self.declare_handler_groups(script);
         self.context.open_scope();
@@ -1163,6 +1170,30 @@ impl<'a> Checker<'a> {
         for procedure in list {
             self.declare_procedure(procedure);
         }
+        // trace: D168. Each requirement's methods' first lines, each a method generic over `?Self`.
+        for item in &script.items {
+            let syntax::Item::Requirement(requirement) = item else { continue };
+            let Some(number) =
+                self.program.types.requirement_names.iter().position(|known| known == requirement.name.text)
+            else {
+                continue;
+            };
+            let number = u32::try_from(number).unwrap_or(u32::MAX);
+            for method in &requirement.methods {
+                let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
+                self.requirement_owner = Some((number, requirement.name.text));
+                self.declare_procedure(method);
+                self.requirement_owner = None;
+                if self.program.procedure(id).is_some() {
+                    self.requirement_methods.push(((number, method.name().into_owned()), id));
+                    // It has no body to check.
+                    if let Some(state) = self.procedure_state.get_mut(id.0 as usize) {
+                        *state = ProcedureState::Checked;
+                    }
+                }
+            }
+        }
+        let mut meets_lists = Vec::new();
         // trace: D164. Each record's and `one_of`'s methods, known by their type and their own name.
         for item in &script.items {
             let (type_name, methods, meets) = match item {
@@ -1170,13 +1201,7 @@ impl<'a> Checker<'a> {
                 syntax::Item::OneOf(one_of) => (one_of.name.text, &one_of.methods, &one_of.meets),
                 _ => continue,
             };
-            // trace: D166, D167. How a requirement that lists methods is written isn't decided, so none can be met.
-            for requirement in meets {
-                self.not_designed(
-                    requirement.place,
-                    format!("meeting `{}`: how a requirement listing methods is written", requirement.text),
-                );
-            }
+
             let owner = if let Some(&index) = self.record_names.get(type_name) {
                 self.program.types.intern(Type::Record(index))
             } else if let Some(&index) = self.one_of_names.get(type_name) {
@@ -1187,7 +1212,131 @@ impl<'a> Checker<'a> {
             for method in methods {
                 self.declare_method(method, owner, type_name);
             }
+            meets_lists.push((Some(owner), type_name, meets));
         }
+        // trace: D167, D168. A type meets the requirements its first line names, each method checked against the
+        // requirement's.
+        for (owner, type_name, meets) in meets_lists {
+            let Some(owner) = owner else { continue };
+            for requirement in meets {
+                self.check_meets(owner, type_name, requirement);
+            }
+        }
+    }
+
+    /// trace: D168. The script's requirements, by name, before any procedure's first line names one.
+    fn declare_requirements(&mut self, script: &'a syntax::Script<'a>) {
+        for item in &script.items {
+            let syntax::Item::Requirement(requirement) = item else { continue };
+            let name = requirement.name.text;
+            let taken = self.program.types.requirement_names.iter().any(|known| known == name)
+                || self.record_names.get(name).is_some()
+                || self.one_of_names.get(name).is_some()
+                || name == "Number";
+            if taken {
+                self.refuse_why(
+                    requirement.name.place,
+                    format!("`{name}` already names a type or a requirement"),
+                    NO_SHADOWING,
+                );
+                continue;
+            }
+            self.program.types.requirement_names.push(name.to_owned());
+        }
+    }
+
+    /// trace: D167, D168. Checks that a type has every method a requirement it says it meets lists, each taking the
+    /// same types (the type itself for `?Self`), with the same labels, result and failures.
+    fn check_meets(&mut self, owner: TypeId, type_name: &str, requirement: &syntax::Word<'a>) {
+        let Some(number) = self.program.types.requirement_names.iter().position(|known| known == requirement.text)
+        else {
+            self.refuse_why(
+                requirement.place,
+                format!("there's no requirement named `{}`", requirement.text),
+                "a type meets requirements the script declares with `requirement`.",
+            );
+            return;
+        };
+        let number = u32::try_from(number).unwrap_or(u32::MAX);
+        self.program.types.meets.push((owner, number));
+        let listed: Vec<(String, ProcedureId)> = self
+            .requirement_methods
+            .iter()
+            .filter(|((of, _), _)| *of == number)
+            .map(|((_, name), id)| (name.clone(), *id))
+            .collect();
+        for (name, header) in listed {
+            let found = self
+                .methods
+                .iter()
+                .find(|((type_id, method), _)| *type_id == owner && *method == name)
+                .map(|(_, id)| *id);
+            let Some(method) = found else {
+                self.refuse_why(
+                    requirement.place,
+                    format!("`{type_name}` meets `{}`, but has no method `{name}`", requirement.text),
+                    "a type meeting a requirement has every method the requirement lists.",
+                );
+                continue;
+            };
+            if let Some(why) = self.method_differs(header, method, owner) {
+                self.refuse_why(
+                    requirement.place,
+                    format!("`{type_name}`'s `{name}` isn't the one `{}` lists: {why}", requirement.text),
+                    "a method meeting a requirement takes the same types, with `?Self` as the type, the same labels, and gives the same result and failures.",
+                );
+            }
+        }
+    }
+
+    /// How a type's method differs from a requirement's, with `?Self` standing for the type, if it does.
+    fn method_differs(&mut self, header: ProcedureId, method: ProcedureId, owner: TypeId) -> Option<String> {
+        let (Some(header), Some(method)) =
+            (self.program.procedure(header).cloned(), self.program.procedure(method).cloned())
+        else {
+            return None;
+        };
+        let self_type = header.type_parameters.first().copied()?;
+        let types::Type::Parameter(self_number) = *self.program.types.get(self_type) else { return None };
+        let map = [(self_number, owner)];
+        if header.parameters.len() != method.parameters.len() {
+            return Some(format!("it takes {} values, not {}", method.parameters.len(), header.parameters.len()));
+        }
+        for (position, (&wanted, &found)) in header.parameters.iter().zip(&method.parameters).enumerate() {
+            let wanted = self.program.types.substitute(self.variable_type(wanted), &map);
+            let found = self.variable_type(found);
+            if self.program.types.resolve(wanted) != self.program.types.resolve(found) {
+                let (wanted, found) = (self.describe(wanted), self.describe(found));
+                return Some(format!("value {} is {found}, not {wanted}", position + 1));
+            }
+        }
+        if header.labels != method.labels {
+            return Some("its labels differ".to_owned());
+        }
+        let wanted = self.program.types.substitute(header.result, &map);
+        if self.program.types.resolve(wanted) != self.program.types.resolve(method.result) {
+            let (wanted, found) = (self.describe(wanted), self.describe(method.result));
+            return Some(format!("it gives {found}, not {wanted}"));
+        }
+        let written = |checker: &Self, procedure: &Procedure| -> Vec<String> {
+            let index = checker
+                .program
+                .procedures
+                .iter()
+                .position(|known| known.name == procedure.name && known.place == procedure.place);
+            let mut names: Vec<String> = index
+                .and_then(|index| checker.written_failures.get(index).cloned().flatten())
+                .unwrap_or_default()
+                .iter()
+                .map(|word| word.text.to_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        if written(self, &header) != written(self, &method) {
+            return Some("its failures differ".to_owned());
+        }
+        None
     }
 
     /// trace: D164. A method: a procedure inside its type, named after the type inside the program, whose first
@@ -1234,8 +1383,12 @@ impl<'a> Checker<'a> {
         let name = procedure.name();
         let name_place = procedure.path.first().map_or(procedure.place, |word| word.place);
         let word = procedure.path.first().map_or("", |word| word.text);
-        // A method is reached only through its type, so it shares no names with what's outside it (D164).
-        let method_of = self.method_owner.map(|(_, type_name)| type_name);
+        // A method is reached only through its type, so it shares no names with what's outside it (D164); so is a
+        // requirement's (D168).
+        let method_of = self
+            .method_owner
+            .map(|(_, type_name)| type_name)
+            .or_else(|| self.requirement_owner.map(|(_, requirement_name)| requirement_name));
         // trace: D71, D93. One spelling means one thing, so a procedure can't take a built-in's or a door's name.
         if method_of.is_none() && BUILT_IN_WORDS.contains(&word) {
             self.refuse_why(
@@ -1264,8 +1417,12 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        // trace: D161. A generic procedure's type parameters, each its own type, used in its first line and body.
+        // trace: D161. A generic procedure's type parameters, each its own type, used in its first line and body. A
+        // requirement's method has one more, `?Self`, the type meeting the requirement (D168).
         let mut type_parameters: Vec<TypeId> = Vec::new();
+        if let Some((requirement, _)) = self.requirement_owner {
+            type_parameters.push(self.program.types.new_parameter("?Self", Some(requirement)));
+        }
         for written in &procedure.type_parameters {
             let name = &written.name;
             if type_parameters.iter().any(|&earlier| self.program.types.written(earlier) == name.text) {
@@ -1276,19 +1433,23 @@ impl<'a> Checker<'a> {
                 );
                 continue;
             }
-            // trace: D166. `Number` is Seal's first built-in requirement; ones listing methods aren't written yet.
-            let numbers_only = match &written.requirement {
-                None => false,
-                Some(requirement) if requirement.text == "Number" => true,
+            // trace: D166, D168. `Number`, Seal's own, or one of the script's requirements.
+            let required = match &written.requirement {
+                None => None,
+                Some(requirement) if requirement.text == "Number" => Some(types::NUMBER),
                 Some(requirement) => {
-                    self.not_designed(
-                        requirement.place,
-                        format!("the requirement `{}`: how a requirement listing methods is written", requirement.text),
-                    );
-                    false
+                    let found = self.program.types.requirement_names.iter().position(|known| known == requirement.text);
+                    if found.is_none() {
+                        self.refuse_why(
+                            requirement.place,
+                            format!("there's no requirement named `{}`", requirement.text),
+                            "a type parameter requires `Number`, or a requirement the script declares with `requirement`.",
+                        );
+                    }
+                    found.and_then(|found| u32::try_from(found).ok())
                 }
             };
-            type_parameters.push(self.program.types.new_parameter(name.text, numbers_only));
+            type_parameters.push(self.program.types.new_parameter(name.text, required));
         }
         self.header_parameters.clone_from(&type_parameters);
         let mut parameters: Vec<VariableId> = Vec::new();
@@ -1423,6 +1584,7 @@ impl<'a> Checker<'a> {
             type_parameters,
             instance_of: None,
             method: is_method,
+            requirement: self.requirement_owner.map(|(requirement, _)| requirement),
             parameters,
             labels,
             labels_any_order,

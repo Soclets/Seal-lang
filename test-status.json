@@ -1,6 +1,6 @@
 {
-  "passed": 29,
-  "failed": 1,
+  "passed": 30,
+  "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
     "d004_guessing_game": { "status": "pass" },
@@ -31,6 +31,6 @@
     "d164_methods": { "status": "pass" },
     "d165_mut_methods": { "status": "pass" },
     "d166_number_requirement": { "status": "pass" },
-    "d168_requirements": { "status": "fail", "why": "exit status 1, expected 0" }
+    "d168_requirements": { "status": "pass" }
   }
 }

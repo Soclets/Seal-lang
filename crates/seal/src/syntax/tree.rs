@@ -21,6 +21,15 @@ pub enum Item<'a> {
     OneOf(OneOfDeclaration<'a>),
     HandlerGroup(HandlerGroup<'a>),
     UnitGroup(UnitGroup<'a>),
+    Requirement(RequirementDeclaration<'a>),
+}
+
+/// `requirement Name` and the first lines of the methods a type meeting it has (D168).
+#[derive(Clone, Debug)]
+pub struct RequirementDeclaration<'a> {
+    pub name: Word<'a>,
+    /// Each method's first line, with no body; `?Self` stands for the type meeting it.
+    pub methods: Vec<Procedure<'a>>,
 }
 
 /// `group.unit name` and its members, each `::name base` or `::name = amount unit` (D123).

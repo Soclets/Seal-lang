@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D167 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D168 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -268,8 +268,12 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D166, D167** A type parameter's requirement after `:`. With none, its values are kept, passed, given back,
   compared with `eq` and `not_eq` and shown in braces; `?Item: Number` adds maths, ordering, `abs`, `min` and
   `max`, and each call's type is checked to be a `Whole`, `Float`, `HugeWhole`, `Decimal` or `HugeDecimal` with no
-  unit. A requirement listing methods, and `meets [ … ]` (spaced as `handles [ … ]`), stop as not designed yet:
-  how one is written isn't decided. The fuzzer has a `Number` generic.
+  unit. `meets [ … ]` is spaced as `handles [ … ]`; `meets` isn't a keyword. The fuzzer has a `Number` generic.
+- **D168** `requirement Name … end` lists methods' first lines, `?Self` the type meeting it. Each listed method is
+  a stub procedure generic over `?Self`, so `thing.score()` on a type parameter's value is a generic call, which the
+  instance for a type points at that type's own method. `meets [ … ]` checks every listed method: same name, types
+  (`?Self` as the type), labels, result and written failures; each call to a generic checks its types meet what its
+  type parameters require. The fuzzer's `Hero` meets a `Powered` requirement, used by a generic.
 - **D141, D153, D154** `.sealc` files (`compile/file.rs`, `host/compiled.rs`): `seal build a.seal [b.seal …]
   [-o out.sealc]` and `seal::build` write one script or a bundle with an index; `Script::load_compiled` loads one by
   name; `Cache` and `Script::load_cached` keep them in a folder the host names, keyed by text, this Seal and the
@@ -455,7 +459,6 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - what a type parameter can do (D161): maths, comparing, converting, showing, reaching into one's value
 - a host calling a generic procedure, which would need its types worked out from the host's values (D161)
 - a host calling a method (D164)
-- a requirement listing methods, and `meets [ … ]` (D166, D167)
 - `mut` on a parameter other than a method's first (Unio D130's parameter words); a method that changes its value
   called on something other than a variable, or able to fail (D165)
 - a `\r` that isn't right before a line break

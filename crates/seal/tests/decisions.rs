@@ -515,8 +515,31 @@ fn d166_d167_requirements_on_type_parameters() {
     assert!(refusal(text).contains("must be a `Number`, but this call fills it in with `Text`"), "{}", refusal(text));
     let unit = "proc spread<?Item: Number>[a: ?Item, b: ?Item] -> ?Item\n    return max(a, b)\nend\nx = spread(2 secs, 3 secs)\nshow_msg(\"{x}\")\n";
     assert!(refusal(unit).contains("must be a `Number`"), "{}", refusal(unit));
-    let methods = "proc best<?Item: Scored>[a: ?Item] -> ?Item\n    return a\nend\nx = best(1)\nshow_msg(\"{x}\")\n";
-    assert!(refusal(methods).contains("how a requirement listing methods is written"), "{}", refusal(methods));
-    let meets = "record Player\n    meets [Scored]\n    name: Text\nend\n";
-    assert!(refusal(meets).contains("meeting `Scored`"), "{}", refusal(meets));
+    let unknown = "proc best<?Item: Scored>[a: ?Item] -> ?Item\n    return a\nend\nx = best(1)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(unknown).contains("there's no requirement named `Scored`"), "{}", refusal(unknown));
+}
+
+// trace: D168. A requirement lists methods' first lines, `?Self` the type meeting it; a type meets it by saying so
+// and having each, the same; a generic calls them on its type parameter's values.
+#[test]
+fn d168_requirements_list_methods_a_type_meeting_them_has() {
+    let head = "requirement Scored\n    proc score[item: ?Self] -> Whole\nend\n\n";
+    let best = "proc best<?Thing: Scored>[things: List<?Thing>] -> Whole\n    mut top = 0\n    for_each thing in things\n        top = max(_, thing.score())\n    end\n    return top\nend\n";
+    let player = "record Player\n    meets [Scored]\n    kills: Whole\n\n    proc score[p: Player] -> Whole\n        return p.kills * 10\n    end\nend\n\n";
+    let script = format!("{head}{player}{best}a = best([Player[kills: 3], Player[kills: 5]])\nshow_msg(\"{{a}}\")\n");
+    assert_eq!(shows(&script), ["50"]);
+    let missing = format!("{head}record Player\n    meets [Scored]\n    kills: Whole\nend\n");
+    assert!(refusal(&missing).contains("`Player` meets `Scored`, but has no method `score`"), "{}", refusal(&missing));
+    let differs = format!(
+        "{head}record Player\n    meets [Scored]\n    kills: Whole\n\n    proc score[p: Player] -> Float\n        return 1.0\n    end\nend\n"
+    );
+    assert!(refusal(&differs).contains("it gives `Float`, not `Whole`"), "{}", refusal(&differs));
+    let unmet = format!(
+        "{head}{best}record Rock\n    weight: Whole\n\n    proc score[r: Rock] -> Whole\n        return r.weight\n    end\nend\na = best([Rock[weight: 3]])\nshow_msg(\"{{a}}\")\n"
+    );
+    assert!(
+        refusal(&unmet).contains("must meet `Scored`, but this call fills it in with `Rock`"),
+        "{}",
+        refusal(&unmet)
+    );
 }
