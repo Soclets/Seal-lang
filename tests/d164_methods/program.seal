@@ -7,7 +7,7 @@ record Enemy
     end
 
     proc size[enemy: Enemy] -> Whole
-        return enemy.hp div.ceil 10
+        return enemy.hp div.floor 10
     end
 end
 
@@ -27,9 +27,9 @@ end
 
 goblin = Enemy[name: "Goblin", hp: 30]
 ghost = Enemy[name: "Ghost", hp: 0]
-tree = Tree.node[left: Tree.leaf, right: Tree.leaf]
+small = Tree.node[left: Tree.leaf, right: Tree.leaf]
 a = goblin.is_alive()
 b = ghost.is_alive()
 c = goblin.size()
-d = tree.size()
+d = small.size()
 show_msg("{a} {b} {c} {d}")
