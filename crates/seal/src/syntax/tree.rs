@@ -141,6 +141,8 @@ pub struct Parameter<'a> {
     pub written_type: Option<TypeExpression<'a>>,
     /// Marked `unused`: never read, on purpose (D61).
     pub unused: bool,
+    /// Marked `mut`: a method's first parameter, standing for the variable the method is called on (D165).
+    pub mutable: bool,
 }
 
 /// `parameter as label` on a `labels` line (D41, D42).

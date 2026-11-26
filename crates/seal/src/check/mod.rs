@@ -1289,11 +1289,19 @@ impl<'a> Checker<'a> {
                 Some(written) => self.written_type(written),
                 None => ERROR,
             };
+            // trace: D165. Only a method's first parameter can be `mut`; others wait on Unio D130's parameter words.
+            let mutable = parameter.mutable && method_of.is_some() && parameters.is_empty();
+            if parameter.mutable && !mutable {
+                self.not_designed(
+                    parameter.name.place,
+                    "a `mut` parameter other than a method's first, whose words Unio D130 leaves open",
+                );
+            }
             parameters.push(self.new_variable(Variable {
                 name: parameter.name.text.to_owned(),
                 type_id,
                 kind: VariableKind::Parameter,
-                mutable: false,
+                mutable,
                 changed: false,
                 marked_unused: parameter.unused,
                 read: false,
@@ -1685,7 +1693,10 @@ impl<'a> Checker<'a> {
             .values()
             .filter_map(|&id| self.variable(id))
             .filter(|variable| {
-                variable.mutable && !variable.changed && variable.kind == VariableKind::Named && variable.read
+                variable.mutable
+                    && !variable.changed
+                    && (variable.kind == VariableKind::Parameter
+                        || (variable.kind == VariableKind::Named && variable.read))
             })
             .map(|variable| (variable.place, variable.name.clone()))
             .collect();
@@ -1706,6 +1717,8 @@ impl<'a> Checker<'a> {
             .values()
             .filter_map(|&id| self.variable(id))
             .filter(|variable| !variable.read && !variable.marked_unused)
+            // trace: D165. A `mut` first parameter that's changed is used: its value goes back to the caller.
+            .filter(|variable| !(variable.kind == VariableKind::Parameter && variable.mutable && variable.changed))
             .map(|variable| (variable.place, variable.name.clone(), variable.kind))
             .collect();
         unused.sort_by_key(|(place, _, _)| (place.line, place.column));

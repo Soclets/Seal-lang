@@ -321,6 +321,13 @@ impl<'a> Checker<'a> {
             let mut before = Vec::new();
             let mut made = Vec::new();
             for ((parameter, &parameter_type), value) in handler.parameters.iter().zip(&parameter_types).zip(&values) {
+                if parameter.mutable {
+                    // trace: D165
+                    self.not_designed(
+                        parameter.name.place,
+                        "a `mut` parameter other than a method's first, whose words Unio D130 leaves open",
+                    );
+                }
                 let id = self.new_variable(Variable {
                     name: parameter.name.text.to_owned(),
                     type_id: parameter_type,

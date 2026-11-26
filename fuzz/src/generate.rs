@@ -1361,7 +1361,10 @@ impl Generator {
             17 if self.seal() => {
                 if let Some(record) = self.changeable_name(Kind::Record) {
                     let value = self.value(Kind::Whole, 1);
-                    if self.random.chance(1, 3) {
+                    if self.random.chance(1, 4) {
+                        // trace: D165. A method that changes the mutable variable it's called on.
+                        self.line(&format!("{record}.heal({value})"));
+                    } else if self.random.chance(1, 3) {
                         // trace: D147
                         self.line(&format!("{record}.hp = _ * 2 - ({value})"));
                     } else {
@@ -1649,7 +1652,7 @@ impl Generator {
     #[must_use]
     pub fn script(mut self) -> String {
         if self.seal() {
-            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\n\n    proc power[of_hero: Hero] -> Whole\n        return of_hero.hp div.floor 2 + 1\n    end\n\n    proc renamed[of_hero: Hero, new_name: Text] -> Hero\n        return Hero[name: new_name, hp: of_hero.hp]\n    end\nend\n\nrecord Spot\n    x: Whole\n    y: Float\n\n    proc size[of_spot: Spot] -> Whole\n        return of_spot.x\n    end\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\n\n    proc size[of_tree: Tree] -> Whole\n        match of_tree\n            case leaf\n                return 1\n            case node[left, right]\n                return 1 + left.size() + right.size()\n        end\n    end\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            self.out.push_str("record Hero\n    name: Text\n    hp: Whole\n\n    proc power[of_hero: Hero] -> Whole\n        return of_hero.hp div.floor 2 + 1\n    end\n\n    proc renamed[of_hero: Hero, new_name: Text] -> Hero\n        return Hero[name: new_name, hp: of_hero.hp]\n    end\n\n    proc heal[mut of_hero: Hero, by: Whole]\n        of_hero.hp = _ + by\n    end\nend\n\nrecord Spot\n    x: Whole\n    y: Float\n\n    proc size[of_spot: Spot] -> Whole\n        return of_spot.x\n    end\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\n\n    proc size[of_tree: Tree] -> Whole\n        match of_tree\n            case leaf\n                return 1\n            case node[left, right]\n                return 1 + left.size() + right.size()\n        end\n    end\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
             // trace: D161. Generic procedures, one calling another, filled in with whatever their calls give.
             self.out.push_str("proc generic_pick<?Item>[items: List<?Item>, fallback: ?Item] -> ?Item\n    for_each item in items\n        return item\n    end\n    return fallback\nend\n\nproc generic_pair<?Item>[value: ?Item] -> List<?Item>\n    return [value, value]\nend\n\nproc generic_first<?Item>[items: List<?Item>] -> Maybe<?Item>\n    for_each item in items\n        return Maybe.some[value: item]\n    end\n    return Maybe.none\nend\n\nproc generic_pairs<?Item>[value: ?Item] -> List<List<?Item>>\n    return generic_pair(generic_pair(value))\nend\n\n");
         }

@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D164 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D165 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -258,6 +258,13 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   field, a call's result) finds the method and passes the value as the first argument; anything else goes to Seal's
   own methods. A host calling a method stops as not designed yet. The fuzzer's `Hero`, `Spot` and `Tree` have
   methods, `size` on two of them.
+- **D165** A method whose first parameter is `mut` is lent the mutable variable it's called on: the caller hands
+  the value over, the method doesn't free that parameter when it ends, and the caller takes the value back into the
+  variable, in a register, a top-level variable or a record kept in registers. Calling one on an immutable variable
+  is refused with D2's fix; a `mut` first parameter never changed is refused (D135), and one that's changed counts
+  as used. A method that reaches the lent top-level variable itself, or through what it calls, is refused. `mut` on
+  any other parameter, a lending method called on anything but a variable, and one that can fail stop as not
+  designed yet. The fuzzer's `Hero` has `heal`, called on mutable variables.
 - **D157, D158** `return`, `include` and `instead` again, and `eq` and `not_eq` as keywords in place of `==` and
   `!=`, which no longer read as one symbol. `ret`, `incl` and `use` are plain names again. Messages, the fuzzer and
   `bench/programs/` use the new words; the Unio translator already wrote Unio's.
@@ -430,6 +437,8 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - what a type parameter can do (D161): maths, comparing, converting, showing, reaching into one's value
 - a host calling a generic procedure, which would need its types worked out from the host's values (D161)
 - a host calling a method (D164)
+- `mut` on a parameter other than a method's first (Unio D130's parameter words); a method that changes its value
+  called on something other than a variable, or able to fail (D165)
 - a `\r` that isn't right before a line break
 - a comment after code inside an open bracket
 - a `///` before a name made inside a block

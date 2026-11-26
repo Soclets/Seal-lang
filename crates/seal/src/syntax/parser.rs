@@ -555,6 +555,11 @@ impl<'a> Parser<'a> {
             // The names still waiting for the type of their group (D88).
             let mut waiting: Vec<Parameter<'a>> = Vec::new();
             loop {
+                // trace: D165. A method's first parameter may be `mut`, standing for the variable it's called on.
+                let mutable = self.at_keyword(Keyword::Mut);
+                if mutable {
+                    self.advance();
+                }
                 // trace: D61
                 let unused = self.at_keyword(Keyword::Unused);
                 if unused {
@@ -588,9 +593,14 @@ impl<'a> Parser<'a> {
                         waiting_parameter.written_type = Some(written_type.clone());
                         parameters.push(waiting_parameter);
                     }
-                    parameters.push(Parameter { name: parameter_name, written_type: Some(written_type), unused });
+                    parameters.push(Parameter {
+                        name: parameter_name,
+                        written_type: Some(written_type),
+                        unused,
+                        mutable,
+                    });
                 } else {
-                    waiting.push(Parameter { name: parameter_name, written_type: None, unused });
+                    waiting.push(Parameter { name: parameter_name, written_type: None, unused, mutable });
                 }
                 if self.at_symbol(Symbol::Comma) {
                     self.advance();

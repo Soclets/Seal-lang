@@ -912,6 +912,32 @@ impl<'a> Checker<'a> {
         let owner = self.receiver_type(receiver)?;
         let &(_, procedure) =
             self.methods.iter().find(|((type_id, name), _)| *type_id == owner && name == method.text)?;
+        // trace: D165. A method that changes its value is called on a mutable variable, which it's lent for the call.
+        let changes = self.program.procedure(procedure).is_some_and(|found| {
+            found.parameters.first().and_then(|&first| self.program.variable(first)).is_some_and(|first| first.mutable)
+        });
+        if changes {
+            let syntax::ExpressionKind::Name(name) = &receiver.kind else {
+                self.not_designed(
+                    receiver.place,
+                    format!("calling `{}`, which changes its value, on something other than a variable", method.text),
+                );
+                return Some(Self::error(place));
+            };
+            let Some(variable) = self.lookup(name, receiver.place) else { return Some(Self::error(place)) };
+            if !self.check_changeable(variable, name, receiver.place) {
+                return Some(Self::error(place));
+            }
+            if self.program.procedure(procedure).is_some_and(|found| found.can_fail) {
+                self.not_designed(
+                    place,
+                    format!(
+                        "`{}` changing its value and able to fail, which leaves the variable it's lent undecided",
+                        method.text
+                    ),
+                );
+            }
+        }
         let mut entries = Vec::with_capacity(arguments.len() + 1);
         entries.push(syntax::Entry { label: None, value: receiver.clone() });
         entries.extend(arguments.iter().cloned());

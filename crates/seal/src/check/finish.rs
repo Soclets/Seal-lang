@@ -19,10 +19,10 @@ trait Visitor {
     fn expression(&mut self, _expression: &Expression, _handled: bool) {}
 }
 
-/// Two visitors looking at a block in one walk, each seeing everything in the order it would alone.
 /// Why a type that can't be worked out is written (D30).
 const TYPE_WRITTEN: &str = "a type is written where nothing says it, as `name: Type = …`.";
 
+/// Two visitors looking at a block in one walk, each seeing everything in the order it would alone.
 struct Both<'v>(&'v mut dyn Visitor, &'v mut dyn Visitor);
 
 impl Visitor for Both<'_> {
@@ -401,6 +401,8 @@ impl Visitor for HandlingChecker<'_> {
 #[derive(Default)]
 struct WriteCollector {
     writes: BTreeSet<VariableId>,
+    /// The names it reads, for what a method lent a variable reaches (D165).
+    reads: BTreeSet<VariableId>,
     calls: BTreeSet<ProcedureId>,
 }
 
@@ -432,7 +434,46 @@ impl Visitor for WriteCollector {
             ExpressionKind::Call { procedure, .. } => {
                 self.calls.insert(*procedure);
             }
+            ExpressionKind::Variable(variable) => {
+                self.reads.insert(*variable);
+            }
             _ => {}
+        }
+    }
+}
+
+/// trace: D165. Finds a method that changes its value called on a top-level variable it also reaches itself, or
+/// through what it calls: while the variable is lent, nothing else touches it.
+struct LendChecker<'p> {
+    program: &'p super::tree::Program,
+    may_reach: &'p [BTreeSet<VariableId>],
+    messages: Vec<Message>,
+}
+
+impl Visitor for LendChecker<'_> {
+    fn expression(&mut self, expression: &Expression, _handled: bool) {
+        let ExpressionKind::Call { procedure, arguments, .. } = &expression.kind else { return };
+        let Some(callee) = self.program.procedure(*procedure) else { return };
+        let lends = callee.method
+            && callee
+                .parameters
+                .first()
+                .and_then(|&first| self.program.variable(first))
+                .is_some_and(|first| first.mutable);
+        let Some(ExpressionKind::Variable(lent)) = arguments.first().map(|argument| &argument.kind) else { return };
+        let Some(variable) = self.program.variable(*lent) else { return };
+        if lends
+            && variable.top_level
+            && self.may_reach.get(procedure.0 as usize).is_some_and(|reached| reached.contains(lent))
+        {
+            let method = callee.name.rsplit('.').next().unwrap_or(&callee.name);
+            self.messages.push(
+                Message::refused(
+                    expression.place,
+                    format!("`{method}` reaches `{}` itself, so it can't be called on it", variable.name),
+                )
+                .with_why("while a variable is lent to a method that changes it, nothing else touches it; the method works on the value it's given."),
+            );
         }
     }
 }
@@ -867,6 +908,7 @@ impl Checker<'_> {
         // collects which top-level names each procedure changes itself, and what it calls, which don't change. A body
         // that calls nothing is settled by the first look, and isn't looked at again.
         let mut may_write: Vec<BTreeSet<VariableId>> = Vec::with_capacity(count);
+        let mut may_reach: Vec<BTreeSet<VariableId>> = Vec::with_capacity(count);
         let mut calls: Vec<BTreeSet<ProcedureId>> = Vec::with_capacity(count);
         let mut settled = vec![false; count];
         let mut first = true;
@@ -888,6 +930,7 @@ impl Checker<'_> {
                     let mut found = Both(&mut collector, &mut pauses_and_dependence);
                     let mut writes_and_concerns = Both(&mut writes, &mut concerns);
                     walk_block(&procedure.body, &mut Both(&mut found, &mut writes_and_concerns));
+                    may_reach.push(writes.writes.union(&writes.reads).copied().collect());
                     may_write.push(writes.writes);
                     calls.push(writes.calls);
                 } else {
@@ -938,8 +981,36 @@ impl Checker<'_> {
             }
         }
 
+        // What each procedure may reach, itself or through what it calls (D165).
+        loop {
+            let mut changed = false;
+            for index in 0..count {
+                let callees: Vec<ProcedureId> =
+                    calls.get(index).map(|calls| calls.iter().copied().collect()).unwrap_or_default();
+                for callee in callees {
+                    let extra: Vec<VariableId> = may_reach
+                        .get(callee.0 as usize)
+                        .map(|reached| reached.iter().copied().collect())
+                        .unwrap_or_default();
+                    if let Some(reached) = may_reach.get_mut(index) {
+                        for variable in extra {
+                            changed |= reached.insert(variable);
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
         let facts = Facts { program: &self.program, doors: self.doors, failure_ids: &self.failure_ids };
         let mut messages = Vec::new();
+        let mut lending = LendChecker { program: &self.program, may_reach: &may_reach, messages: Vec::new() };
+        for block in self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level]) {
+            walk_block(block, &mut lending);
+        }
+        messages.append(&mut lending.messages);
         let mut handling = HandlingChecker { facts: &facts, messages: Vec::new() };
         let mut loops = LoopChecker { facts: &facts, may_write: &may_write, messages: Vec::new() };
         // The procedures' bodies are looked at only for what one of them holds; the top level always is.

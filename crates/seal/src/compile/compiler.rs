@@ -786,8 +786,10 @@ impl<'p> Compiler<'p> {
         for (position, &parameter) in (0u32..).zip(&procedure.parameters) {
             let register = Register::try_from(position + 1).unwrap_or(0);
             self.function.locations.insert(parameter, Location::Register(register));
-            // A procedure takes its arguments over, so it frees them when it's done (D15).
-            if self.program.variable(parameter).is_some_and(|variable| self.is_reference(variable.type_id)) {
+            // A procedure takes its arguments over, so it frees them when it's done (D15). A `mut` first parameter
+            // stands for the caller's variable, so its value is left for the caller to take back (D165).
+            let lent = position == 0 && self.changes_first(procedure);
+            if !lent && self.program.variable(parameter).is_some_and(|variable| self.is_reference(variable.type_id)) {
                 self.hold(register);
             }
             let Some(variable) = self.program.variable(parameter) else { continue };
@@ -815,6 +817,7 @@ impl<'p> Compiler<'p> {
             if let StatementKind::Make { variable, value } = &statement.kind
                 && let ExpressionKind::Variable(parameter) = &value.kind
                 && procedure.parameters.contains(parameter)
+                && !(self.changes_first(procedure) && procedure.parameters.first() == Some(parameter))
                 && self.is_reference(value.type_id)
                 && self.keeps_in_registers(*variable).is_none()
                 && !self.globals.contains_key(variable)
@@ -2517,6 +2520,14 @@ impl<'p> Compiler<'p> {
                 if can_pause {
                     self.pause_map();
                 }
+                // trace: D165. A method that changes its value leaves it where its first argument went, and the
+                // variable it was called on takes it back.
+                if let Some(callee) = self.program.procedure(*procedure)
+                    && self.changes_first(callee)
+                    && let Some(ExpressionKind::Variable(lent)) = arguments.first().map(|argument| &argument.kind)
+                {
+                    self.take_back(*lent, base.saturating_add(1));
+                }
                 if !matches!(self.kind(expression.type_id), Type::Nothing) && base != to {
                     self.emit(Instruction::Move { to, from: base });
                 }
@@ -3115,10 +3126,50 @@ impl<'p> Compiler<'p> {
     /// The one value a procedure gives back, when the procedure is small enough to be written out in place of a
     /// call to it: its whole body is `return value`, it can't fail or pause, and it isn't already being written
     /// out, as a procedure that calls itself would be.
+    /// trace: D165. Whether a procedure is a method whose `mut` first parameter stands for the variable it's called on.
+    fn changes_first(&self, procedure: &Procedure) -> bool {
+        procedure.method
+            && procedure
+                .parameters
+                .first()
+                .and_then(|&first| self.program.variable(first))
+                .is_some_and(|first| first.mutable)
+    }
+
+    /// trace: D165. Gives a variable lent to a method the value the method left in `from`, freeing the one it had.
+    fn take_back(&mut self, variable: VariableId, from: Register) {
+        match self.location(variable) {
+            Location::Register(register) => {
+                if self.is_reference(self.variable_type(variable)) {
+                    self.emit(Instruction::Release { register });
+                }
+                self.emit(Instruction::Move { to: register, from });
+            }
+            Location::Global(global) => {
+                let old = self.allocate();
+                self.emit(Instruction::GetGlobal { to: old, global });
+                self.emit(Instruction::SetGlobal { global, from });
+                if self.is_reference(self.variable_type(variable)) {
+                    self.emit(Instruction::Release { register: old });
+                }
+            }
+            Location::InRegisters(base) => {
+                // A record kept field by field in registers is unpacked from the value given back, then freed.
+                self.emit(Instruction::UnpackRecord { base, record: from });
+                self.emit(Instruction::Release { register: from });
+            }
+        }
+    }
+
     fn inlined_body(&self, procedure: u32) -> Option<&'p Expression> {
         let program: &'p Program = self.program;
         let found = program.procedures.get(procedure as usize)?;
-        if found.can_fail || found.can_pause || self.current == Some(procedure) || self.inlining.contains(&procedure) {
+        if found.can_fail
+            || found.can_pause
+            || self.current == Some(procedure)
+            || self.inlining.contains(&procedure)
+            || self.changes_first(found)
+        {
             return None;
         }
         // A ranged parameter is checked as the procedure starts (D128), which a call written out in place skips.

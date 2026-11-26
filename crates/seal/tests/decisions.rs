@@ -491,3 +491,20 @@ fn d164_methods_are_procs_inside_their_type_called_with_a_dot() {
     let called = loaded.call_values("Enemy.size", &[]);
     assert!(matches!(&called, Err(Error::Refused(messages)) if messages.text().contains("a method")), "{called:?}");
 }
+
+// trace: D165. A method whose first parameter is `mut` changes the mutable variable it's called on, and only that.
+#[test]
+fn d165_a_mut_first_parameter_changes_the_variable_it_is_called_on() {
+    let kept = "record Spot\n    x: Whole\n    y: Whole\n\n    proc nudge[mut spot: Spot, by: Whole]\n        spot.x = _ + by\n        if spot.x > 10\n            return\n        else\n            spot.y = _ + 1\n        end\n    end\nend\n\nmut here = Spot[x: 1, y: 1]\nhere.nudge(5)\nhere.nudge(5)\nshow_msg(\"{here.x} {here.y}\")\nkept = here\nhere.nudge(1)\nshow_msg(\"{here.x} {kept.x}\")\n";
+    assert_eq!(shows(kept), ["11 2", "12 11"]);
+    let top_level = "record Bag\n    items: List<Text>\n\n    proc put[mut bag: Bag, item: Text]\n        bag.items.add(item)\n    end\nend\n\nmut bag1 = Bag[items: []]\nproc fill\n    bag1.put(\"a\")\n    bag1.put(\"b\")\nend\nfill()\nkept = bag1\nbag1.put(\"c\")\nshow_msg(\"{bag1.items} {kept.items}\")\n";
+    assert_eq!(shows(top_level), ["[\"a\", \"b\", \"c\"] [\"a\", \"b\"]"]);
+    let immutable = "record Spot\n    x: Whole\n\n    proc nudge[mut spot: Spot]\n        spot.x = 2\n    end\nend\nhere = Spot[x: 1]\nhere.nudge()\nshow_msg(\"{here.x}\")\n";
+    assert!(refusal(immutable).contains("`mut here = Spot[x: 1]`"), "{}", refusal(immutable));
+    let unchanged = "record Spot\n    x: Whole\n\n    proc nudge[mut spot: Spot]\n        show_msg(\"{spot.x}\")\n    end\nend\nmut here = Spot[x: 1]\nhere.nudge()\n";
+    assert!(refusal(unchanged).contains("proc nudge[spot: Spot]"), "{}", refusal(unchanged));
+    let reaching = "record Bag\n    items: List<Text>\n\n    proc put[mut bag: Bag, item: Text]\n        bag.items.add(item)\n        peek()\n    end\nend\n\nmut bag1 = Bag[items: []]\nproc peek\n    show_msg(\"{bag1.items}\")\nend\nbag1.put(\"a\")\n";
+    assert!(refusal(reaching).contains("`put` reaches `bag1` itself"), "{}", refusal(reaching));
+    let elsewhere = "proc bump[mut n: Whole]\n    n = n + 1\nend\nmut x = 1\nbump(x)\n";
+    assert!(refusal(elsewhere).contains("a `mut` parameter other than a method's first"), "{}", refusal(elsewhere));
+}
