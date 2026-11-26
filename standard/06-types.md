@@ -210,10 +210,12 @@ alive = goblin.is_alive()
 - **The value before the dot is the first parameter,** and the rest are given in `( )` as any call's are.
 - **Two types can each have a method of the same name,** as `size` on `Enemy` and on `Tree`, since a method is only
   ever reached through a value of its type.
-- **A method that changes its value works only on a mutable variable,** as `bag.add` does (Unio D77).
+- **A method that changes its value marks its first parameter `mut`,** as `proc take_damage[mut enemy: Enemy, amount:
+  Whole]`. Inside, it's a mutable variable; when the method ends, its value goes back into the variable it was called
+  on, which must be mutable, as for `bag.add` (D165, Unio D77). A top-level variable can't be lent this way to a
+  method that also reaches it directly (D165, as D69).
 
-**Not decided:** defaults for fields; how a method that changes its value is written; methods on types a script didn't
-declare.
+**Not decided:** defaults for fields; methods on types a script didn't declare; `mut` parameters outside methods.
 
 ## Dictionaries
 

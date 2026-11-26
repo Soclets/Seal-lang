@@ -4989,3 +4989,48 @@ How a method that changes its value is written, and methods on types a script di
 
 **Tankun's words.** Asked "Should methods be written as `proc`s inside their record or `one_of`, after its fields or
 cases, and called only with a dot?", the owner chose: "yea"
+
+## D165. A method that changes its value marks its first parameter `mut`
+
+2026-11-26.
+
+**Chosen.**
+
+```
+record Enemy
+    name: Text
+    hp: Whole
+
+    proc take_damage[mut enemy: Enemy, amount: Whole]
+        enemy.hp = max(_ - amount, 0)
+    end
+end
+
+mut goblin = Enemy[name: "Goblin", hp: 30]
+goblin.take_damage(12)       // goblin.hp is now 18
+```
+
+- **A `mut` first parameter is a mutable variable standing for the caller's:** it starts as the value the method is
+  called on, and when the method ends, its value goes back into that variable, as Hylo's and Swift's `inout`.
+- **It works only on a mutable variable,** as `bag.add` does (Unio D77); calling it on an immutable one is refused.
+- **D135 holds:** a `mut` first parameter the method never changes is refused.
+- **While a variable is lent this way, nothing else touches it:** a method that also reaches the same top-level
+  variable directly can't be called on it, refused as D69 refuses changing what a loop goes through.
+- Only a method's first parameter, for now; `mut` parameters of ordinary procedures stay with Unio D130's open
+  question of parameter words.
+
+Lending a variable for the length of a call is part of the memory model Seal took from Hylo (Unio D130, D15): nothing
+keeps a reference afterwards.
+
+**Weighed.**
+- A separate word, as Swift's `mutating func` or Rust's `&mut self`, or a mark at every call, as Cyborg's `%%`. Seal's
+  `mut` already means "can change", and the variable it's called on is already marked `mut`.
+- Methods that only read, with changes made by giving back a new value, as `goblin = goblin.take_damage(12)`. Longer
+  at every call, and `bag.add` already changes its list in place.
+
+**Why this won.** One word means "can change" everywhere, the header says what a method does to its value, and the
+memory model stays whole.
+
+**Tankun's words.** "?", "why?", "Is it a mut var?", "Wait, does that break our memory model?", then, asked "Should a
+method that changes its value mark its first parameter `mut`, and only work on a mutable variable?", the owner chose:
+"yea"

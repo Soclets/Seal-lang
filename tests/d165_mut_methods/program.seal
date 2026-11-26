@@ -1,0 +1,19 @@
+record Enemy
+    name: Text
+    hp: Whole
+
+    proc take_damage[mut enemy: Enemy, amount: Whole]
+        enemy.hp = max(_ - amount, 0)
+    end
+
+    proc health[enemy: Enemy] -> Whole
+        return enemy.hp
+    end
+end
+
+mut goblin = Enemy[name: "Goblin", hp: 30]
+goblin.take_damage(12)
+first = goblin.health()
+goblin.take_damage(50)
+second = goblin.health()
+show_msg("{first} {second}")
