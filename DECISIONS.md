@@ -5222,3 +5222,25 @@ error for a rare, harmless case, at the cost of loading speed.
 **Tankun's words.** "Is checking optimized yet?", "why", then, asked "Should the type-following verifier be dropped,
 with `.sealc` safety resting on the load-time range checks, the VM's run-time checks and D169's signing?", the owner
 chose: "yea"
+
+## D171. Loading a `.sealc` must beat LuaJIT loading its own compiled bytecode
+
+2026-11-26.
+
+**Chosen.** D57 gets a loading goal for compiled files: loading a script from a `.sealc` (D141, D153), checks included,
+is faster than LuaJIT loading the same program from its own compiled bytecode (`luajit -b` files), judged Normal against
+Normal under D58's rules, as a fixed row beside D57's. A signature check (D169) is timed in a row of its own, for
+reference, since LuaJIT has none; it's paid once per file or bundle in a run.
+
+A first hint, from the building session on 2026-11-26: a `.sealc` patrolling script loaded in about 2 to 3 µs, before
+any tuning of its checks.
+
+**Weighed.**
+- The row for reference only, as the prompt had it.
+- Luau's compiled bytecode as the bar. LuaJIT's compiled files are the ones the benchmarks already load (D142).
+
+**Why this won.** A compiled script is meant to load fast, and LuaJIT's compiled files are the bar a game would
+compare against.
+
+**Tankun's words.** Asked "should loading a `.sealc` have a goal of being faster than LuaJIT loading its own compiled
+bytecode (`luajit -b` files), judged like D57's rows?", the owner chose: "yea"
