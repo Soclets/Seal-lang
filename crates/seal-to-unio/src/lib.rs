@@ -57,6 +57,10 @@ pub fn translate(source: &str, doors: &[DoorSignature]) -> Translated<String> {
     if program.variables.iter().any(|variable| variable.captured) {
         return not_shared("a top-level name used by a procedure");
     }
+    // trace: D161
+    if program.procedures.iter().any(|procedure| !procedure.type_parameters.is_empty()) {
+        return not_shared("a generic procedure");
+    }
     for procedure in &program.procedures {
         translator.procedure(procedure)?;
         translator.out.push('\n');
@@ -99,6 +103,7 @@ impl Translator<'_> {
             Type::Ranged { .. } => return not_shared("a ranged number"),
             Type::Measured { .. } => return not_shared("a number with a unit"),
             Type::HugeWhole | Type::Decimal | Type::HugeDecimal => return not_shared("the new number types"),
+            Type::Parameter(_) => return not_shared("a generic procedure"),
             Type::Nothing | Type::Error | Type::Variable(_) => return not_shared("a value with no type to write"),
         })
     }
@@ -261,7 +266,7 @@ impl Translator<'_> {
     /// A call's name and its arguments, when an expression is a call of some kind.
     fn as_call<'e>(&self, expression: &'e Expression) -> Translated<Option<CallParts<'e>>> {
         Ok(match &expression.kind {
-            ExpressionKind::Call { procedure, arguments } => {
+            ExpressionKind::Call { procedure, arguments, .. } => {
                 let Some(found) = self.program.procedure(*procedure) else {
                     return not_shared("a procedure that isn't there");
                 };

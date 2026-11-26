@@ -529,6 +529,24 @@ impl Checker<'_> {
             return;
         }
         let purpose = pending.purpose.as_str();
+        // trace: D161. What a type parameter can do is decided separately, so a value of one is only passed along,
+        // kept and given back; a list of them is still gone through, reached and counted.
+        let on_parameter = match &pending.requirement {
+            Requirement::Member { .. } | Requirement::Indexable { .. } | Requirement::Iterable { .. } => {
+                matches!(kind, Type::Parameter(_))
+            }
+            _ => self.program.types.has_parameter(pending.subject),
+        };
+        if on_parameter {
+            self.not_designed(place, format!("{purpose}, on {found}: what a type parameter can do"));
+            match &pending.requirement {
+                Requirement::Member { result: open, .. }
+                | Requirement::Indexable { item: open }
+                | Requirement::Iterable { item: open } => self.program.types.settle_as_error(*open),
+                _ => {}
+            }
+            return;
+        }
         match &pending.requirement {
             Requirement::Number => {
                 if !matches!(

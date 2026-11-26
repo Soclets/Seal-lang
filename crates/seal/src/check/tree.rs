@@ -57,6 +57,11 @@ pub struct Variable {
 pub struct Procedure {
     /// The full name, narrowings included, as `spawn.boss`.
     pub name: String,
+    /// A generic procedure's type parameters, each a [`super::types::Type::Parameter`] (D161). A generic procedure
+    /// runs only as one of its instances, made for each set of types its calls fill in.
+    pub type_parameters: Vec<TypeId>,
+    /// For an instance of a generic procedure, the generic procedure it was made from (D161).
+    pub instance_of: Option<ProcedureId>,
     pub parameters: Vec<VariableId>,
     /// Each parameter's label, when it has one (D41); empty when none has one.
     pub labels: Vec<Option<String>>,
@@ -379,10 +384,12 @@ pub enum ExpressionKind {
         by: Box<Expression>,
         keep_empty: bool,
     },
-    /// A call to one of the script's procedures, its arguments in the parameters' order.
+    /// A call to one of the script's procedures, its arguments in the parameters' order. A call to a generic one
+    /// has what each of its type parameters stands for, in order (D161).
     Call {
         procedure: ProcedureId,
         arguments: Vec<Expression>,
+        types: Vec<TypeId>,
     },
     /// A call to a door, by its place among the host's doors (D11).
     DoorCall {

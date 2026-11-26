@@ -101,6 +101,8 @@ pub struct Word<'a> {
 pub struct Procedure<'a> {
     /// The name with its narrowings, as `spawn` and `boss` for `spawn.boss` (D43).
     pub path: Vec<Word<'a>>,
+    /// A generic procedure's type parameters, as `?Item`, in the order written (D161).
+    pub type_parameters: Vec<Word<'a>>,
     pub parameters: Vec<Parameter<'a>>,
     pub result: Option<TypeExpression<'a>>,
     pub failures: Option<Vec<Word<'a>>>,

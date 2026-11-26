@@ -596,9 +596,12 @@ impl<'p> Compiler<'p> {
                 }
                 Crossing::OneOf { name: declared.map(|one_of| one_of.name).unwrap_or_default(), cases }
             }
-            Type::Nothing | Type::Error | Type::Variable(_) | Type::Ranged { .. } | Type::Measured { .. } => {
-                Crossing::Nothing
-            }
+            Type::Nothing
+            | Type::Error
+            | Type::Variable(_)
+            | Type::Parameter(_)
+            | Type::Ranged { .. }
+            | Type::Measured { .. } => Crossing::Nothing,
         }
     }
 
@@ -752,6 +755,28 @@ impl<'p> Compiler<'p> {
     }
 
     fn procedure(&mut self, procedure: &Procedure) {
+        // trace: D161. A generic procedure runs only as the instances its calls make, so it's kept as a name, with
+        // nothing to run.
+        if !procedure.type_parameters.is_empty() {
+            self.start_function(1);
+            self.place = procedure.place;
+            let entry = u32::try_from(self.here()).unwrap_or(u32::MAX);
+            self.emit(Instruction::Unreachable);
+            self.out.entries.push(ProcedureEntry { entry, frame_size: 1 });
+            self.out.procedures.push(CompiledProcedure {
+                name: String::new(),
+                entry,
+                frame_size: 1,
+                parameters: Vec::new(),
+                result: Crossing::Nothing,
+                result_type: crate::check::types::NOTHING,
+                failures: Vec::new(),
+                can_pause: false,
+                holds_itself: false,
+                generic: true,
+            });
+            return;
+        }
         let parameter_count = u32::try_from(procedure.parameters.len()).unwrap_or(u32::MAX);
         self.start_function(parameter_count.saturating_add(1));
         self.place = procedure.place;
@@ -829,6 +854,7 @@ impl<'p> Compiler<'p> {
             failures,
             can_pause: procedure.can_pause,
             holds_itself,
+            generic: false,
         });
     }
 
@@ -1917,7 +1943,7 @@ impl<'p> Compiler<'p> {
         if reference
             && let Location::Register(register) = self.location(variable)
             && self.function.held.contains(&register)
-            && let ExpressionKind::Call { procedure, arguments } = &value.kind
+            && let ExpressionKind::Call { procedure, arguments, .. } = &value.kind
             && self.inlined_body(procedure.0).is_none()
             && arguments
                 .iter()
@@ -2420,7 +2446,7 @@ impl<'p> Compiler<'p> {
                 self.emit(Instruction::HasKey { to, dict, key });
                 false
             }
-            ExpressionKind::Call { procedure, arguments } if self.inlined_body(procedure.0).is_some() => {
+            ExpressionKind::Call { procedure, arguments, .. } if self.inlined_body(procedure.0).is_some() => {
                 // A small procedure that only gives back one value is written out here, with no call at all.
                 let program = self.program;
                 let Some(callee) = program.procedure(*procedure) else { return false };
@@ -2447,7 +2473,7 @@ impl<'p> Compiler<'p> {
                 }
                 held
             }
-            ExpressionKind::Call { procedure, arguments } => {
+            ExpressionKind::Call { procedure, arguments, .. } => {
                 let can_pause = self.program.procedure(*procedure).is_some_and(|procedure| procedure.can_pause);
                 // A call whose value goes to the newest register, holding nothing to free, is made from that register,
                 // so its value lands there with no move after: the callee writes its first register only as it

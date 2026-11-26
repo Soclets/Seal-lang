@@ -1016,6 +1016,8 @@ pub struct CompiledProcedure {
     pub can_pause: bool,
     /// Whether a parameter's type or the result's holds itself, which can't cross yet (D72).
     pub holds_itself: bool,
+    /// A generic procedure, which runs only as its instances (D161); a host can't call it yet.
+    pub generic: bool,
 }
 
 #[derive(Clone, Debug)]

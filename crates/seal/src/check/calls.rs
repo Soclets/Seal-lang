@@ -609,6 +609,20 @@ impl<'a> Checker<'a> {
         let defaults = procedure.defaults.clone();
         let parameters = procedure.parameters.clone();
         let result = procedure.result;
+        // trace: D161. Each of a generic procedure's type parameters stands for a type this call works out, from its
+        // arguments or from where its result goes; it's never written.
+        let numbers: Vec<u32> = procedure
+            .type_parameters
+            .iter()
+            .filter_map(|&parameter| match self.program.types.get(parameter) {
+                Type::Parameter(number) => Some(*number),
+                _ => None,
+            })
+            .collect();
+        let filled: Vec<(u32, TypeId)> =
+            numbers.into_iter().map(|number| (number, self.program.types.fresh())).collect();
+        let generic = !filled.is_empty();
+        let result = if generic { self.program.types.substitute(result, &filled) } else { result };
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
         let bound = if labels.is_empty() {
             self.bind_arguments(name, (&Unlabelled(parameters.len()), any_order), &has_default, arguments, place)
@@ -624,9 +638,13 @@ impl<'a> Checker<'a> {
         let mut checked = Vec::new();
         for (position, argument) in bound.iter().enumerate() {
             let parameter_type = parameters.get(position).map_or(ERROR, |&parameter| self.variable_type(parameter));
+            let parameter_type =
+                if generic { self.program.types.substitute(parameter_type, &filled) } else { parameter_type };
             match argument.and_then(|index| arguments.get(index)) {
                 Some(entry) => {
-                    let settled = self.program.types.is_settled(parameter_type);
+                    // A generic procedure's parameter is settled once its type parameters are filled in, so the
+                    // argument decides them here (D161).
+                    let settled = generic || self.program.types.is_settled(parameter_type);
                     let value = self.expression(&entry.value, settled.then_some(parameter_type));
                     // trace: D128. An argument Seal can see past a ranged parameter's hard edge is refused while
                     // loading; any other is checked as the procedure starts, where the host's arguments land too.
@@ -657,7 +675,8 @@ impl<'a> Checker<'a> {
                 },
             }
         }
-        Expression { kind: ExpressionKind::Call { procedure: id, arguments: checked }, type_id: result, place }
+        let types = filled.into_iter().map(|(_, filled)| filled).collect();
+        Expression { kind: ExpressionKind::Call { procedure: id, arguments: checked, types }, type_id: result, place }
     }
 
     fn door_call(
@@ -756,6 +775,12 @@ impl<'a> Checker<'a> {
             return Self::error(place);
         };
         let value = self.expression(argument, None);
+        // trace: D161. Converting a type parameter's value is part of what a type parameter can do.
+        if self.program.types.has_parameter(value.type_id) {
+            let found = self.describe(value.type_id);
+            self.not_designed(value.place, format!("`{full}` on {found}: what a type parameter can do"));
+            return Self::error(place);
+        }
         if let Some(from) = self.big_number(value.type_id) {
             let to = match narrowing.first().copied() {
                 Some("Text") => NumberType::Text,

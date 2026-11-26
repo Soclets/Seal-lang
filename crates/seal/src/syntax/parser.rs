@@ -464,6 +464,31 @@ impl<'a> Parser<'a> {
         };
         // trace: D102. A procedure's note is `proc` and its name; a member's is its own name.
         opener.note = Note::new(if member { "" } else { "proc " }, name.clone());
+        // trace: D161. A generic procedure's type parameters, in `< >` right after its name.
+        let mut type_parameters = Vec::new();
+        if self.at_symbol(Symbol::TypeOpen) {
+            self.advance();
+            loop {
+                let parameter = self.expect_type_name()?;
+                if !parameter.text.starts_with('?') {
+                    return Err(Message::refused(
+                        parameter.place,
+                        format!("a type parameter is written with `?` in front, as `?{}`", parameter.text),
+                    )
+                    .with_why("`?` marks a type that each call fills in, so it can't be mistaken for a real type."));
+                }
+                type_parameters.push(parameter);
+                if self.at_symbol(Symbol::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            if !self.at_symbol(Symbol::TypeClose) {
+                return Err(self.unexpected("`>`"));
+            }
+            self.advance();
+        }
         if self.at_symbol(Symbol::OpenRound) {
             // trace: Unio D166
             return Err(Message::refused(self.here(), "a procedure's parameters go in `[ ]`, not `( )`")
@@ -499,6 +524,7 @@ impl<'a> Parser<'a> {
         let end_place = self.end_of(&opener)?;
         Ok(Procedure {
             path,
+            type_parameters,
             parameters,
             result,
             failures,

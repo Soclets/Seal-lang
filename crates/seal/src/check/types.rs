@@ -67,6 +67,9 @@ pub enum Type {
         base: TypeId,
         unit: Unit,
     },
+    /// A generic procedure's type parameter, as `?Item`, by its number among the script's (D161). It's the same only
+    /// as itself while its procedure is checked; each call works out what it stands for.
+    Parameter(u32),
     /// A `Whole` or a `Float` with limits, as `Whole[min: 0]` (D107). It's its plain type plus a check wherever a
     /// value lands (D128), so resolving it gives the plain type, and only [`TypeTable::limits`] sees the limits.
     Ranged {
@@ -273,6 +276,8 @@ pub struct TypeTable {
     pub unit_groups: std::sync::Arc<Vec<UnitGroupType>>,
     /// The `HugeWhole` edges past a `Whole`'s range, each once, so equal limits make the same type (D115).
     big_edges: Vec<crate::big::Big>,
+    /// Each generic procedure's type parameters, as written, `?` and all, each a [`Type::Parameter`] (D161).
+    pub parameters: Vec<String>,
 }
 
 impl Default for TypeTable {
@@ -287,6 +292,7 @@ impl Default for TypeTable {
             one_ofs: Vec::new(),
             unit_groups: NO_UNIT_GROUPS.get_or_init(std::sync::Arc::default).clone(),
             big_edges: Vec::new(),
+            parameters: Vec::new(),
         }
     }
 }
@@ -373,6 +379,127 @@ impl TypeTable {
         let id = TypeId(u32::try_from(self.types.len()).unwrap_or(u32::MAX));
         self.types.push(kind.clone());
         self.interned.insert(kind, id);
+        id
+    }
+
+    /// trace: D161. A new type parameter, as `?Item`, of one generic procedure.
+    pub fn new_parameter(&mut self, name: &str) -> TypeId {
+        let number = u32::try_from(self.parameters.len()).unwrap_or(u32::MAX);
+        self.parameters.push(name.to_owned());
+        self.intern(Type::Parameter(number))
+    }
+
+    /// trace: D161. The type with each type parameter in `map` put in place of what it stands for, all the way down.
+    pub fn substitute(&mut self, id: TypeId, map: &[(u32, TypeId)]) -> TypeId {
+        let id = self.resolve_variables(id);
+        match self.raw(id).clone() {
+            Type::Parameter(parameter) => map.iter().find(|(from, _)| *from == parameter).map_or(id, |(_, to)| *to),
+            Type::List { item, max } => {
+                let item = self.substitute(item, map);
+                self.intern(Type::List { item, max })
+            }
+            Type::Array { item, length } => {
+                let item = self.substitute(item, map);
+                self.intern(Type::Array { item, length })
+            }
+            Type::Dict { key, value } => {
+                let (key, value) = (self.substitute(key, map), self.substitute(value, map));
+                self.intern(Type::Dict { key, value })
+            }
+            Type::Maybe(inner) => {
+                let inner = self.substitute(inner, map);
+                self.intern(Type::Maybe(inner))
+            }
+            _ => id,
+        }
+    }
+
+    /// How deeply a type nests, counted without nesting in the host's stack: `Whole` is 0, `List<Whole>` 1.
+    #[must_use]
+    pub fn depth(&self, id: TypeId) -> u32 {
+        let mut deepest = 0;
+        let mut waiting = vec![(id, 0u32)];
+        while let Some((id, depth)) = waiting.pop() {
+            deepest = deepest.max(depth);
+            match self.get(id) {
+                Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => {
+                    waiting.push((*item, depth + 1));
+                }
+                Type::Dict { key, value } => {
+                    waiting.push((*key, depth + 1));
+                    waiting.push((*value, depth + 1));
+                }
+                _ => {}
+            }
+        }
+        deepest
+    }
+
+    /// trace: D161. Whether one type parameter is anywhere in the type.
+    #[must_use]
+    pub fn mentions_parameter(&self, id: TypeId, parameter: TypeId) -> bool {
+        let (id, parameter) = (self.resolve(id), self.resolve(parameter));
+        if id == parameter {
+            return true;
+        }
+        match self.get(id) {
+            Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => {
+                self.mentions_parameter(*item, parameter)
+            }
+            Type::Dict { key, value } => {
+                self.mentions_parameter(*key, parameter) || self.mentions_parameter(*value, parameter)
+            }
+            _ => false,
+        }
+    }
+
+    /// trace: D161. Whether a type parameter is anywhere in the type.
+    #[must_use]
+    pub fn has_parameter(&self, id: TypeId) -> bool {
+        match self.get(id) {
+            Type::Parameter(_) => true,
+            Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => self.has_parameter(*item),
+            Type::Dict { key, value } => self.has_parameter(*key) || self.has_parameter(*value),
+            _ => false,
+        }
+    }
+
+    /// The type with every variable bound so far followed all the way down, so nothing in it changes later; one
+    /// still open stays open.
+    pub fn settled_copy(&mut self, id: TypeId) -> TypeId {
+        let id = self.resolve_variables(id);
+        match self.raw(id).clone() {
+            Type::List { item, max } => {
+                let item = self.settled_copy(item);
+                self.intern(Type::List { item, max })
+            }
+            Type::Array { item, length } => {
+                let item = self.settled_copy(item);
+                self.intern(Type::Array { item, length })
+            }
+            Type::Dict { key, value } => {
+                let (key, value) = (self.settled_copy(key), self.settled_copy(value));
+                self.intern(Type::Dict { key, value })
+            }
+            Type::Maybe(inner) => {
+                let inner = self.settled_copy(inner);
+                self.intern(Type::Maybe(inner))
+            }
+            _ => id,
+        }
+    }
+
+    /// Follows bound variables, but not a ranged number to its plain type.
+    fn resolve_variables(&self, mut id: TypeId) -> TypeId {
+        for _ in 0..=self.bindings.len() + 1 {
+            match self.raw(id) {
+                Type::Variable(variable) => match self.bindings.get(*variable as usize) {
+                    Some(Some(bound)) => id = *bound,
+                    _ => return id,
+                },
+                _ => return id,
+            }
+        }
         id
     }
 
@@ -609,6 +736,7 @@ impl TypeTable {
                 self.one_ofs.get(*one_of as usize).map_or_else(|| "?".to_owned(), |one_of| one_of.name.clone())
             }
             Type::Maybe(inner) => format!("Maybe<{}>", self.written(*inner)),
+            Type::Parameter(parameter) => self.parameters.get(*parameter as usize).cloned().unwrap_or_default(),
             Type::Ranged { base, .. } => self.written(*base),
             Type::Measured { base, unit } => format!("{}[unit: {}]", self.written(*base), self.unit_text(*unit)),
         }

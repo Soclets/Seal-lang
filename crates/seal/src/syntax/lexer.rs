@@ -771,6 +771,18 @@ impl<'a> Lexer<'a> {
                     self.push(TokenKind::Note(note), place_of(length), gap);
                     index += length;
                 }
+                // trace: D161. `?` and a capitalised name is a generic procedure's type parameter, as `?Item`: a
+                // type's name, `?` and all.
+                '?' if characters.get(index + 1).is_some_and(char::is_ascii_uppercase) => {
+                    let mut end = index + 1;
+                    while characters.get(end).is_some_and(|&next| next.is_ascii_alphanumeric() || next == '_') {
+                        end += 1;
+                    }
+                    let place = place_of(end - index);
+                    word_token(slice(index + 1, end), place)?;
+                    self.push(TokenKind::TypeName(slice(index, end)), place, gap);
+                    index = end;
+                }
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let mut end = index;
                     while characters.get(end).is_some_and(|&next| next.is_ascii_alphanumeric() || next == '_') {
@@ -855,12 +867,14 @@ impl<'a> Lexer<'a> {
                         (':', Some(':')) => (Symbol::Path, 2),
                         ('=', _) => (Symbol::Equals, 1),
                         ('<', _) => {
-                            // A `<` touching a type's name opens its blanks; any other `<` compares (Unio D17).
+                            // A `<` touching a type's name opens its blanks; any other `<` compares (Unio D17). One
+                            // touching a procedure's name with `?` after it opens its type parameters (D161).
                             let touching_type = gap == Gap::Spaces(0)
-                                && matches!(
-                                    self.current().last().map(|token| &token.kind),
-                                    Some(TokenKind::TypeName(_))
-                                );
+                                && match self.current().last().map(|token| &token.kind) {
+                                    Some(TokenKind::TypeName(_)) => true,
+                                    Some(TokenKind::Name(_)) => characters.get(index + 1) == Some(&'?'),
+                                    _ => false,
+                                };
                             if touching_type {
                                 self.type_depth += 1;
                                 (Symbol::TypeOpen, 1)

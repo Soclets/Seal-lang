@@ -14,7 +14,7 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D159 are built, except the language server's parts, D136's C API and D141's bytecode
+2. **Decisions built.** D1 to D161 are built, except the language server's parts, D136's C API and D141's bytecode
    files, which both come after the current work, and what's listed under "Not built yet" below. All 25 tests in
    `tests/` pass.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
@@ -238,6 +238,18 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   time beside it for reference.
 - **D151** The C API gives every message whole and in parts; `crates/seal-c/PROPOSAL.md` names the functions.
 - **D156** Every crate is under Apache-2.0 WITH LLVM-exception, set once in the workspace's `Cargo.toml`.
+- **D160** No macros and no comptime: nothing to build.
+- **D161** Generic procedures, `proc first<?Item>[items: List<?Item>] -> Maybe<?Item>`. `?Item` is lexed as one type
+  name, `?` and all; `<` touching a procedure's name with `?` after it opens its type parameters. Checked once with
+  each type parameter a type of its own, equal only to itself. Each call fills them in with fresh types worked out
+  from its arguments or where its result goes, and a call nothing fills in is refused. After checking,
+  `check/generics.rs` makes an instance, a copy with the types filled in and names of its own, for each set of
+  types the calls use, from the top level and every procedure that isn't generic, then from the instances
+  themselves; that's what's compiled, so a generic procedure runs as fast as one written for its types. A
+  generic procedure itself compiles to a stub a host can't call yet. Maths, comparing, converting, showing or
+  reaching into a type parameter's value stops as not designed yet; a list of them can still be gone through,
+  reached and counted. The fuzzer's Seal scripts have four generic procedures, one calling another, called with
+  `Whole`s, texts, lists and `Maybe`s; the Unio translator leaves scripts with generics out.
 - **D157, D158** `return`, `include` and `instead` again, and `eq` and `not_eq` as keywords in place of `==` and
   `!=`, which no longer read as one symbol. `ret`, `incl` and `use` are plain names again. Messages, the fuzzer and
   `bench/programs/` use the new words; the Unio translator already wrote Unio's.
@@ -407,6 +419,8 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 ## Not designed yet: every stop left in the code
 
+- what a type parameter can do (D161): maths, comparing, converting, showing, reaching into one's value
+- a host calling a generic procedure, which would need its types worked out from the host's values (D161)
 - a `\r` that isn't right before a line break
 - a comment after code inside an open bracket
 - a `///` before a name made inside a block
@@ -420,6 +434,8 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 ## Not built yet
 
+- A generic procedure filled in with more than 10,000 sets of types, or with types nested more than 100 deep, as
+  one calling itself with a list of what it was given (D161).
 - Working out a type from a later line (D5) in one spot: a change at a place, `name[pos: n] = v`, on a name whose
   type isn't known by then, since a place doesn't say whether it's a list or an array. (A `??`, a `match`, `.add`,
   `.remove`, and a change by field or by key now say what the type must be, and it's worked out there.)

@@ -319,6 +319,24 @@ impl Generator {
         format!("\"{}\"", self.random.pick(&TEXTS).copied().unwrap_or("x"))
     }
 
+    /// A call to one of the generic procedures every script in Seal's dialect has, giving `kind`.
+    fn generic_call(&mut self, kind: Kind, level: usize) -> Option<String> {
+        let inner = level.saturating_sub(1);
+        Some(match kind {
+            Kind::Whole => {
+                format!("generic_pick({}, {})", self.value(Kind::WholeList, inner), self.value(Kind::Whole, inner))
+            }
+            Kind::Text => {
+                format!("generic_pick({}, {})", self.value(Kind::TextList, inner), self.value(Kind::Text, inner))
+            }
+            Kind::WholeList => format!("generic_pair({})", self.value(Kind::Whole, inner)),
+            Kind::TextList => format!("generic_pair({})", self.value(Kind::Text, inner)),
+            Kind::Maybe => format!("generic_first({})", self.value(Kind::WholeList, inner)),
+            Kind::Grid => format!("generic_pairs({})", self.value(Kind::Whole, inner)),
+            _ => return None,
+        })
+    }
+
     /// A value of `kind`, as an expression. `level` bounds how deep it nests.
     #[allow(clippy::too_many_lines)] // one case per kind of value
     fn value(&mut self, kind: Kind, level: usize) -> String {
@@ -328,6 +346,14 @@ impl Generator {
             && let Some(name) = self.read_name(kind)
         {
             return name;
+        }
+        // trace: D161. Now and then a call to one of the script's generic procedures, filled in with this kind.
+        if !simple
+            && self.seal()
+            && self.random.chance(1, 14)
+            && let Some(call) = self.generic_call(kind, level)
+        {
+            return call;
         }
         match kind {
             Kind::Whole => {
@@ -1603,6 +1629,8 @@ impl Generator {
     pub fn script(mut self) -> String {
         if self.seal() {
             self.out.push_str("record Hero\n    name: Text\n    hp: Whole\nend\n\nrecord Spot\n    x: Whole\n    y: Float\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
+            // trace: D161. Generic procedures, one calling another, filled in with whatever their calls give.
+            self.out.push_str("proc generic_pick<?Item>[items: List<?Item>, fallback: ?Item] -> ?Item\n    for_each item in items\n        return item\n    end\n    return fallback\nend\n\nproc generic_pair<?Item>[value: ?Item] -> List<?Item>\n    return [value, value]\nend\n\nproc generic_first<?Item>[items: List<?Item>] -> Maybe<?Item>\n    for_each item in items\n        return Maybe.some[value: item]\n    end\n    return Maybe.none\nend\n\nproc generic_pairs<?Item>[value: ?Item] -> List<List<?Item>>\n    return generic_pair(generic_pair(value))\nend\n\n");
         }
         // trace: D123. Now and then a unit group of the script's own.
         if self.seal() && self.random.chance(1, 3) {

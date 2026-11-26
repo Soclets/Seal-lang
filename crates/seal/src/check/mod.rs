@@ -4,6 +4,7 @@
 mod calls;
 mod expressions;
 mod finish;
+mod generics;
 mod handlers;
 mod names;
 mod numbers;
@@ -199,6 +200,8 @@ pub(crate) struct Checker<'a> {
     slide_depth: u32,
     /// The calls already judged as part of a chain (Unio D128), by their expressions' numbers.
     judged_chains: HashSet<u32>,
+    /// The type parameters of the generic procedure whose first line is being read (D161).
+    header_parameters: Vec<TypeId>,
 }
 
 /// Checks a script against the doors its host opened.
@@ -254,6 +257,7 @@ pub fn check(
         every_procedure_checked: false,
         slide_depth: 0,
         judged_chains: HashSet::new(),
+        header_parameters: Vec::new(),
     };
     checker.run(script);
     // The tables are emptied and kept for the next script this thread checks, when they're not too big to keep.
@@ -390,6 +394,12 @@ impl<'a> Checker<'a> {
         self.program.top_level = top_level;
         if self.messages.is_empty() {
             self.finish();
+        }
+        // trace: D161
+        if self.messages.is_empty()
+            && let Err(found) = generics::make_instances(&mut self.program)
+        {
+            self.messages.extend(found);
         }
     }
 
@@ -862,10 +872,42 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// trace: D161. A type parameter where it's used: one the procedure being read declared, taking nothing in `< >`
+    /// or `[ ]`.
+    fn type_parameter(&mut self, written: &syntax::TypeExpression<'a>) -> TypeId {
+        let name = written.name.text;
+        let declared = match self.context.procedure {
+            Some(id) if self.header_parameters.is_empty() => {
+                self.program.procedure(id).map(|procedure| procedure.type_parameters.clone()).unwrap_or_default()
+            }
+            _ => self.header_parameters.clone(),
+        };
+        let Some(found) = declared.into_iter().find(|&parameter| self.program.types.written(parameter) == name) else {
+            self.refuse_why(
+                written.name.place,
+                format!("`{name}` isn't one of this procedure's type parameters"),
+                "a type parameter is declared in `< >` right after its procedure's name, as `proc first<?Item>[items: List<?Item>]`, and used inside that procedure.",
+            );
+            return ERROR;
+        };
+        if !written.blanks.is_empty() || !written.settings.is_empty() {
+            self.refuse_why(
+                written.place,
+                format!("`{name}` is a type parameter, so it takes nothing in `< >` or `[ ]`"),
+                "a type parameter stands for a whole type, which each call fills in.",
+            );
+        }
+        found
+    }
+
     /// A type as written, in the script's terms (D30, D31).
     #[allow(clippy::too_many_lines)] // one case per type
     fn written_type(&mut self, written: &syntax::TypeExpression<'a>) -> TypeId {
         let name = written.name.text;
+        // trace: D161. `?Item` is one of the procedure's own type parameters.
+        if name.starts_with('?') {
+            return self.type_parameter(written);
+        }
         let blank_count = match name {
             "List" | "Array" | "Maybe" => 1,
             "Dict" => 2,
@@ -1148,6 +1190,20 @@ impl<'a> Checker<'a> {
             );
             return;
         }
+        // trace: D161. A generic procedure's type parameters, each its own type, used in its first line and body.
+        let mut type_parameters: Vec<TypeId> = Vec::new();
+        for written in &procedure.type_parameters {
+            if type_parameters.iter().any(|&earlier| self.program.types.written(earlier) == written.text) {
+                self.refuse_why(
+                    written.place,
+                    format!("two type parameters are named `{}`", written.text),
+                    "each type parameter has a name of its own.",
+                );
+                continue;
+            }
+            type_parameters.push(self.program.types.new_parameter(written.text));
+        }
+        self.header_parameters.clone_from(&type_parameters);
         let mut parameters: Vec<VariableId> = Vec::new();
         for parameter in &procedure.parameters {
             let duplicate = parameters
@@ -1185,6 +1241,21 @@ impl<'a> Checker<'a> {
             Some(written) => self.written_type(written),
             None => NOTHING,
         };
+        self.header_parameters.clear();
+        // trace: D161. A type parameter its parameters and result never use could never be worked out at a call.
+        for (&parameter, written) in type_parameters.iter().zip(&procedure.type_parameters) {
+            let used = parameters.iter().any(|&variable| {
+                let type_id = self.variable_type(variable);
+                self.program.types.mentions_parameter(type_id, parameter)
+            }) || self.program.types.mentions_parameter(result, parameter);
+            if !used {
+                self.refuse_why(
+                    written.place,
+                    format!("`{}` isn't in `{name}`'s parameters or result", written.text),
+                    "a call works a type parameter out from its arguments, or from where its result goes, so it's used in one of them.",
+                );
+            }
+        }
         // A procedure with no labels, or no defaults, has an empty list of them, which makes nothing (D140).
         let mut labels: Vec<Option<String>> =
             if procedure.labels.is_empty() { Vec::new() } else { vec![None; parameters.len()] };
@@ -1247,6 +1318,8 @@ impl<'a> Checker<'a> {
         let id = ProcedureId(u32::try_from(self.program.procedures.len()).unwrap_or(u32::MAX));
         self.program.procedures.push(Procedure {
             name: name.to_string(),
+            type_parameters,
+            instance_of: None,
             parameters,
             labels,
             labels_any_order,
@@ -1909,8 +1982,8 @@ impl<'a> Checker<'a> {
         if !self.program.types.unify(checked.type_id, BOOL) {
             let found = self.describe(checked.type_id);
             let hint = match self.program.types.get(checked.type_id) {
-                Type::Whole => ", as in `!= 0`",
-                Type::Float => ", as in `!= 0.0`",
+                Type::Whole => ", as in `not_eq 0`",
+                Type::Float => ", as in `not_eq 0.0`",
                 _ => "",
             };
             self.refuse_why(

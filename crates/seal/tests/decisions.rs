@@ -420,3 +420,52 @@ fn d115_a_huge_whole_limit_past_a_whole() {
     let same = "a: HugeWhole[max: 100000000000000000000] = 5\nb: HugeWhole[max: 100000000000000000000] = a\nshow_msg(\"{b}\")\n";
     assert_eq!(shows(same), ["5"]);
 }
+
+// trace: D161. Generic procedures: one copy per set of types, every value's holders counted right, and what a type
+// parameter can do, or a host's call to one, left undecided.
+#[test]
+fn d161_generic_procedures_fill_in_their_types_at_each_call() {
+    let nested = "proc wrap<?Item>[a: ?Item] -> List<?Item>\n    return [a, a]\nend\nproc twice<?Item>[a: ?Item] -> List<List<?Item>>\n    inner = wrap(a)\n    return [inner, wrap(a)]\nend\nnames = twice(\"Ann\")\nnumbers = twice(4)\nshow_msg(\"{names} {numbers}\")\n";
+    assert_eq!(shows(nested), ["[[\"Ann\", \"Ann\"], [\"Ann\", \"Ann\"]] [[4, 4], [4, 4]]"]);
+    let failing = "proc pick<?Item>[items: List<?Item>, spot: Whole] -> ?Item ! [missing]\n    if spot > items.len\n        fail missing\n    else\n        return items[pos: spot]\n    end\nend\nmut held = [\"a\", \"b\"]\nfirst = pick(held, 1) ?? \"none\"\nheld[pos: 1] = \"z\"\nlater = pick(held, 5) ?? \"none\"\nshow_msg(\"{first} {later} {held}\")\n";
+    assert_eq!(shows(failing), ["a none [\"z\", \"b\"]"]);
+    let from_result = "proc first<?Item>[items: List<?Item>] -> Maybe<?Item>\n    for_each item in items\n        return Maybe.some[value: item]\n    end\n    return Maybe.none\nend\nempty: List<Text> = []\ntop: Maybe<Text> = first(empty)\nshown = top ?? \"nobody\"\nshow_msg(shown)\n";
+    assert_eq!(shows(from_result), ["nobody"]);
+    let recursive = "proc count<?Item>[items: List<?Item>, n: Whole] -> Whole\n    if n eq 0\n        return items.len\n    else\n        return count(items, n - 1)\n    end\nend\nc = count([\"a\"], 3)\nshow_msg(\"{c}\")\n";
+    assert_eq!(shows(recursive), ["1"]);
+    for (operation, what) in [("return a + b", "`+`"), ("return a eq b", "`eq`")] {
+        let script = format!(
+            "proc both<?Item>[a: ?Item, b: ?Item] -> ?Item\n    {operation}\nend\nx = both(1, 2)\nshow_msg(\"{{x}}\")\n"
+        );
+        let refused = refusal(&script);
+        assert!(refused.contains(what) && refused.contains("what a type parameter can do"), "{refused}");
+    }
+    let shown = "proc say<?Item>[a: ?Item]\n    show_msg(\"{a}\")\nend\nsay(1)\n";
+    assert!(refusal(shown).contains("showing `?Item` in braces"), "{}", refusal(shown));
+    let unused = "proc keep<?Item, ?Other>[a: ?Item] -> ?Item\n    return a\nend\nx = keep(1)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(unused).contains("`?Other` isn't in `keep`'s parameters or result"), "{}", refusal(unused));
+    let outside = "x: ?Item = 3\nshow_msg(\"{x}\")\n";
+    assert!(refusal(outside).contains("`?Item` isn't one of this procedure's type parameters"), "{}", refusal(outside));
+    let twice = "proc keep<?Item, ?Item>[a: ?Item] -> ?Item\n    return a\nend\nx = keep(1)\nshow_msg(\"{x}\")\n";
+    assert!(refusal(twice).contains("two type parameters are named `?Item`"), "{}", refusal(twice));
+    let growing = "proc grow<?Item>[a: ?Item, n: Whole] -> Whole\n    if n eq 0\n        return 0\n    else\n        return grow([a], n - 1)\n    end\nend\ng = grow(1, 20000)\nshow_msg(\"{g}\")\n";
+    assert!(refusal(growing).contains("nested more than 100 deep"), "{}", refusal(growing));
+}
+
+// trace: D161. A host's call to a generic procedure stops as not designed yet; its instances keep every value's
+// holders right.
+#[test]
+fn d161_a_host_calls_no_generic_procedure_and_instances_keep_their_counts() {
+    let source = "proc pair<?Item>[a: ?Item] -> List<?Item>\n    return [a, a]\nend\nproc names -> Whole\n    both = pair(\"Bo\")\n    return both.len\nend\n";
+    let doors = Doors::new();
+    let Ok(mut script) = Script::load("generic.seal", source, &doors, LIMITS) else {
+        panic!("the script didn't load");
+    };
+    let called = script.call_values("pair", &[seal::Argument { label: None, value: seal::Value::Whole(1) }]);
+    assert!(
+        matches!(&called, Err(Error::Refused(messages)) if messages.text().contains("a generic procedure")),
+        "{called:?}"
+    );
+    assert!(matches!(script.call_values("names", &[]), Ok(seal::Called::Finished(seal::Value::Whole(2)))));
+    assert_eq!(script.audit(), Ok(()));
+}

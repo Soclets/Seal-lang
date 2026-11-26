@@ -179,7 +179,7 @@ pub fn show(
                     }
                 }
             }
-            Type::Variable(_) | Type::Error | Type::Nothing | Type::Ranged { .. } => {
+            Type::Variable(_) | Type::Parameter(_) | Type::Error | Type::Nothing | Type::Ranged { .. } => {
                 return Err(HeapError::Broken("a value of no type to show"));
             }
         }
@@ -315,7 +315,7 @@ pub fn equal(
                     false
                 }
             }
-            Type::Variable(_) | Type::Error | Type::Nothing | Type::Ranged { .. } => {
+            Type::Variable(_) | Type::Parameter(_) | Type::Error | Type::Nothing | Type::Ranged { .. } => {
                 return Err(HeapError::Broken("a value of no type to compare"));
             }
         };
