@@ -1249,6 +1249,80 @@ pub struct Compiled {
     pub types: TypeTable,
 }
 
+/// trace: D173, D140. The lists a compiled script read from a `.sealc` file needs most, kept on the thread when one is
+/// dropped, for the next one read: a host that loads and drops scripts makes nothing for them once it's going, as
+/// reading text keeps the parser's lists.
+#[derive(Default)]
+struct SpareLists {
+    code: Vec<Vec<Instruction>>,
+    entries: Vec<Vec<ProcedureEntry>>,
+    door_sites: Vec<Vec<DoorSite>>,
+    door_arguments: Vec<Vec<Crossing>>,
+}
+
+/// How many of each list are kept for reuse.
+const SPARE_LISTS: usize = 4;
+
+thread_local! {
+    static SPARE: std::cell::RefCell<SpareLists> = std::cell::RefCell::new(SpareLists::default());
+}
+
+/// An empty list with room for `capacity` items, kept from a script dropped before when there is one.
+fn spare<T>(pick: fn(&mut SpareLists) -> &mut Vec<Vec<T>>, capacity: usize) -> Vec<T> {
+    let mut list = SPARE.with(|spare| spare.try_borrow_mut().ok().and_then(|mut spare| pick(&mut spare).pop()));
+    match &mut list {
+        Some(list) => list.reserve(capacity),
+        None => return Vec::with_capacity(capacity),
+    }
+    list.unwrap_or_default()
+}
+
+/// Keeps a list for reuse, emptied, unless enough are kept already.
+fn keep_spare<T>(pick: fn(&mut SpareLists) -> &mut Vec<Vec<T>>, mut list: Vec<T>) {
+    if list.capacity() == 0 {
+        return;
+    }
+    list.clear();
+    let _ = SPARE.try_with(|spare| {
+        if let Ok(mut spare) = spare.try_borrow_mut() {
+            let kept = pick(&mut spare);
+            if kept.len() < SPARE_LISTS {
+                kept.push(list);
+            }
+        }
+    });
+}
+
+/// Room for a compiled script's lists, for reading one from a file.
+#[must_use]
+pub fn spare_code(capacity: usize) -> Vec<Instruction> {
+    spare(|spare| &mut spare.code, capacity)
+}
+
+#[must_use]
+pub fn spare_entries(capacity: usize) -> Vec<ProcedureEntry> {
+    spare(|spare| &mut spare.entries, capacity)
+}
+
+#[must_use]
+pub fn spare_door_sites(capacity: usize) -> Vec<DoorSite> {
+    spare(|spare| &mut spare.door_sites, capacity)
+}
+
+#[must_use]
+pub fn spare_door_arguments(capacity: usize) -> Vec<Crossing> {
+    spare(|spare| &mut spare.door_arguments, capacity)
+}
+
+impl Drop for Compiled {
+    fn drop(&mut self) {
+        keep_spare(|spare| &mut spare.code, std::mem::take(&mut self.code));
+        keep_spare(|spare| &mut spare.entries, std::mem::take(&mut self.entries));
+        keep_spare(|spare| &mut spare.door_sites, std::mem::take(&mut self.door_sites));
+        keep_spare(|spare| &mut spare.door_arguments, std::mem::take(&mut self.door_arguments));
+    }
+}
+
 impl Compiled {
     #[must_use]
     pub fn failure_name(&self, failure: u32) -> &str {

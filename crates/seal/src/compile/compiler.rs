@@ -178,14 +178,15 @@ fn compile_parts(program: &Program, doors: &[DoorSignature], plain: bool) -> Res
         plain,
         program,
         doors,
-        out: Compiled {
-            built_in_failures: ["missing", "not_a_whole", "full"].map(|wanted| {
+        out: {
+            let mut out = Compiled::default();
+            out.built_in_failures = ["missing", "not_a_whole", "full"].map(|wanted| {
                 (1u32..).zip(&program.failure_names).find(|(_, known)| *known == wanted).map_or(0, |(number, _)| number)
-            }),
+            });
             // Room for a small script's instructions from the start, rather than growing to it.
-            code: Vec::with_capacity(32),
-            places: Vec::with_capacity(32).into(),
-            ..Compiled::default()
+            out.code = Vec::with_capacity(32);
+            out.places = Vec::with_capacity(32).into();
+            out
         },
         constant_ids: HashMap::new(),
         text_ids: HashMap::new(),

@@ -610,7 +610,7 @@ fn write_compiled(compiled: &Compiled, out: &mut Writer) {
 #[allow(clippy::too_many_lines)] // each field in turn, in the order they were written
 fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileError> {
     let count = input.count(1)?;
-    let mut code = Vec::with_capacity(count);
+    let mut code = super::bytecode::spare_code(count);
     for _ in 0..count {
         code.push(instruction_file::read(input)?);
     }
@@ -625,7 +625,7 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
         texts.push(input.text()?);
     }
     let count = input.count(8)?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = super::bytecode::spare_entries(count);
     for _ in 0..count {
         entries.push(ProcedureEntry { entry: input.u32()?, frame_size: input.u32()? });
     }
@@ -647,7 +647,7 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
         layouts.push(Layout { case, references });
     }
     let count = input.count(14)?;
-    let mut door_sites = Vec::with_capacity(count);
+    let mut door_sites = super::bytecode::spare_door_sites(count);
     for _ in 0..count {
         door_sites.push(DoorSite {
             door: input.u32()?,
@@ -658,7 +658,7 @@ fn read_compiled(input: &mut Reader, blob: &Arc<[u8]>) -> Result<Compiled, FileE
         });
     }
     let count = input.count(1)?;
-    let mut door_arguments = Vec::with_capacity(count);
+    let mut door_arguments = super::bytecode::spare_door_arguments(count);
     for _ in 0..count {
         door_arguments.push(read_crossing(input, 0)?);
     }
