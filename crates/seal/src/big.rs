@@ -591,6 +591,30 @@ fn read_decimal(digits: &[u8], powers: &mut Vec<Big>) -> Vec<u32> {
 }
 
 impl Big {
+    /// Writes the number into a `.sealc` file: its sign, then its digits (D141).
+    pub fn write_file(&self, out: &mut crate::compile::file::Writer) {
+        out.flag(self.negative);
+        out.count(self.digits.len());
+        for &digit in self.digits.iter() {
+            out.u32(digit);
+        }
+    }
+
+    /// Reads a number back from a `.sealc` file.
+    ///
+    /// # Errors
+    ///
+    /// When the file ends.
+    pub fn read_file(input: &mut crate::compile::file::Reader) -> Result<Big, crate::compile::file::FileError> {
+        let negative = input.flag()?;
+        let count = input.count(4)?;
+        let mut digits = Vec::with_capacity(count);
+        for _ in 0..count {
+            digits.push(input.u32()?);
+        }
+        Ok(Big::from_parts(negative, digits))
+    }
+
     #[must_use]
     pub fn zero() -> Big {
         Big::default()

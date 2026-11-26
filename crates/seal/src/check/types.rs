@@ -766,6 +766,383 @@ impl TypeTable {
     }
 }
 
+// ---- in a `.sealc` file (D141) ----
+
+use crate::compile::file::{FileError, Reader, Writer};
+
+/// How deeply a file's types may nest, so walking one can't overrun the host's stack.
+const DEEPEST_IN_FILE: u32 = 256;
+
+impl TypeTable {
+    /// How many types it has.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.types.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty()
+    }
+
+    /// Writes the table into a `.sealc` file.
+    #[allow(clippy::too_many_lines)] // one case per kind of type, then each list in turn
+    pub fn write_file(&self, out: &mut Writer) {
+        let unit = |unit: UnitRef, out: &mut Writer| {
+            out.u16(unit.group);
+            out.u16(unit.member);
+        };
+        out.count(self.types.len());
+        for kind in &self.types {
+            match kind {
+                Type::Variable(variable) => {
+                    out.u8(0);
+                    out.u32(*variable);
+                }
+                Type::Error => out.u8(1),
+                Type::Nothing => out.u8(2),
+                Type::Whole => out.u8(3),
+                Type::Float => out.u8(4),
+                Type::Bool => out.u8(5),
+                Type::Text => out.u8(6),
+                Type::HugeWhole => out.u8(7),
+                Type::Decimal => out.u8(8),
+                Type::HugeDecimal => out.u8(9),
+                Type::List { item, max } => {
+                    out.u8(10);
+                    out.u32(item.0);
+                    out.flag(max.is_some());
+                    out.u64(max.unwrap_or(0).cast_unsigned());
+                }
+                Type::Array { item, length } => {
+                    out.u8(11);
+                    out.u32(item.0);
+                    out.u64(length.cast_unsigned());
+                }
+                Type::Dict { key, value } => {
+                    out.u8(12);
+                    out.u32(key.0);
+                    out.u32(value.0);
+                }
+                Type::Record(record) => {
+                    out.u8(13);
+                    out.u32(*record);
+                }
+                Type::OneOf(one_of) => {
+                    out.u8(14);
+                    out.u32(*one_of);
+                }
+                Type::Maybe(inner) => {
+                    out.u8(15);
+                    out.u32(inner.0);
+                }
+                Type::Measured { base, unit: measured } => {
+                    out.u8(16);
+                    out.u32(base.0);
+                    unit(measured.top, out);
+                    out.flag(measured.per.is_some());
+                    unit(measured.per.unwrap_or(measured.top), out);
+                    out.flag(measured.point);
+                }
+                Type::Parameter(parameter) => {
+                    out.u8(17);
+                    out.u32(*parameter);
+                }
+                Type::Ranged { base, limits } => {
+                    out.u8(18);
+                    out.u32(base.0);
+                    crate::compile::file::write_limits(*limits, out);
+                }
+            }
+        }
+        out.count(self.bindings.len());
+        for binding in &self.bindings {
+            out.flag(binding.is_some());
+            out.u32(binding.map_or(0, |binding| binding.0));
+        }
+        let fields = |fields: &[(String, TypeId)], out: &mut Writer| {
+            out.count(fields.len());
+            for (name, type_id) in fields {
+                out.text(name);
+                out.u32(type_id.0);
+            }
+        };
+        out.count(self.records.len());
+        for record in &self.records {
+            out.text(&record.name);
+            fields(&record.fields, out);
+        }
+        out.count(self.one_ofs.len());
+        for one_of in &self.one_ofs {
+            out.text(&one_of.name);
+            out.count(one_of.cases.len());
+            for case in &one_of.cases {
+                out.text(&case.name);
+                fields(&case.fields, out);
+            }
+        }
+        out.count(self.unit_groups.len());
+        for group in self.unit_groups.iter() {
+            out.text(&group.name);
+            out.count(group.members.len());
+            for member in &group.members {
+                out.text(&member.name);
+                out.flag(member.size.is_some());
+                crate::compile::file::write_size(member.size.unwrap_or(Size::ONE), out);
+            }
+        }
+        out.count(self.big_edges.len());
+        for edge in &self.big_edges {
+            edge.write_file(out);
+        }
+        out.count(self.parameters.len());
+        for parameter in &self.parameters {
+            out.text(parameter);
+        }
+    }
+
+    /// Reads a table back from a `.sealc` file, for [`TypeTable::verify`] to check.
+    ///
+    /// # Errors
+    ///
+    /// When the file ends, or a part of it isn't a type's.
+    #[allow(clippy::too_many_lines)] // one case per kind of type, then each list in turn
+    pub fn read_file(input: &mut Reader) -> Result<TypeTable, FileError> {
+        let unit = |input: &mut Reader| -> Result<UnitRef, FileError> {
+            Ok(UnitRef { group: input.u16()?, member: input.u16()? })
+        };
+        let count = input.count(1)?;
+        let mut types = Vec::with_capacity(count);
+        for _ in 0..count {
+            types.push(match input.u8()? {
+                0 => Type::Variable(input.u32()?),
+                1 => Type::Error,
+                2 => Type::Nothing,
+                3 => Type::Whole,
+                4 => Type::Float,
+                5 => Type::Bool,
+                6 => Type::Text,
+                7 => Type::HugeWhole,
+                8 => Type::Decimal,
+                9 => Type::HugeDecimal,
+                10 => {
+                    let item = TypeId(input.u32()?);
+                    let has_max = input.flag()?;
+                    let max = input.u64()?.cast_signed();
+                    Type::List { item, max: has_max.then_some(max) }
+                }
+                11 => Type::Array { item: TypeId(input.u32()?), length: input.u64()?.cast_signed() },
+                12 => Type::Dict { key: TypeId(input.u32()?), value: TypeId(input.u32()?) },
+                13 => Type::Record(input.u32()?),
+                14 => Type::OneOf(input.u32()?),
+                15 => Type::Maybe(TypeId(input.u32()?)),
+                16 => {
+                    let base = TypeId(input.u32()?);
+                    let top = unit(input)?;
+                    let has_per = input.flag()?;
+                    let per = unit(input)?;
+                    Type::Measured { base, unit: Unit { top, per: has_per.then_some(per), point: input.flag()? } }
+                }
+                17 => Type::Parameter(input.u32()?),
+                18 => Type::Ranged { base: TypeId(input.u32()?), limits: crate::compile::file::read_limits(input)? },
+                _ => return Err(FileError::Damaged("a type that isn't one")),
+            });
+        }
+        let count = input.count(5)?;
+        let mut bindings = Vec::with_capacity(count);
+        for _ in 0..count {
+            let bound = input.flag()?;
+            let to = TypeId(input.u32()?);
+            bindings.push(bound.then_some(to));
+        }
+        let fields = |input: &mut Reader| -> Result<Vec<(String, TypeId)>, FileError> {
+            let count = input.count(8)?;
+            let mut fields = Vec::with_capacity(count);
+            for _ in 0..count {
+                fields.push((input.text()?, TypeId(input.u32()?)));
+            }
+            Ok(fields)
+        };
+        let count = input.count(8)?;
+        let mut records = Vec::with_capacity(count);
+        for _ in 0..count {
+            records.push(RecordType { name: input.text()?, fields: fields(input)? });
+        }
+        let count = input.count(8)?;
+        let mut one_ofs = Vec::with_capacity(count);
+        for _ in 0..count {
+            let name = input.text()?;
+            let cases = input.count(8)?;
+            let mut list = Vec::with_capacity(cases);
+            for _ in 0..cases {
+                list.push(CaseType { name: input.text()?, fields: fields(input)? });
+            }
+            one_ofs.push(OneOfType { name, cases: list });
+        }
+        let count = input.count(8)?;
+        let mut unit_groups = Vec::with_capacity(count);
+        for _ in 0..count {
+            let name = input.text()?;
+            let members = input.count(5)?;
+            let mut list = Vec::with_capacity(members);
+            for _ in 0..members {
+                let name = input.text()?;
+                let has_size = input.flag()?;
+                let size = crate::compile::file::read_size(input)?;
+                list.push(UnitMemberType { name, size: has_size.then_some(size) });
+            }
+            unit_groups.push(UnitGroupType { name, members: list });
+        }
+        let count = input.count(5)?;
+        let mut big_edges = Vec::with_capacity(count);
+        for _ in 0..count {
+            big_edges.push(crate::big::Big::read_file(input)?);
+        }
+        let count = input.count(4)?;
+        let mut parameters = Vec::with_capacity(count);
+        for _ in 0..count {
+            parameters.push(input.text()?);
+        }
+        // What's looked up by its kind is found again in the table, as interning would find it.
+        let interned = types
+            .iter()
+            .enumerate()
+            .filter(|(_, kind)| !matches!(kind, Type::Variable(_)))
+            .filter_map(|(index, kind)| Some((kind.clone(), TypeId(u32::try_from(index).ok()?))))
+            .collect();
+        Ok(TypeTable {
+            types,
+            interned,
+            bindings,
+            records,
+            one_ofs,
+            unit_groups: std::sync::Arc::new(unit_groups),
+            big_edges,
+            parameters,
+        })
+    }
+
+    /// trace: D141. Checks a table read from a file: every type it names is in it, every record, `one_of`, unit,
+    /// variable and parameter one it has, and nothing inside a type leads back to it or nests too deep, so walking
+    /// any type ends.
+    ///
+    /// # Errors
+    ///
+    /// What doesn't fit.
+    #[allow(clippy::too_many_lines)] // what each kind of type names is checked, then the walk through them
+    pub fn verify(&self) -> Result<(), String> {
+        let count = self.types.len();
+        let in_table = |id: TypeId| (id.0 as usize) < count;
+        let unit_known = |unit: UnitRef| {
+            self.unit_groups
+                .get(usize::from(unit.group))
+                .is_some_and(|group| usize::from(unit.member) < group.members.len())
+        };
+        // Seal's own plain types have fixed numbers (D140), so a table always starts with them.
+        let fixed = [
+            Type::Error,
+            Type::Nothing,
+            Type::Whole,
+            Type::Float,
+            Type::Bool,
+            Type::Text,
+            Type::HugeWhole,
+            Type::Decimal,
+            Type::HugeDecimal,
+        ];
+        for (number, kind) in fixed.iter().enumerate() {
+            if self.types.get(number) != Some(kind) {
+                return Err("its types don't start with Seal's own".to_owned());
+            }
+        }
+        // What's inside each type, followed when walking it: its parts, and what a variable is bound to.
+        let mut inside: Vec<Vec<TypeId>> = Vec::with_capacity(count);
+        for kind in &self.types {
+            let parts = match kind {
+                Type::Variable(variable) => match self.bindings.get(*variable as usize) {
+                    Some(binding) => binding.iter().copied().collect(),
+                    None => return Err("a type to be worked out with no binding".to_owned()),
+                },
+                Type::List { item, .. } | Type::Array { item, .. } | Type::Maybe(item) => vec![*item],
+                Type::Dict { key, value } => vec![*key, *value],
+                Type::Measured { base, unit } => {
+                    if !unit_known(unit.top) || unit.per.is_some_and(|per| !unit_known(per)) {
+                        return Err("a unit that isn't one of the script's".to_owned());
+                    }
+                    vec![*base]
+                }
+                Type::Ranged { base, limits } => {
+                    for edge in [limits.min, limits.max].into_iter().flatten() {
+                        if edge.big && usize::try_from(edge.bits).unwrap_or(usize::MAX) >= self.big_edges.len() {
+                            return Err("a limit that isn't one of the script's".to_owned());
+                        }
+                    }
+                    vec![*base]
+                }
+                Type::Record(record) if *record as usize >= self.records.len() => {
+                    return Err("a record that isn't one of the script's".to_owned());
+                }
+                Type::OneOf(one_of) if *one_of as usize >= self.one_ofs.len() => {
+                    return Err("a `one_of` that isn't one of the script's".to_owned());
+                }
+                Type::Parameter(parameter) if *parameter as usize >= self.parameters.len() => {
+                    return Err("a type parameter that isn't one of the script's".to_owned());
+                }
+                _ => Vec::new(),
+            };
+            if !parts.iter().all(|&part| in_table(part)) {
+                return Err("a type inside another that isn't in the table".to_owned());
+            }
+            inside.push(parts);
+        }
+        let fields_known = |fields: &[(String, TypeId)]| fields.iter().all(|&(_, type_id)| in_table(type_id));
+        if !self.records.iter().all(|record| fields_known(&record.fields))
+            || !self.one_ofs.iter().all(|one_of| one_of.cases.iter().all(|case| fields_known(&case.fields)))
+        {
+            return Err("a field whose type isn't in the table".to_owned());
+        }
+        // Depth first, without nesting in the host's stack: a type met again while it's being walked is a loop.
+        let mut depth: Vec<Option<u32>> = vec![None; count];
+        let mut walking = vec![false; count];
+        for start in 0..count {
+            if depth.get(start).copied().flatten().is_some() {
+                continue;
+            }
+            let mut stack = vec![(start, 0usize)];
+            while let Some(&mut (at, ref mut next)) = stack.last_mut() {
+                let parts = inside.get(at).map_or(&[][..], Vec::as_slice);
+                if let Some(walking_now) = walking.get_mut(at) {
+                    *walking_now = true;
+                }
+                if let Some(&part) = parts.get(*next) {
+                    *next += 1;
+                    let part = part.0 as usize;
+                    if walking.get(part) == Some(&true) {
+                        return Err("a type that holds itself through what's inside it".to_owned());
+                    }
+                    if depth.get(part).copied().flatten().is_none() {
+                        stack.push((part, 0));
+                    }
+                    continue;
+                }
+                let deepest = parts.iter().filter_map(|part| depth.get(part.0 as usize).copied().flatten()).max();
+                let own = deepest.map_or(0, |deepest| deepest + 1);
+                if own > DEEPEST_IN_FILE {
+                    return Err("a type nested too deep".to_owned());
+                }
+                if let Some(slot) = depth.get_mut(at) {
+                    *slot = Some(own);
+                }
+                if let Some(walking_now) = walking.get_mut(at) {
+                    *walking_now = false;
+                }
+                stack.pop();
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -97,8 +97,80 @@ fn ending_of(error: &Error) -> (String, String, Option<String>) {
     }
 }
 
+/// How a script is loaded.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Loading {
+    /// From its text, as a host usually does.
+    Text,
+    /// From its text, compiled with none of the compiler's shortcuts.
+    Plainly,
+    /// Built into a `.sealc` file and loaded from that (D141).
+    Compiled,
+    /// Built into a `.sealc` file that's then changed, with its checksum made to match: refused, or run without
+    /// harming the host (D141, Building rule 1). The number picks the changes.
+    Tampered(u64),
+}
+
+/// A `.sealc` file's bytes changed at a few places, then its checksum made to match, as someone changing it on
+/// purpose would.
+fn tamper(bytes: &mut [u8], seed: u64) {
+    let mut random = Random::new(seed);
+    let body = bytes.len().saturating_sub(8);
+    // Past the header, which holds Seal's fingerprint and the doors' key, so the change reaches the script itself.
+    let start = 32.min(body);
+    for _ in 0..=random.below(3) {
+        let at = start + random.below((body - start).max(1));
+        if let Some(byte) = bytes.get_mut(at) {
+            *byte = u8::try_from(random.below(256)).unwrap_or(0);
+        }
+    }
+    let checksum = seal::compile::file::hash(bytes.get(..body).unwrap_or(&[]));
+    if let Some(end) = bytes.get_mut(body..) {
+        end.copy_from_slice(&checksum.to_le_bytes());
+    }
+}
+
+/// trace: D141. A built script's file with a byte changed and its checksum left as it was is always refused.
+fn damage_is_refused(source: &str, seed: u64) -> Option<String> {
+    let output = Arc::new(Mutex::new(String::new()));
+    let doors = doors(&output).ok()?;
+    let mut bytes = seal::build(&[("fuzz.seal", source)], &doors).ok()?;
+    let mut random = Random::new(seed);
+    let length = bytes.len();
+    if random.chance(1, 4) {
+        // Cut short.
+        bytes.truncate(random.below(length));
+    } else {
+        let at = random.below(length);
+        if let Some(byte) = bytes.get_mut(at) {
+            *byte ^= u8::try_from(1 + random.below(255)).unwrap_or(1);
+        }
+    }
+    match Script::load_compiled(&bytes, "fuzz.seal", &doors, LIMITS) {
+        Err(Error::Refused(_)) => None,
+        Ok(_) => Some("a damaged `.sealc` file loaded".to_owned()),
+        Err(_) => Some("a damaged `.sealc` file stopped instead of being refused".to_owned()),
+    }
+}
+
+/// Loads a script the way asked. Compiled plainly, it must give the same answers as with the compiler's shortcuts;
+/// from a `.sealc` file, exactly the same as from its text.
+fn load(source: &str, doors: &Doors, how: Loading) -> Result<Script, Error> {
+    match how {
+        Loading::Text => Script::load("fuzz.seal", source, doors, LIMITS),
+        Loading::Plainly => Script::load_plainly("fuzz.seal", source, doors, LIMITS),
+        Loading::Compiled | Loading::Tampered(_) => {
+            let mut bytes = seal::build(&[("fuzz.seal", source)], doors)?;
+            if let Loading::Tampered(seed) = how {
+                tamper(&mut bytes, seed);
+            }
+            Script::load_compiled(&bytes, "fuzz.seal", doors, LIMITS)
+        }
+    }
+}
+
 /// Loads a script and calls each of its procedures that takes only whole numbers, as a host would.
-fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: bool) -> Run {
+fn run_here(source: &str, call_procedures: bool, strict_memory: bool, how: Loading) -> Run {
     let output = Arc::new(Mutex::new(String::new()));
     let finish = |ending: String, messages: String, broken: Option<String>| Run {
         output: output.lock().map(|output| output.clone()).unwrap_or_default(),
@@ -112,23 +184,22 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
             return finish("host".to_owned(), message.text(), Some("the fuzzer's own doors were refused".to_owned()));
         }
     };
-    // Compiled plainly, a script must give the same answers as with the compiler's shortcuts.
-    let loaded = if plainly {
-        Script::load_plainly("fuzz.seal", source, &doors, LIMITS)
-    } else {
-        Script::load("fuzz.seal", source, &doors, LIMITS)
-    };
+    let loaded = load(source, &doors, how);
+    // A tampered file that loads may mean anything; all that holds is that the host comes to no harm: no crash, no
+    // freeze, nothing past the memory cap. Its own bookkeeping, and Seal's messages about it, aren't judged.
+    let tampered = matches!(how, Loading::Tampered(_));
     let mut script = match loaded {
         Ok(script) => script,
         Err(error) => {
             let (ending, messages, broken) = ending_of(&error);
-            return finish(ending, messages, broken);
+            return finish(ending, messages, broken.filter(|_| !tampered));
         }
     };
     if script.memory_in_use() > LIMITS.memory {
         return finish("ok".to_owned(), String::new(), Some("the script holds more than its memory cap".to_owned()));
     }
-    if let Err(why) = script.audit() {
+    let audit = |script: &Script| if tampered { Ok(()) } else { script.audit() };
+    if let Err(why) = audit(&script) {
         return finish(
             "ok".to_owned(),
             String::new(),
@@ -147,7 +218,7 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
         }
         let mut resumes = 0;
         while let Ok(Called::Paused(task)) = called {
-            if let Err(why) = script.audit() {
+            if let Err(why) = audit(&script) {
                 return finish(
                     "ok".to_owned(),
                     String::new(),
@@ -170,7 +241,7 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
                         Some("the script holds more than its memory cap".to_owned()),
                     );
                 }
-                if let Err(why) = script.audit() {
+                if let Err(why) = audit(&script) {
                     return finish(
                         "ok".to_owned(),
                         String::new(),
@@ -180,7 +251,7 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
                 // A generated script's procedures keep nothing once they're done, so a call that ran to its end,
                 // failed or was cancelled must leave the script holding exactly what it held before (D15).
                 let after = script.memory_in_use();
-                if strict_memory && after != before {
+                if strict_memory && !tampered && after != before {
                     return finish(
                         "ok".to_owned(),
                         String::new(),
@@ -192,7 +263,7 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
             }
             Err(error) => {
                 let (ending, messages, broken) = ending_of(&error);
-                return finish(ending, messages, broken);
+                return finish(ending, messages, broken.filter(|_| !tampered));
             }
         }
     }
@@ -202,26 +273,26 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, plainly: b
 /// Runs a script on a thread of its own, so that one that freezes is noticed instead of freezing the fuzzer.
 #[must_use]
 pub fn run(source: &str) -> Run {
-    run_as(source, true, false, false)
+    run_as(source, true, false, Loading::Text)
 }
 
 /// Runs a generated script, whose procedures must leave no memory behind.
 fn run_strictly(source: &str) -> Run {
-    run_as(source, true, true, false)
+    run_as(source, true, true, Loading::Text)
 }
 
 /// Runs a script's top level only, as Unio's `proc.main` runs, for comparing with Ralph.
 #[must_use]
 pub fn run_top_level(source: &str) -> Run {
-    run_as(source, false, false, false)
+    run_as(source, false, false, Loading::Text)
 }
 
-fn run_as(source: &str, call_procedures: bool, strict_memory: bool, plainly: bool) -> Run {
+fn run_as(source: &str, call_procedures: bool, strict_memory: bool, how: Loading) -> Run {
     let (sender, receiver) = mpsc::channel();
     let owned = source.to_owned();
     let started = Instant::now();
     let spawned = std::thread::Builder::new().stack_size(1024 * 1024).spawn(move || {
-        let _ = sender.send(run_here(&owned, call_procedures, strict_memory, plainly));
+        let _ = sender.send(run_here(&owned, call_procedures, strict_memory, how));
     });
     if spawned.is_err() {
         return Run {
@@ -274,7 +345,7 @@ fn judge(source: &str, generated: bool) -> Option<String> {
     }
     // Compiled plainly, with none of the compiler's shortcuts, it gives the same results too. A script that runs
     // into a limit is left out: the two ways count their steps and their memory a little differently.
-    let plain = run_as(source, true, false, true);
+    let plain = run_as(source, true, false, Loading::Plainly);
     let limited = |run: &Run| run.ending == "limit reached";
     if plain.broken.is_none()
         && !limited(&second)
@@ -286,7 +357,29 @@ fn judge(source: &str, generated: bool) -> Option<String> {
             second.ending, second.output, second.messages, plain.ending, plain.output, plain.messages
         ));
     }
-    plain.broken
+    if plain.broken.is_some() {
+        return plain.broken;
+    }
+    // trace: D141. Built into a `.sealc` file and loaded from that, it gives exactly the same, limits and all.
+    let compiled = run_as(source, true, false, Loading::Compiled);
+    if compiled.broken.is_none()
+        && (compiled.output != second.output
+            || compiled.ending != second.ending
+            || compiled.messages != second.messages)
+    {
+        return Some(format!(
+            "loaded from a `.sealc` file, the script gave different results:\n--- from its text ({})\n{}{}\n--- compiled ({})\n{}{}",
+            second.ending, second.output, second.messages, compiled.ending, compiled.output, compiled.messages
+        ));
+    }
+    if compiled.broken.is_some() {
+        return compiled.broken;
+    }
+    let seed = seal::compile::file::hash(source.as_bytes());
+    if let Some(damaged) = damage_is_refused(source, seed) {
+        return Some(damaged);
+    }
+    run_as(source, true, false, Loading::Tampered(seed)).broken
 }
 
 /// Shrinks a failing script: lines are taken out while it still fails the same way (Building rule 6).

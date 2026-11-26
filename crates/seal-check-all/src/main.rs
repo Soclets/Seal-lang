@@ -29,8 +29,42 @@ fn step(name: &str, program: &str, arguments: &[&str]) -> bool {
     passed
 }
 
+/// trace: D141. Runs one test folder from a compiled file: the folder copied to a scratch place, its script built
+/// into a `.sealc` there, and run from that. A script that doesn't build is refused as loading its text is, so its
+/// messages and status are what the test expects too.
+fn run_compiled_test(seal: &Path, folder: &Path, scratch: &Path) -> Option<String> {
+    let name = folder.file_name()?;
+    let copy = scratch.join(name);
+    let _ = fs::create_dir_all(&copy);
+    for entry in fs::read_dir(folder).ok()?.filter_map(Result::ok) {
+        let _ = fs::copy(entry.path(), copy.join(entry.file_name()));
+    }
+    let built = match Command::new(seal).args(["build", "program.seal"]).current_dir(&copy).output() {
+        Ok(built) => built,
+        Err(error) => return Some(format!("seal couldn't start: {error}")),
+    };
+    if built.status.success() {
+        return run_test_as(seal, &copy, "program.sealc");
+    }
+    let expected_output = fs::read(copy.join("expected.out")).ok()?;
+    let expected_status = String::from_utf8_lossy(&fs::read(copy.join("expected.status")).ok()?).trim().to_owned();
+    let status = built.status.code().map_or_else(|| "killed".to_owned(), |code| code.to_string());
+    if status != expected_status {
+        return Some(format!("built with exit status {status}, expected {expected_status}"));
+    }
+    if built.stdout != expected_output {
+        return Some("building gave other messages than expected.out".to_owned());
+    }
+    None
+}
+
 /// Runs one test folder, giving why it failed, or nothing when it passed.
 fn run_test(seal: &Path, folder: &Path) -> Option<String> {
+    run_test_as(seal, folder, "program.seal")
+}
+
+/// Runs one test folder's script, from its text or a compiled file, giving why it failed, or nothing.
+fn run_test_as(seal: &Path, folder: &Path, script: &str) -> Option<String> {
     let read = |name: &str| fs::read(folder.join(name)).ok();
     let Some(expected_output) = read("expected.out") else {
         return Some("no expected.out".to_owned());
@@ -40,7 +74,7 @@ fn run_test(seal: &Path, folder: &Path) -> Option<String> {
     };
     let expected_status = String::from_utf8_lossy(&expected_status).trim().to_owned();
     let mut child = match Command::new(seal)
-        .args(["run", "program.seal"])
+        .args(["run", script])
         .current_dir(folder)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -148,6 +182,23 @@ fn main() -> ExitCode {
     }
     let failed = folders.len() - passed;
     println!("== tests/: {passed} passed, {failed} failed");
+
+    // D141: every test again, each built into a `.sealc` and run from it, which must give exactly the same.
+    println!("== tests/, from compiled files");
+    let scratch = std::env::temp_dir().join(format!("seal-check-all-{}", std::process::id()));
+    let mut compiled_passed = 0usize;
+    for folder in &folders {
+        let name = folder.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        match run_compiled_test(&seal, folder, &scratch) {
+            None => compiled_passed += 1,
+            Some(reason) => {
+                all_passed = false;
+                println!("FAIL  {name}, compiled: {reason}");
+            }
+        }
+    }
+    let _ = fs::remove_dir_all(&scratch);
+    println!("== tests/, from compiled files: {compiled_passed} passed, {} failed", folders.len() - compiled_passed);
     let json = format!(
         "{{\n  \"passed\": {passed},\n  \"failed\": {failed},\n  \"tests\": {{\n{}\n  }}\n}}\n",
         status_lines.join(",\n")

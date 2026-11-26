@@ -1,8 +1,10 @@
 //! The `seal` command: checks a script, and runs it with the test host (D47, tests/README.md).
 //!
 //! ```text
-//! seal run FILE.seal      load the script with the test host's doors, then make the calls in calls.txt
-//! seal check FILE.seal    check the script against the test host's doors, without running it
+//! seal run FILE.seal                     load the script with the test host's doors, then make the calls in calls.txt
+//! seal check FILE.seal                   check the script against the test host's doors, without running it
+//! seal build FILE.seal... [-o OUT.sealc] compile scripts for the test host's doors into one `.sealc` file (D141, D153)
+//! seal run FILE.sealc [NAME]             load the script named NAME, or the file's only one, and run it the same way
 //! ```
 //!
 //! The test host's doors are a convention for tests, not part of Seal: `show_msg`, `show_msg.same_line`, `ask`,
@@ -156,19 +158,87 @@ fn report(error: &Error, output: &Mutex<Output>) -> ExitCode {
     })
 }
 
+const USAGE: &str = "usage: seal run FILE.seal, seal check FILE.seal, seal build FILE.seal... [-o OUT.sealc], or seal run FILE.sealc [NAME]";
+
+/// trace: D141, D153. `seal build`: one script to `FILE.sealc` beside it, or several, as a bundle, to `-o`.
+fn build_command(paths: &[String]) -> ExitCode {
+    let (scripts, out): (Vec<&String>, Option<&String>) = match paths.iter().position(|path| path == "-o") {
+        Some(at) => (paths.iter().take(at).collect(), paths.get(at + 1)),
+        None => (paths.iter().collect(), None),
+    };
+    let out = match (out, scripts.as_slice()) {
+        (Some(out), _) => out.clone(),
+        (None, [only]) => Path::new(only.as_str()).with_extension("sealc").display().to_string(),
+        _ => {
+            eprintln!("seal: several scripts build into one bundle, named with `-o OUT.sealc`\n{USAGE}");
+            return ExitCode::from(6);
+        }
+    };
+    let mut sources = Vec::with_capacity(scripts.len());
+    for path in &scripts {
+        let Ok(source) = std::fs::read_to_string(path.as_str()) else {
+            eprintln!("seal: `{path}` can't be read");
+            return ExitCode::from(2);
+        };
+        sources.push(source);
+    }
+    let output = Arc::new(Mutex::new(Output::default()));
+    let doors = match test_doors(&output, Vec::new()) {
+        Ok(doors) => doors,
+        Err(message) => {
+            eprint!("{message}");
+            return ExitCode::from(7);
+        }
+    };
+    let named: Vec<(&str, &str)> =
+        scripts.iter().map(|path| path.as_str()).zip(sources.iter().map(String::as_str)).collect();
+    match seal::build(&named, &doors) {
+        Ok(bytes) => match std::fs::write(&out, bytes) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("seal: `{out}` can't be written: {error}");
+                ExitCode::from(2)
+            }
+        },
+        Err(error) => report(&error, &output),
+    }
+}
+
+/// Whether a file is a compiled script, by its extension (D153).
+fn is_compiled(path: &str) -> bool {
+    Path::new(path).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("sealc"))
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let [command, path] = arguments.as_slice() else {
-        eprintln!("usage: seal run FILE.seal, or seal check FILE.seal");
-        return ExitCode::from(6);
+    if arguments.first().map(String::as_str) == Some("build") && arguments.len() > 1 {
+        return build_command(arguments.get(1..).unwrap_or(&[]));
+    }
+    let (command, path, wanted) = match arguments.as_slice() {
+        [command, path] => (command, path, None),
+        [command, path, name] if command == "run" && is_compiled(path) => (command, path, Some(name)),
+        _ => {
+            eprintln!("{USAGE}");
+            return ExitCode::from(6);
+        }
     };
     if command != "run" && command != "check" {
-        eprintln!("seal: `{command}` isn't a command\nusage: seal run FILE.seal, or seal check FILE.seal");
+        eprintln!("seal: `{command}` isn't a command\n{USAGE}");
         return ExitCode::from(6);
     }
-    let Ok(source) = std::fs::read_to_string(path) else {
-        eprintln!("seal: `{path}` can't be read");
-        return ExitCode::from(2);
+    let compiled = is_compiled(path);
+    let (source, bytes) = if compiled {
+        let Ok(bytes) = std::fs::read(path) else {
+            eprintln!("seal: `{path}` can't be read");
+            return ExitCode::from(2);
+        };
+        (String::new(), bytes)
+    } else {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            eprintln!("seal: `{path}` can't be read");
+            return ExitCode::from(2);
+        };
+        (source, Vec::new())
     };
     let folder = Path::new(path).parent().unwrap_or(Path::new("."));
     let random: Vec<i64> = std::fs::read_to_string(folder.join("random.txt"))
@@ -182,13 +252,28 @@ fn main() -> ExitCode {
             return ExitCode::from(7);
         }
     };
-    if command == "check" {
+    if command == "check" && !compiled {
         return match Script::check(path, &source, &doors) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => report(&error, &output),
         };
     }
-    let mut script = match Script::load(path, &source, &doors, LIMITS) {
+    let loaded = if compiled {
+        // A file with one script runs it; a bundle runs the one named.
+        let name = match (wanted, seal::names(&bytes, &doors)) {
+            (Some(name), _) => name.clone(),
+            (None, Ok(names)) if names.len() == 1 => names.into_iter().next().unwrap_or_default(),
+            (None, Ok(names)) => {
+                eprintln!("seal: `{path}` holds {} scripts; say which: {}", names.len(), names.join(", "));
+                return ExitCode::from(6);
+            }
+            (None, Err(error)) => return report(&error, &output),
+        };
+        Script::load_compiled(&bytes, &name, &doors, LIMITS)
+    } else {
+        Script::load(path, &source, &doors, LIMITS)
+    };
+    let mut script = match loaded {
         Ok(script) => script,
         Err(error) => return report(&error, &output),
     };

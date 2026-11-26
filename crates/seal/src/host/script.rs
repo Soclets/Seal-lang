@@ -136,6 +136,8 @@ pub struct Script {
     spare_task: Option<Task>,
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`.
     failures: [u32; 3],
+    /// Loaded from a `.sealc` file (D141).
+    from_file: bool,
 }
 
 impl fmt::Debug for Script {
@@ -232,7 +234,7 @@ impl Script {
                 })
             }),
         };
-        let Loaded { source: shared_source, compiled, name: kept_name } = match prepared {
+        let loaded = match prepared {
             Ok(Ok(loaded)) => loaded,
             Ok(Err(mut messages)) => {
                 for message in &mut messages {
@@ -246,6 +248,18 @@ impl Script {
                 return Err(Error::Stopped(message));
             }
         };
+        Self::from_loaded(loaded, name, doors, limits, false)
+    }
+
+    /// A script from what was compiled, set up and with its top level run.
+    pub(crate) fn from_loaded(
+        loaded: Loaded,
+        name: &str,
+        doors: &Doors,
+        limits: Limits,
+        from_file: bool,
+    ) -> Result<Script, Error> {
+        let Loaded { source: shared_source, compiled, name: kept_name } = loaded;
         let failures = compiled.built_in_failures;
         // The name is shared with the last script loaded from this text under it, as it usually is.
         let shared_name = if *kept_name == *name { kept_name } else { Arc::from(name) };
@@ -260,6 +274,7 @@ impl Script {
             stopped: None,
             spare_task: None,
             failures,
+            from_file,
         };
         script.start()?;
         Ok(script)
@@ -285,6 +300,23 @@ impl Script {
                 Err(Error::Stopped(message))
             }
         }
+    }
+
+    /// Reads, checks and compiles a script for a `.sealc` file (D141).
+    pub(crate) fn prepare_for_file(name: &str, source: &str, doors: &Doors) -> Result<Compiled, Vec<Message>> {
+        Self::prepare(name, source, doors, false)
+    }
+
+    /// The script's text, as it was loaded.
+    #[must_use]
+    pub(crate) fn source_text(&self) -> &str {
+        &self.source
+    }
+
+    /// What the script compiled to.
+    #[must_use]
+    pub(crate) fn compiled_script(&self) -> &Compiled {
+        &self.compiled
     }
 
     fn prepare(name: &str, source: &str, doors: &Doors, plain: bool) -> Result<Compiled, Vec<Message>> {
@@ -391,6 +423,14 @@ impl Script {
             Stop::Internal(detail) => {
                 let mut message = Message::internal(detail);
                 message.place = place;
+                // trace: D141. Verifying can't see every change to a file, and a changed one can trip the VM's own
+                // checks, which keep the host safe all the same.
+                if self.from_file {
+                    message.why = Some(format!(
+                        "this script was loaded from a `.sealc` file, which may have been changed after it was built; build it again with `seal build`. If it wasn't changed, this is a bug in Seal: please report it at {}.",
+                        crate::message::REPORT_ADDRESS
+                    ));
+                }
                 message
             }
         };

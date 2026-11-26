@@ -1,0 +1,1351 @@
+//! Made by `make_instruction_file.py` from `bytecode.rs`'s `Instruction`; run it again after changing
+//! `Instruction`, never edit this by hand. How each instruction is written into a `.sealc` file and read back
+//! (D141, D153), and which of its fields are registers and jumps, for the verifier.
+// Each instruction's fields are written and read in the order they're declared.
+#![allow(clippy::too_many_lines, clippy::match_same_arms)]
+
+use super::bytecode::{Instruction, Register};
+use super::file::{FileError, Reader, Writer};
+
+/// Writes an instruction: its number, then its fields.
+pub fn write(instruction: Instruction, out: &mut Writer) {
+    match instruction {
+        Instruction::Move { to, from } => {
+            out.u8(0);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::LoadSmall { to, value } => {
+            out.u8(1);
+            out.u16(to);
+            out.u32(value.cast_unsigned());
+        }
+        Instruction::LoadConstant { to, constant } => {
+            out.u8(2);
+            out.u16(to);
+            out.u32(constant);
+        }
+        Instruction::LoadText { to, text } => {
+            out.u8(3);
+            out.u16(to);
+            out.u32(text);
+        }
+        Instruction::LoadPlainCase { to, case } => {
+            out.u8(4);
+            out.u16(to);
+            out.u32(case);
+        }
+        Instruction::GetGlobal { to, global } => {
+            out.u8(5);
+            out.u16(to);
+            out.u16(global);
+        }
+        Instruction::SetGlobal { global, from } => {
+            out.u8(6);
+            out.u16(global);
+            out.u16(from);
+        }
+        Instruction::Retain { register } => {
+            out.u8(7);
+            out.u16(register);
+        }
+        Instruction::Release { register } => {
+            out.u8(8);
+            out.u16(register);
+        }
+        Instruction::AddWhole { to, left, right } => {
+            out.u8(9);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::SubtractWhole { to, left, right } => {
+            out.u8(10);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::MultiplyWhole { to, left, right } => {
+            out.u8(11);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::DivideWhole { to, left, right } => {
+            out.u8(12);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::DivideFloor { to, left, right } => {
+            out.u8(13);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::DivideTrunc { to, left, right } => {
+            out.u8(14);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::RemainderFloor { to, left, right } => {
+            out.u8(15);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::RemainderTrunc { to, left, right } => {
+            out.u8(16);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::AddWholeSmall { to, left, right } => {
+            out.u8(17);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+        }
+        Instruction::AddWholeConstant { to, left, constant } => {
+            out.u8(18);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::MultiplyWholeConstant { to, left, constant } => {
+            out.u8(19);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::DivideFloorConstant { to, left, constant } => {
+            out.u8(20);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::RemainderFloorConstant { to, left, constant } => {
+            out.u8(21);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::NegateWhole { to, from } => {
+            out.u8(22);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::AddFloat { to, left, right } => {
+            out.u8(23);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::SubtractFloat { to, left, right } => {
+            out.u8(24);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::MultiplyFloat { to, left, right } => {
+            out.u8(25);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::DivideFloat { to, left, right } => {
+            out.u8(26);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::NegateFloat { to, from } => {
+            out.u8(27);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::SquareRoot { to, from } => {
+            out.u8(28);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::AddFloatConstant { to, left, constant } => {
+            out.u8(29);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::MultiplyFloatConstant { to, left, constant } => {
+            out.u8(30);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::DivideFloatConstant { to, left, constant } => {
+            out.u8(31);
+            out.u16(to);
+            out.u16(left);
+            out.u16(constant);
+        }
+        Instruction::DivideConstantByFloat { to, constant, right } => {
+            out.u8(32);
+            out.u16(to);
+            out.u16(constant);
+            out.u16(right);
+        }
+        Instruction::EqualWhole { to, left, right } => {
+            out.u8(33);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::NotEqualWhole { to, left, right } => {
+            out.u8(34);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::LessWhole { to, left, right } => {
+            out.u8(35);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::AtMostWhole { to, left, right } => {
+            out.u8(36);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::FloatFused { shape, ops, to, a, b, c, d } => {
+            out.u8(37);
+            out.u8(shape);
+            out.u8(ops);
+            out.u8(to);
+            out.u8(a);
+            out.u8(b);
+            out.u8(c);
+            out.u8(d);
+        }
+        Instruction::PlaceOnly => {
+            out.u8(38);
+        }
+        Instruction::UnpackItemAtPosition { base, list, index } => {
+            out.u8(39);
+            out.u16(base);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::UnpackItemAtOffset { base, list, index } => {
+            out.u8(40);
+            out.u16(base);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::ItemFieldAtPosition { to, list, index, field } => {
+            out.u8(41);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+            out.u8(field);
+        }
+        Instruction::ItemFieldAtOffset { to, list, index, field } => {
+            out.u8(42);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+            out.u8(field);
+        }
+        Instruction::SetItemFieldAtPosition { list, index, field, value } => {
+            out.u8(43);
+            out.u16(list);
+            out.u16(index);
+            out.u8(field);
+            out.u16(value);
+        }
+        Instruction::SetItemFieldAtOffset { list, index, field, value } => {
+            out.u8(44);
+            out.u16(list);
+            out.u16(index);
+            out.u8(field);
+            out.u16(value);
+        }
+        Instruction::FitList { to, from, limit } => {
+            out.u8(45);
+            out.u16(to);
+            out.u16(from);
+            out.u16(limit);
+        }
+        Instruction::Own { register } => {
+            out.u8(46);
+            out.u16(register);
+        }
+        Instruction::OwnField { to, record, field } => {
+            out.u8(47);
+            out.u16(to);
+            out.u16(record);
+            out.u16(field);
+        }
+        Instruction::OwnItemAtPosition { to, list, index } => {
+            out.u8(48);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::OwnItemAtOffset { to, list, index } => {
+            out.u8(49);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::TextLength { to, from, unit } => {
+            out.u8(50);
+            out.u16(to);
+            out.u16(from);
+            out.u8(unit);
+        }
+        Instruction::GraphemeAtPosition { to, text, index } => {
+            out.u8(51);
+            out.u16(to);
+            out.u16(text);
+            out.u16(index);
+        }
+        Instruction::GraphemeAtOffset { to, text, index } => {
+            out.u8(52);
+            out.u16(to);
+            out.u16(text);
+            out.u16(index);
+        }
+        Instruction::Graphemes { to, from } => {
+            out.u8(53);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::SplitText { to, text, by } => {
+            out.u8(54);
+            out.u16(to);
+            out.u16(text);
+            out.u16(by);
+        }
+        Instruction::SplitTextNoEmpty { to, text, by } => {
+            out.u8(55);
+            out.u16(to);
+            out.u16(text);
+            out.u16(by);
+        }
+        Instruction::EqualText { to, left, right } => {
+            out.u8(56);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::NotEqualText { to, left, right } => {
+            out.u8(57);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::EqualFloat { to, left, right } => {
+            out.u8(58);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::NotEqualFloat { to, left, right } => {
+            out.u8(59);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::LessFloat { to, left, right } => {
+            out.u8(60);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::AtMostFloat { to, left, right } => {
+            out.u8(61);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::Not { to, from } => {
+            out.u8(62);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::Jump { offset } => {
+            out.u8(63);
+            out.u32(offset.cast_unsigned());
+        }
+        Instruction::JumpIfTrue { register, offset } => {
+            out.u8(64);
+            out.u16(register);
+            out.u32(offset.cast_unsigned());
+        }
+        Instruction::JumpIfFalse { register, offset } => {
+            out.u8(65);
+            out.u16(register);
+            out.u32(offset.cast_unsigned());
+        }
+        Instruction::JumpIfEqualWhole { left, right, offset } => {
+            out.u8(66);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfNotEqualWhole { left, right, offset } => {
+            out.u8(67);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfLessWhole { left, right, offset } => {
+            out.u8(68);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfAtMostWhole { left, right, offset } => {
+            out.u8(69);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfEqualWholeSmall { left, right, offset } => {
+            out.u8(70);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfNotEqualWholeSmall { left, right, offset } => {
+            out.u8(71);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfLessWholeSmall { left, right, offset } => {
+            out.u8(72);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfAtMostWholeSmall { left, right, offset } => {
+            out.u8(73);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfGreaterWholeSmall { left, right, offset } => {
+            out.u8(74);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfAtLeastWholeSmall { left, right, offset } => {
+            out.u8(75);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfEqualFloat { left, right, offset } => {
+            out.u8(76);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfNotEqualFloat { left, right, offset } => {
+            out.u8(77);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfLessFloat { left, right, offset } => {
+            out.u8(78);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::JumpIfAtMostFloat { left, right, offset } => {
+            out.u8(79);
+            out.u16(left);
+            out.u16(right);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::Call { base, procedure } => {
+            out.u8(80);
+            out.u16(base);
+            out.u32(procedure);
+        }
+        Instruction::CallAdding { base, procedure, from, add } => {
+            out.u8(81);
+            out.u16(base);
+            out.u16(procedure);
+            out.u16(from);
+            out.u8(add.cast_unsigned());
+        }
+        Instruction::Return { from } => {
+            out.u8(82);
+            out.u16(from);
+        }
+        Instruction::ReturnIfWholeSmall { from, left, right, compare } => {
+            out.u8(83);
+            out.u16(from);
+            out.u16(left);
+            out.u16(right.cast_unsigned());
+            out.u8(compare as u8);
+        }
+        Instruction::ReturnAddWhole { left, right } => {
+            out.u8(84);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::ReturnNothing => {
+            out.u8(85);
+        }
+        Instruction::CallDoor { base, site } => {
+            out.u8(86);
+            out.u16(base);
+            out.u32(site);
+        }
+        Instruction::Fail { failure } => {
+            out.u8(87);
+            out.u16(failure);
+        }
+        Instruction::PassFailureUp => {
+            out.u8(88);
+        }
+        Instruction::JumpUnlessFailed { offset } => {
+            out.u8(89);
+            out.u32(offset.cast_unsigned());
+        }
+        Instruction::JumpUnlessFailureIs { failure, offset } => {
+            out.u8(90);
+            out.u16(failure);
+            out.u32(offset.cast_unsigned());
+        }
+        Instruction::ClearFailure => {
+            out.u8(91);
+        }
+        Instruction::Crash => {
+            out.u8(92);
+        }
+        Instruction::EqualValues { to, left, site } => {
+            out.u8(93);
+            out.u16(to);
+            out.u16(left);
+            out.u16(site);
+        }
+        Instruction::MakeRange { to, base, inclusive } => {
+            out.u8(94);
+            out.u16(to);
+            out.u16(base);
+            out.u8(u8::from(inclusive));
+        }
+        Instruction::PowerWhole { to, left, right } => {
+            out.u8(95);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::PowerFloat { to, left, right } => {
+            out.u8(96);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+        }
+        Instruction::Maths { to, base, function } => {
+            out.u8(97);
+            out.u16(to);
+            out.u16(base);
+            out.u8(function);
+        }
+        Instruction::LoadNumber { to, site } => {
+            out.u8(98);
+            out.u16(to);
+            out.u16(site);
+        }
+        Instruction::NumberOperation { to, left, right, operation } => {
+            out.u8(99);
+            out.u16(to);
+            out.u16(left);
+            out.u16(right);
+            out.u8(operation);
+        }
+        Instruction::NumberUpdate { target, right, operation } => {
+            out.u8(100);
+            out.u16(target);
+            out.u16(right);
+            out.u8(operation);
+        }
+        Instruction::ConvertNumber { to, from, site } => {
+            out.u8(101);
+            out.u16(to);
+            out.u16(from);
+            out.u16(site);
+        }
+        Instruction::CheckLimits { register, site } => {
+            out.u8(102);
+            out.u16(register);
+            out.u16(site);
+        }
+        Instruction::Scale { to, from, site } => {
+            out.u8(103);
+            out.u16(to);
+            out.u16(from);
+            out.u16(site);
+        }
+        Instruction::CrashIfNone { number } => {
+            out.u8(104);
+            out.u16(number);
+        }
+        Instruction::JoinPieces { to, site } => {
+            out.u8(105);
+            out.u16(to);
+            out.u32(site);
+        }
+        Instruction::AppendPieces { to, site } => {
+            out.u8(106);
+            out.u16(to);
+            out.u32(site);
+        }
+        Instruction::TextToBool { to, from, failure } => {
+            out.u8(107);
+            out.u16(to);
+            out.u16(from);
+            out.u16(failure);
+        }
+        Instruction::TextToWhole { to, from } => {
+            out.u8(108);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::WholeToFloat { to, from } => {
+            out.u8(109);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::FloatToWhole { to, from, rounding } => {
+            out.u8(110);
+            out.u16(to);
+            out.u16(from);
+            out.u16(rounding);
+        }
+        Instruction::NewList { to, base, count } => {
+            out.u8(111);
+            out.u16(to);
+            out.u16(base);
+            out.u16(count);
+        }
+        Instruction::NewReferenceList { to, base, count } => {
+            out.u8(112);
+            out.u16(to);
+            out.u16(base);
+            out.u16(count);
+        }
+        Instruction::RepeatList { to, value, count } => {
+            out.u8(113);
+            out.u16(to);
+            out.u16(value);
+            out.u16(count);
+        }
+        Instruction::RepeatReferenceList { to, value, count } => {
+            out.u8(114);
+            out.u16(to);
+            out.u16(value);
+            out.u16(count);
+        }
+        Instruction::ItemAtPosition { to, list, index } => {
+            out.u8(115);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::ItemAtOffset { to, list, index } => {
+            out.u8(116);
+            out.u16(to);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::SetItemAtPosition { list, index, value } => {
+            out.u8(117);
+            out.u16(list);
+            out.u16(index);
+            out.u16(value);
+        }
+        Instruction::SetItemAtOffset { list, index, value } => {
+            out.u8(118);
+            out.u16(list);
+            out.u16(index);
+            out.u16(value);
+        }
+        Instruction::AddItem { list, value } => {
+            out.u8(119);
+            out.u16(list);
+            out.u16(value);
+        }
+        Instruction::InsertItemAtPosition { list, index, value } => {
+            out.u8(120);
+            out.u16(list);
+            out.u16(index);
+            out.u16(value);
+        }
+        Instruction::InsertItemAtOffset { list, index, value } => {
+            out.u8(121);
+            out.u16(list);
+            out.u16(index);
+            out.u16(value);
+        }
+        Instruction::CheckRoom { list, limit } => {
+            out.u8(122);
+            out.u16(list);
+            out.u16(limit);
+        }
+        Instruction::RemoveItemAtPosition { list, index } => {
+            out.u8(123);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::RemoveItemAtOffset { list, index } => {
+            out.u8(124);
+            out.u16(list);
+            out.u16(index);
+        }
+        Instruction::Length { to, from } => {
+            out.u8(125);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::NextItem { to, base, offset } => {
+            out.u8(126);
+            out.u16(to);
+            out.u16(base);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::PrepareRangeTo { base } => {
+            out.u8(127);
+            out.u16(base);
+        }
+        Instruction::PrepareRangeBefore { base } => {
+            out.u8(128);
+            out.u16(base);
+        }
+        Instruction::NextInRange { to, base, offset } => {
+            out.u8(129);
+            out.u16(to);
+            out.u16(base);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::NewDict { to, shape } => {
+            out.u8(130);
+            out.u16(to);
+            out.u16(shape);
+        }
+        Instruction::GetKey { to, dict, key } => {
+            out.u8(131);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(key);
+        }
+        Instruction::SetKey { dict, key, value } => {
+            out.u8(132);
+            out.u16(dict);
+            out.u16(key);
+            out.u16(value);
+        }
+        Instruction::RemoveKey { dict, key } => {
+            out.u8(133);
+            out.u16(dict);
+            out.u16(key);
+        }
+        Instruction::HasKey { to, dict, key } => {
+            out.u8(134);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(key);
+        }
+        Instruction::FindKey { to, dict, key } => {
+            out.u8(135);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(key);
+        }
+        Instruction::DivideFloorByPowerOfTwo { to, left, shift } => {
+            out.u8(136);
+            out.u16(to);
+            out.u16(left);
+            out.u16(shift);
+        }
+        Instruction::RemainderFloorByPowerOfTwo { to, left, bits } => {
+            out.u8(137);
+            out.u16(to);
+            out.u16(left);
+            out.u16(bits);
+        }
+        Instruction::ReleaseText { register } => {
+            out.u8(138);
+            out.u16(register);
+        }
+        Instruction::GetKeyIfAny { to, dict, key } => {
+            out.u8(139);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(key);
+        }
+        Instruction::GetFoundIfAny { to, dict, found } => {
+            out.u8(140);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(found);
+        }
+        Instruction::GetFound { to, dict, found } => {
+            out.u8(141);
+            out.u16(to);
+            out.u16(dict);
+            out.u16(found);
+        }
+        Instruction::SetFound { dict, found, key } => {
+            out.u8(142);
+            out.u16(dict);
+            out.u16(found);
+            out.u16(key);
+        }
+        Instruction::NextEntry { to, base, offset } => {
+            out.u8(143);
+            out.u16(to);
+            out.u16(base);
+            out.u16(offset.cast_unsigned());
+        }
+        Instruction::NewRecord { to, base, layout } => {
+            out.u8(144);
+            out.u16(to);
+            out.u16(base);
+            out.u16(layout);
+        }
+        Instruction::GetField { to, record, field } => {
+            out.u8(145);
+            out.u16(to);
+            out.u16(record);
+            out.u16(field);
+        }
+        Instruction::SetField { record, field, value } => {
+            out.u8(146);
+            out.u16(record);
+            out.u16(field);
+            out.u16(value);
+        }
+        Instruction::SetReferenceField { record, field, value } => {
+            out.u8(147);
+            out.u16(record);
+            out.u16(field);
+            out.u16(value);
+        }
+        Instruction::NewCase { to, base, layout } => {
+            out.u8(148);
+            out.u16(to);
+            out.u16(base);
+            out.u16(layout);
+        }
+        Instruction::UnpackRecord { base, record } => {
+            out.u8(149);
+            out.u16(base);
+            out.u16(record);
+        }
+        Instruction::PackIntoItemAtPosition { list, index, base } => {
+            out.u8(150);
+            out.u16(list);
+            out.u16(index);
+            out.u16(base);
+        }
+        Instruction::PackIntoItemAtOffset { list, index, base } => {
+            out.u8(151);
+            out.u16(list);
+            out.u16(index);
+            out.u16(base);
+        }
+        Instruction::CaseNumber { to, from } => {
+            out.u8(152);
+            out.u16(to);
+            out.u16(from);
+        }
+        Instruction::GetCaseValue { to, case, field } => {
+            out.u8(153);
+            out.u16(to);
+            out.u16(case);
+            out.u16(field);
+        }
+        Instruction::Unreachable => {
+            out.u8(154);
+        }
+    }
+}
+
+/// Reads an instruction back.
+///
+/// # Errors
+///
+/// When the file ends, or the number isn't an instruction's.
+pub fn read(input: &mut Reader) -> Result<Instruction, FileError> {
+    Ok(match input.u8()? {
+        0 => Instruction::Move { to: input.u16()?, from: input.u16()? },
+        1 => Instruction::LoadSmall { to: input.u16()?, value: input.u32()?.cast_signed() },
+        2 => Instruction::LoadConstant { to: input.u16()?, constant: input.u32()? },
+        3 => Instruction::LoadText { to: input.u16()?, text: input.u32()? },
+        4 => Instruction::LoadPlainCase { to: input.u16()?, case: input.u32()? },
+        5 => Instruction::GetGlobal { to: input.u16()?, global: input.u16()? },
+        6 => Instruction::SetGlobal { global: input.u16()?, from: input.u16()? },
+        7 => Instruction::Retain { register: input.u16()? },
+        8 => Instruction::Release { register: input.u16()? },
+        9 => Instruction::AddWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        10 => Instruction::SubtractWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        11 => Instruction::MultiplyWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        12 => Instruction::DivideWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        13 => Instruction::DivideFloor { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        14 => Instruction::DivideTrunc { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        15 => Instruction::RemainderFloor { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        16 => Instruction::RemainderTrunc { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        17 => Instruction::AddWholeSmall { to: input.u16()?, left: input.u16()?, right: input.u16()?.cast_signed() },
+        18 => Instruction::AddWholeConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        19 => Instruction::MultiplyWholeConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        20 => Instruction::DivideFloorConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        21 => Instruction::RemainderFloorConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        22 => Instruction::NegateWhole { to: input.u16()?, from: input.u16()? },
+        23 => Instruction::AddFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        24 => Instruction::SubtractFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        25 => Instruction::MultiplyFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        26 => Instruction::DivideFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        27 => Instruction::NegateFloat { to: input.u16()?, from: input.u16()? },
+        28 => Instruction::SquareRoot { to: input.u16()?, from: input.u16()? },
+        29 => Instruction::AddFloatConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        30 => Instruction::MultiplyFloatConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        31 => Instruction::DivideFloatConstant { to: input.u16()?, left: input.u16()?, constant: input.u16()? },
+        32 => Instruction::DivideConstantByFloat { to: input.u16()?, constant: input.u16()?, right: input.u16()? },
+        33 => Instruction::EqualWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        34 => Instruction::NotEqualWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        35 => Instruction::LessWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        36 => Instruction::AtMostWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        37 => Instruction::FloatFused {
+            shape: input.u8()?,
+            ops: input.u8()?,
+            to: input.u8()?,
+            a: input.u8()?,
+            b: input.u8()?,
+            c: input.u8()?,
+            d: input.u8()?,
+        },
+        38 => Instruction::PlaceOnly,
+        39 => Instruction::UnpackItemAtPosition { base: input.u16()?, list: input.u16()?, index: input.u16()? },
+        40 => Instruction::UnpackItemAtOffset { base: input.u16()?, list: input.u16()?, index: input.u16()? },
+        41 => Instruction::ItemFieldAtPosition {
+            to: input.u16()?,
+            list: input.u16()?,
+            index: input.u16()?,
+            field: input.u8()?,
+        },
+        42 => Instruction::ItemFieldAtOffset {
+            to: input.u16()?,
+            list: input.u16()?,
+            index: input.u16()?,
+            field: input.u8()?,
+        },
+        43 => Instruction::SetItemFieldAtPosition {
+            list: input.u16()?,
+            index: input.u16()?,
+            field: input.u8()?,
+            value: input.u16()?,
+        },
+        44 => Instruction::SetItemFieldAtOffset {
+            list: input.u16()?,
+            index: input.u16()?,
+            field: input.u8()?,
+            value: input.u16()?,
+        },
+        45 => Instruction::FitList { to: input.u16()?, from: input.u16()?, limit: input.u16()? },
+        46 => Instruction::Own { register: input.u16()? },
+        47 => Instruction::OwnField { to: input.u16()?, record: input.u16()?, field: input.u16()? },
+        48 => Instruction::OwnItemAtPosition { to: input.u16()?, list: input.u16()?, index: input.u16()? },
+        49 => Instruction::OwnItemAtOffset { to: input.u16()?, list: input.u16()?, index: input.u16()? },
+        50 => Instruction::TextLength { to: input.u16()?, from: input.u16()?, unit: input.u8()? },
+        51 => Instruction::GraphemeAtPosition { to: input.u16()?, text: input.u16()?, index: input.u16()? },
+        52 => Instruction::GraphemeAtOffset { to: input.u16()?, text: input.u16()?, index: input.u16()? },
+        53 => Instruction::Graphemes { to: input.u16()?, from: input.u16()? },
+        54 => Instruction::SplitText { to: input.u16()?, text: input.u16()?, by: input.u16()? },
+        55 => Instruction::SplitTextNoEmpty { to: input.u16()?, text: input.u16()?, by: input.u16()? },
+        56 => Instruction::EqualText { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        57 => Instruction::NotEqualText { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        58 => Instruction::EqualFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        59 => Instruction::NotEqualFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        60 => Instruction::LessFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        61 => Instruction::AtMostFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        62 => Instruction::Not { to: input.u16()?, from: input.u16()? },
+        63 => Instruction::Jump { offset: input.u32()?.cast_signed() },
+        64 => Instruction::JumpIfTrue { register: input.u16()?, offset: input.u32()?.cast_signed() },
+        65 => Instruction::JumpIfFalse { register: input.u16()?, offset: input.u32()?.cast_signed() },
+        66 => Instruction::JumpIfEqualWhole {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        67 => Instruction::JumpIfNotEqualWhole {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        68 => {
+            Instruction::JumpIfLessWhole { left: input.u16()?, right: input.u16()?, offset: input.u16()?.cast_signed() }
+        }
+        69 => Instruction::JumpIfAtMostWhole {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        70 => Instruction::JumpIfEqualWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        71 => Instruction::JumpIfNotEqualWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        72 => Instruction::JumpIfLessWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        73 => Instruction::JumpIfAtMostWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        74 => Instruction::JumpIfGreaterWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        75 => Instruction::JumpIfAtLeastWholeSmall {
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            offset: input.u16()?.cast_signed(),
+        },
+        76 => Instruction::JumpIfEqualFloat {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        77 => Instruction::JumpIfNotEqualFloat {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        78 => {
+            Instruction::JumpIfLessFloat { left: input.u16()?, right: input.u16()?, offset: input.u16()?.cast_signed() }
+        }
+        79 => Instruction::JumpIfAtMostFloat {
+            left: input.u16()?,
+            right: input.u16()?,
+            offset: input.u16()?.cast_signed(),
+        },
+        80 => Instruction::Call { base: input.u16()?, procedure: input.u32()? },
+        81 => Instruction::CallAdding {
+            base: input.u16()?,
+            procedure: input.u16()?,
+            from: input.u16()?,
+            add: input.u8()?.cast_signed(),
+        },
+        82 => Instruction::Return { from: input.u16()? },
+        83 => Instruction::ReturnIfWholeSmall {
+            from: input.u16()?,
+            left: input.u16()?,
+            right: input.u16()?.cast_signed(),
+            compare: input.compare()?,
+        },
+        84 => Instruction::ReturnAddWhole { left: input.u16()?, right: input.u16()? },
+        85 => Instruction::ReturnNothing,
+        86 => Instruction::CallDoor { base: input.u16()?, site: input.u32()? },
+        87 => Instruction::Fail { failure: input.u16()? },
+        88 => Instruction::PassFailureUp,
+        89 => Instruction::JumpUnlessFailed { offset: input.u32()?.cast_signed() },
+        90 => Instruction::JumpUnlessFailureIs { failure: input.u16()?, offset: input.u32()?.cast_signed() },
+        91 => Instruction::ClearFailure,
+        92 => Instruction::Crash,
+        93 => Instruction::EqualValues { to: input.u16()?, left: input.u16()?, site: input.u16()? },
+        94 => Instruction::MakeRange { to: input.u16()?, base: input.u16()?, inclusive: input.flag()? },
+        95 => Instruction::PowerWhole { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        96 => Instruction::PowerFloat { to: input.u16()?, left: input.u16()?, right: input.u16()? },
+        97 => Instruction::Maths { to: input.u16()?, base: input.u16()?, function: input.u8()? },
+        98 => Instruction::LoadNumber { to: input.u16()?, site: input.u16()? },
+        99 => Instruction::NumberOperation {
+            to: input.u16()?,
+            left: input.u16()?,
+            right: input.u16()?,
+            operation: input.u8()?,
+        },
+        100 => Instruction::NumberUpdate { target: input.u16()?, right: input.u16()?, operation: input.u8()? },
+        101 => Instruction::ConvertNumber { to: input.u16()?, from: input.u16()?, site: input.u16()? },
+        102 => Instruction::CheckLimits { register: input.u16()?, site: input.u16()? },
+        103 => Instruction::Scale { to: input.u16()?, from: input.u16()?, site: input.u16()? },
+        104 => Instruction::CrashIfNone { number: input.u16()? },
+        105 => Instruction::JoinPieces { to: input.u16()?, site: input.u32()? },
+        106 => Instruction::AppendPieces { to: input.u16()?, site: input.u32()? },
+        107 => Instruction::TextToBool { to: input.u16()?, from: input.u16()?, failure: input.u16()? },
+        108 => Instruction::TextToWhole { to: input.u16()?, from: input.u16()? },
+        109 => Instruction::WholeToFloat { to: input.u16()?, from: input.u16()? },
+        110 => Instruction::FloatToWhole { to: input.u16()?, from: input.u16()?, rounding: input.u16()? },
+        111 => Instruction::NewList { to: input.u16()?, base: input.u16()?, count: input.u16()? },
+        112 => Instruction::NewReferenceList { to: input.u16()?, base: input.u16()?, count: input.u16()? },
+        113 => Instruction::RepeatList { to: input.u16()?, value: input.u16()?, count: input.u16()? },
+        114 => Instruction::RepeatReferenceList { to: input.u16()?, value: input.u16()?, count: input.u16()? },
+        115 => Instruction::ItemAtPosition { to: input.u16()?, list: input.u16()?, index: input.u16()? },
+        116 => Instruction::ItemAtOffset { to: input.u16()?, list: input.u16()?, index: input.u16()? },
+        117 => Instruction::SetItemAtPosition { list: input.u16()?, index: input.u16()?, value: input.u16()? },
+        118 => Instruction::SetItemAtOffset { list: input.u16()?, index: input.u16()?, value: input.u16()? },
+        119 => Instruction::AddItem { list: input.u16()?, value: input.u16()? },
+        120 => Instruction::InsertItemAtPosition { list: input.u16()?, index: input.u16()?, value: input.u16()? },
+        121 => Instruction::InsertItemAtOffset { list: input.u16()?, index: input.u16()?, value: input.u16()? },
+        122 => Instruction::CheckRoom { list: input.u16()?, limit: input.u16()? },
+        123 => Instruction::RemoveItemAtPosition { list: input.u16()?, index: input.u16()? },
+        124 => Instruction::RemoveItemAtOffset { list: input.u16()?, index: input.u16()? },
+        125 => Instruction::Length { to: input.u16()?, from: input.u16()? },
+        126 => Instruction::NextItem { to: input.u16()?, base: input.u16()?, offset: input.u16()?.cast_signed() },
+        127 => Instruction::PrepareRangeTo { base: input.u16()? },
+        128 => Instruction::PrepareRangeBefore { base: input.u16()? },
+        129 => Instruction::NextInRange { to: input.u16()?, base: input.u16()?, offset: input.u16()?.cast_signed() },
+        130 => Instruction::NewDict { to: input.u16()?, shape: input.u16()? },
+        131 => Instruction::GetKey { to: input.u16()?, dict: input.u16()?, key: input.u16()? },
+        132 => Instruction::SetKey { dict: input.u16()?, key: input.u16()?, value: input.u16()? },
+        133 => Instruction::RemoveKey { dict: input.u16()?, key: input.u16()? },
+        134 => Instruction::HasKey { to: input.u16()?, dict: input.u16()?, key: input.u16()? },
+        135 => Instruction::FindKey { to: input.u16()?, dict: input.u16()?, key: input.u16()? },
+        136 => Instruction::DivideFloorByPowerOfTwo { to: input.u16()?, left: input.u16()?, shift: input.u16()? },
+        137 => Instruction::RemainderFloorByPowerOfTwo { to: input.u16()?, left: input.u16()?, bits: input.u16()? },
+        138 => Instruction::ReleaseText { register: input.u16()? },
+        139 => Instruction::GetKeyIfAny { to: input.u16()?, dict: input.u16()?, key: input.u16()? },
+        140 => Instruction::GetFoundIfAny { to: input.u16()?, dict: input.u16()?, found: input.u16()? },
+        141 => Instruction::GetFound { to: input.u16()?, dict: input.u16()?, found: input.u16()? },
+        142 => Instruction::SetFound { dict: input.u16()?, found: input.u16()?, key: input.u16()? },
+        143 => Instruction::NextEntry { to: input.u16()?, base: input.u16()?, offset: input.u16()?.cast_signed() },
+        144 => Instruction::NewRecord { to: input.u16()?, base: input.u16()?, layout: input.u16()? },
+        145 => Instruction::GetField { to: input.u16()?, record: input.u16()?, field: input.u16()? },
+        146 => Instruction::SetField { record: input.u16()?, field: input.u16()?, value: input.u16()? },
+        147 => Instruction::SetReferenceField { record: input.u16()?, field: input.u16()?, value: input.u16()? },
+        148 => Instruction::NewCase { to: input.u16()?, base: input.u16()?, layout: input.u16()? },
+        149 => Instruction::UnpackRecord { base: input.u16()?, record: input.u16()? },
+        150 => Instruction::PackIntoItemAtPosition { list: input.u16()?, index: input.u16()?, base: input.u16()? },
+        151 => Instruction::PackIntoItemAtOffset { list: input.u16()?, index: input.u16()?, base: input.u16()? },
+        152 => Instruction::CaseNumber { to: input.u16()?, from: input.u16()? },
+        153 => Instruction::GetCaseValue { to: input.u16()?, case: input.u16()?, field: input.u16()? },
+        154 => Instruction::Unreachable,
+        _ => return Err(FileError::Damaged("an instruction that isn't one")),
+    })
+}
+
+/// The registers an instruction names, in its fields' order.
+#[must_use]
+pub fn registers(instruction: Instruction) -> Vec<Register> {
+    match instruction {
+        Instruction::Move { to, from, .. } => vec![to, from],
+        Instruction::LoadSmall { to, .. } => vec![to],
+        Instruction::LoadConstant { to, .. } => vec![to],
+        Instruction::LoadText { to, .. } => vec![to],
+        Instruction::LoadPlainCase { to, .. } => vec![to],
+        Instruction::GetGlobal { to, .. } => vec![to],
+        Instruction::SetGlobal { from, .. } => vec![from],
+        Instruction::Retain { register, .. } => vec![register],
+        Instruction::Release { register, .. } => vec![register],
+        Instruction::AddWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::SubtractWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::MultiplyWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::DivideWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::DivideFloor { to, left, right, .. } => vec![to, left, right],
+        Instruction::DivideTrunc { to, left, right, .. } => vec![to, left, right],
+        Instruction::RemainderFloor { to, left, right, .. } => vec![to, left, right],
+        Instruction::RemainderTrunc { to, left, right, .. } => vec![to, left, right],
+        Instruction::AddWholeSmall { to, left, .. } => vec![to, left],
+        Instruction::AddWholeConstant { to, left, .. } => vec![to, left],
+        Instruction::MultiplyWholeConstant { to, left, .. } => vec![to, left],
+        Instruction::DivideFloorConstant { to, left, .. } => vec![to, left],
+        Instruction::RemainderFloorConstant { to, left, .. } => vec![to, left],
+        Instruction::NegateWhole { to, from, .. } => vec![to, from],
+        Instruction::AddFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::SubtractFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::MultiplyFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::DivideFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::NegateFloat { to, from, .. } => vec![to, from],
+        Instruction::SquareRoot { to, from, .. } => vec![to, from],
+        Instruction::AddFloatConstant { to, left, .. } => vec![to, left],
+        Instruction::MultiplyFloatConstant { to, left, .. } => vec![to, left],
+        Instruction::DivideFloatConstant { to, left, .. } => vec![to, left],
+        Instruction::DivideConstantByFloat { to, right, .. } => vec![to, right],
+        Instruction::EqualWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::NotEqualWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::LessWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::AtMostWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::UnpackItemAtPosition { base, list, index, .. } => vec![base, list, index],
+        Instruction::UnpackItemAtOffset { base, list, index, .. } => vec![base, list, index],
+        Instruction::ItemFieldAtPosition { to, list, index, .. } => vec![to, list, index],
+        Instruction::ItemFieldAtOffset { to, list, index, .. } => vec![to, list, index],
+        Instruction::SetItemFieldAtPosition { list, index, value, .. } => vec![list, index, value],
+        Instruction::SetItemFieldAtOffset { list, index, value, .. } => vec![list, index, value],
+        Instruction::FitList { to, from, limit, .. } => vec![to, from, limit],
+        Instruction::Own { register, .. } => vec![register],
+        Instruction::OwnField { to, record, .. } => vec![to, record],
+        Instruction::OwnItemAtPosition { to, list, index, .. } => vec![to, list, index],
+        Instruction::OwnItemAtOffset { to, list, index, .. } => vec![to, list, index],
+        Instruction::TextLength { to, from, .. } => vec![to, from],
+        Instruction::GraphemeAtPosition { to, text, index, .. } => vec![to, text, index],
+        Instruction::GraphemeAtOffset { to, text, index, .. } => vec![to, text, index],
+        Instruction::Graphemes { to, from, .. } => vec![to, from],
+        Instruction::SplitText { to, text, by, .. } => vec![to, text, by],
+        Instruction::SplitTextNoEmpty { to, text, by, .. } => vec![to, text, by],
+        Instruction::EqualText { to, left, right, .. } => vec![to, left, right],
+        Instruction::NotEqualText { to, left, right, .. } => vec![to, left, right],
+        Instruction::EqualFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::NotEqualFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::LessFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::AtMostFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::Not { to, from, .. } => vec![to, from],
+        Instruction::JumpIfTrue { register, .. } => vec![register],
+        Instruction::JumpIfFalse { register, .. } => vec![register],
+        Instruction::JumpIfEqualWhole { left, right, .. } => vec![left, right],
+        Instruction::JumpIfNotEqualWhole { left, right, .. } => vec![left, right],
+        Instruction::JumpIfLessWhole { left, right, .. } => vec![left, right],
+        Instruction::JumpIfAtMostWhole { left, right, .. } => vec![left, right],
+        Instruction::JumpIfEqualWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfNotEqualWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfLessWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfAtMostWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfGreaterWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfAtLeastWholeSmall { left, .. } => vec![left],
+        Instruction::JumpIfEqualFloat { left, right, .. } => vec![left, right],
+        Instruction::JumpIfNotEqualFloat { left, right, .. } => vec![left, right],
+        Instruction::JumpIfLessFloat { left, right, .. } => vec![left, right],
+        Instruction::JumpIfAtMostFloat { left, right, .. } => vec![left, right],
+        Instruction::Call { base, .. } => vec![base],
+        Instruction::CallAdding { base, from, .. } => vec![base, from],
+        Instruction::Return { from, .. } => vec![from],
+        Instruction::ReturnIfWholeSmall { from, left, .. } => vec![from, left],
+        Instruction::ReturnAddWhole { left, right, .. } => vec![left, right],
+        Instruction::CallDoor { base, .. } => vec![base],
+        Instruction::EqualValues { to, left, .. } => vec![to, left],
+        Instruction::MakeRange { to, base, .. } => vec![to, base],
+        Instruction::PowerWhole { to, left, right, .. } => vec![to, left, right],
+        Instruction::PowerFloat { to, left, right, .. } => vec![to, left, right],
+        Instruction::Maths { to, base, .. } => vec![to, base],
+        Instruction::LoadNumber { to, .. } => vec![to],
+        Instruction::NumberOperation { to, left, right, .. } => vec![to, left, right],
+        Instruction::NumberUpdate { target, right, .. } => vec![target, right],
+        Instruction::ConvertNumber { to, from, .. } => vec![to, from],
+        Instruction::CheckLimits { register, .. } => vec![register],
+        Instruction::Scale { to, from, .. } => vec![to, from],
+        Instruction::CrashIfNone { number, .. } => vec![number],
+        Instruction::JoinPieces { to, .. } => vec![to],
+        Instruction::AppendPieces { to, .. } => vec![to],
+        Instruction::TextToBool { to, from, .. } => vec![to, from],
+        Instruction::TextToWhole { to, from, .. } => vec![to, from],
+        Instruction::WholeToFloat { to, from, .. } => vec![to, from],
+        Instruction::FloatToWhole { to, from, .. } => vec![to, from],
+        Instruction::NewList { to, base, .. } => vec![to, base],
+        Instruction::NewReferenceList { to, base, .. } => vec![to, base],
+        Instruction::RepeatList { to, value, count, .. } => vec![to, value, count],
+        Instruction::RepeatReferenceList { to, value, count, .. } => vec![to, value, count],
+        Instruction::ItemAtPosition { to, list, index, .. } => vec![to, list, index],
+        Instruction::ItemAtOffset { to, list, index, .. } => vec![to, list, index],
+        Instruction::SetItemAtPosition { list, index, value, .. } => vec![list, index, value],
+        Instruction::SetItemAtOffset { list, index, value, .. } => vec![list, index, value],
+        Instruction::AddItem { list, value, .. } => vec![list, value],
+        Instruction::InsertItemAtPosition { list, index, value, .. } => vec![list, index, value],
+        Instruction::InsertItemAtOffset { list, index, value, .. } => vec![list, index, value],
+        Instruction::CheckRoom { list, limit, .. } => vec![list, limit],
+        Instruction::RemoveItemAtPosition { list, index, .. } => vec![list, index],
+        Instruction::RemoveItemAtOffset { list, index, .. } => vec![list, index],
+        Instruction::Length { to, from, .. } => vec![to, from],
+        Instruction::NextItem { to, base, .. } => vec![to, base],
+        Instruction::PrepareRangeTo { base, .. } => vec![base],
+        Instruction::PrepareRangeBefore { base, .. } => vec![base],
+        Instruction::NextInRange { to, base, .. } => vec![to, base],
+        Instruction::NewDict { to, .. } => vec![to],
+        Instruction::GetKey { to, dict, key, .. } => vec![to, dict, key],
+        Instruction::SetKey { dict, key, value, .. } => vec![dict, key, value],
+        Instruction::RemoveKey { dict, key, .. } => vec![dict, key],
+        Instruction::HasKey { to, dict, key, .. } => vec![to, dict, key],
+        Instruction::FindKey { to, dict, key, .. } => vec![to, dict, key],
+        Instruction::DivideFloorByPowerOfTwo { to, left, .. } => vec![to, left],
+        Instruction::RemainderFloorByPowerOfTwo { to, left, .. } => vec![to, left],
+        Instruction::ReleaseText { register, .. } => vec![register],
+        Instruction::GetKeyIfAny { to, dict, key, .. } => vec![to, dict, key],
+        Instruction::GetFoundIfAny { to, dict, found, .. } => vec![to, dict, found],
+        Instruction::GetFound { to, dict, found, .. } => vec![to, dict, found],
+        Instruction::SetFound { dict, found, key, .. } => vec![dict, found, key],
+        Instruction::NextEntry { to, base, .. } => vec![to, base],
+        Instruction::NewRecord { to, base, .. } => vec![to, base],
+        Instruction::GetField { to, record, .. } => vec![to, record],
+        Instruction::SetField { record, value, .. } => vec![record, value],
+        Instruction::SetReferenceField { record, value, .. } => vec![record, value],
+        Instruction::NewCase { to, base, .. } => vec![to, base],
+        Instruction::UnpackRecord { base, record, .. } => vec![base, record],
+        Instruction::PackIntoItemAtPosition { list, index, base, .. } => vec![list, index, base],
+        Instruction::PackIntoItemAtOffset { list, index, base, .. } => vec![list, index, base],
+        Instruction::CaseNumber { to, from, .. } => vec![to, from],
+        Instruction::GetCaseValue { to, case, .. } => vec![to, case],
+        _ => Vec::new(),
+    }
+}
+
+/// The numbers an instruction picks things out of the script's tables with, each by its field's name.
+#[must_use]
+pub fn numbered(instruction: Instruction) -> Vec<(&'static str, u32)> {
+    match instruction {
+        Instruction::LoadConstant { constant, .. } => vec![("constant", constant)],
+        Instruction::GetGlobal { global, .. } => vec![("global", u32::from(global))],
+        Instruction::SetGlobal { global, .. } => vec![("global", u32::from(global))],
+        Instruction::AddWholeConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::MultiplyWholeConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::DivideFloorConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::RemainderFloorConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::AddFloatConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::MultiplyFloatConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::DivideFloatConstant { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::DivideConstantByFloat { constant, .. } => vec![("constant", u32::from(constant))],
+        Instruction::Call { procedure, .. } => vec![("procedure", procedure)],
+        Instruction::CallAdding { procedure, .. } => vec![("procedure", u32::from(procedure))],
+        Instruction::Fail { failure, .. } => vec![("failure", u32::from(failure))],
+        Instruction::JumpUnlessFailureIs { failure, .. } => vec![("failure", u32::from(failure))],
+        Instruction::TextToBool { failure, .. } => vec![("failure", u32::from(failure))],
+        Instruction::NewRecord { layout, .. } => vec![("layout", u32::from(layout))],
+        Instruction::NewCase { layout, .. } => vec![("layout", u32::from(layout))],
+        _ => Vec::new(),
+    }
+}
+
+/// Where an instruction can jump, as an offset from the instruction after it.
+#[must_use]
+pub fn jump(instruction: Instruction) -> Option<i32> {
+    match instruction {
+        Instruction::Jump { offset, .. } => Some(offset),
+        Instruction::JumpIfTrue { offset, .. } => Some(offset),
+        Instruction::JumpIfFalse { offset, .. } => Some(offset),
+        Instruction::JumpIfEqualWhole { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfNotEqualWhole { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfLessWhole { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfAtMostWhole { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfEqualWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfNotEqualWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfLessWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfAtMostWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfGreaterWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfAtLeastWholeSmall { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfEqualFloat { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfNotEqualFloat { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfLessFloat { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpIfAtMostFloat { offset, .. } => Some(i32::from(offset)),
+        Instruction::JumpUnlessFailed { offset, .. } => Some(offset),
+        Instruction::JumpUnlessFailureIs { offset, .. } => Some(offset),
+        Instruction::NextItem { offset, .. } => Some(i32::from(offset)),
+        Instruction::NextInRange { offset, .. } => Some(i32::from(offset)),
+        Instruction::NextEntry { offset, .. } => Some(i32::from(offset)),
+        _ => None,
+    }
+}
