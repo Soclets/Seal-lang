@@ -30,9 +30,6 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `else if` | `elif` | D10 |
 | `proc name[$a: Whole] returns Whole:` | `proc name[a: Whole] -> Whole`, types always written | D21, D45, D81 |
 | `show_msg("{x}")` | `"{x}"`: every text fills its braces in both | D75 |
-| `instead 0;` in a `case` | `use 0` | D144 |
-| `return x;` | `ret x` | D145 |
-| `include family.handler;` | `incl ::handler` | D110, D145 |
 | `for each $x in $xs:` | `for_each x in xs` | D146 |
 | `show_msg`, `ask`, `random` | doors, if the host opens them, under the names it chooses | D11 |
 | `.unio` | `.seal` | D25 |

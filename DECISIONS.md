@@ -4365,6 +4365,8 @@ being inside an `otherwise` case already says that it replaces the failed result
 diff between those two? ret and use", "Ah, so `use` just replaces the failed result?", then, asked "Should `instead`
 become `use`?", the owner chose: "yea"
 
+(Replaced by D157: `instead` again.)
+
 ## D145. `return` is written `ret`, and `include` `incl`
 
 2026-11-25.
@@ -4407,6 +4409,8 @@ often.
 `incl` and `ret`, no `instead` abbrev, though (idk what to say)", "Let me see that synt", a question about the `ret` in a pasted example, "Wait, where are
 the `!` stuff? It has `otherwise`", then, asked "Should `return` become `ret` and `include` become `incl`, shortening a
 keyword only where a common short form already exists?", the owner chose: "yea"
+
+(Replaced by D157: `return` and `include` again.)
 
 ## D146. `for each` is written `for_each`
 
@@ -4730,3 +4734,35 @@ Lyftar.
 **Tankun's words.** "No license? This shit is illegal to use. Same licensing as Unio?", then, asked "Should Seal use
 Unio's three licences: Apache-2.0 WITH LLVM-exception for the implementation, MIT-0 for examples, and CC BY 4.0 for
 prose?", the owner chose: "yea"
+
+## D157. `return`, `include` and `instead` come back
+
+2026-11-26.
+
+**Chosen.** D144's `use` and D145's `ret` and `incl` are taken back: Seal writes `return`, `include` and `instead`, as
+Unio does.
+
+```
+proc pick[name: Text] -> Whole
+    level = load_level(name) otherwise
+        case not_found
+            return 1
+        case broken
+            instead 0
+    end
+    return level + 10
+end
+```
+
+Every rule about them stays as it was. D145's rule, that a keyword is shortened only where a common short form exists,
+goes with it; `proc`, `mut` and `elif` stay as they are.
+
+**Weighed.**
+- Keeping `ret`, `incl` and `use`, as built the day before. Shorter, but `ret` stood out as odd even to Tankun on
+  reading real code, `incl` looks clipped, and `use` loses what `instead` says: this value in place of the failed one.
+
+**Why this won.** The full words read better, beginners need no teaching for `return`, and Seal and Unio stay alike.
+
+**Tankun's words.** "i kinda wanna `return` & `include` & `instead`, they just read better. And even I see `ret` as
+weird", then, asked "Should `return`, `include` and `instead` come back, replacing D144's `use` and D145's `ret` and
+`incl`?", the owner chose: "yea"

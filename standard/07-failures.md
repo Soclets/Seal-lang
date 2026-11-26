@@ -9,7 +9,7 @@ save(game) ?? ignore
 load_level(name) ?? crash
 best = load_best() otherwise
     case not_found
-        use 0
+        instead 0
 end
 bag.add("Gem") otherwise
     case full
@@ -21,11 +21,11 @@ end
 - **`??`** handles it on one line, with a value, `ignore`, `crash` or a handler (Unio D23, D121, D98).
 - **What deals with a failure runs only when there is one:** a fallback after `??`, as `?? default_level()`, and a
   handler's arguments are worked out only when the call fails (D130).
-- **`otherwise`** handles each failure in its own `case`, ending in `use`, `ret`, `break` or failing on
+- **`otherwise`** handles each failure in its own `case`, ending in `instead`, `return`, `break` or failing on
   purpose, or simply ending when the call gives back nothing (Unio D40, D186).
-- **`use` gives a value in place of the failed call's result,** and the line carries on; `ret` leaves the
-  procedure instead (D144, replacing Unio D40's `instead`).
-- **`use` is the last line of its case:** a line after it can never run, so it's refused, as one after `ret`
+- **`instead` gives a value in place of the failed call's result,** and the line carries on; `return` leaves the
+  procedure (D157).
+- **`instead` is the last line of its case:** a line after it can never run, so it's refused, as one after `return`
   or `break` is (D80, Unio D57).
 
 In a script, `?? crash` stops the script, not the host, which is told (D14, chapter 10).
@@ -46,7 +46,7 @@ proc load_level[name: Text] -> Level ! [not_found, broken]
     if not level_exists(name)
         fail not_found
     else
-        ret read_level(name)?
+        return read_level(name)?
     end
 end
 ```
@@ -61,22 +61,22 @@ group.handler level_failed
     handles [load_level, load_save]
     ::start_over
         case not_found
-            use 1
+            instead 1
         case broken
-            use 1
+            instead 1
     end
     ::start_at[level: Whole]
         case not_found
-            use level
+            instead level
         case broken
-            use level
+            instead level
     end
 end
 
 a = load_level("forest") ?? ::start_over
 b = load_save("slot1") ?? level_failed::start_at(3)
 c = load_level("cave") otherwise
-    incl ::start_over
+    include ::start_over
 end
 ```
 
@@ -93,10 +93,10 @@ end
 - **It's used as if its cases were written at the call,** so it must cover every failure still possible there (Unio
   D40, D42). Its cases for failures that call can't give are allowed and never run there, since a handler is shared
   across calls; a case written straight into an `otherwise` block for a failure its call can't give is refused (D131).
-- **A handler that can `ret` or `break` is marked `*` where it's used,** as `?? ::*give_up` or
+- **A handler that can `return` or `break` is marked `*` where it's used,** as `?? ::*give_up` or
   `?? level_failed::*give_up`; the mark is required on one that can jump and refused on one that can't (Unio D42).
   A `fail` inside a handler's case leaves the procedure too, so it counts as a jump (D129).
-- **`incl`** inside an `otherwise` block brings in a handler's cases beside the block's own; together they cover
+- **`include`** inside an `otherwise` block brings in a handler's cases beside the block's own; together they cover
   every failure, none twice (Unio D43).
 - **A handler can take parameters,** written as a procedure's are, and is given arguments where it's used (Unio D44).
   The arguments are worked out only when the call fails, right before the handler's cases run (D130).

@@ -1,6 +1,6 @@
 proc load_level[name: Text] -> Whole ! [not_found, broken]
     if name == "cave"
-        ret 5
+        return 5
     elif name == "ruin"
         fail broken
     else
@@ -11,12 +11,12 @@ end
 proc pick[name: Text] -> Whole
     level = load_level(name) otherwise
         case not_found
-            ret 1
+            return 1
         case broken
-            use 0
+            instead 0
     end
     show_msg("loaded {name}")
-    ret level + 10
+    return level + 10
 end
 
 a = pick("cave")

@@ -1,6 +1,6 @@
 proc load_level[name: Text] -> Whole ! [not_found]
     if name == "cave"
-        ret 5
+        return 5
     else
         fail not_found
     end
@@ -8,14 +8,14 @@ end
 
 proc noisy[n: Whole] -> Whole
     show_msg("worked out {n}")
-    ret n
+    return n
 end
 
 group.handler level_failed
     handles [load_level]
     ::start_at[level: Whole]
         case not_found
-            use level
+            instead level
     end
 end
 
