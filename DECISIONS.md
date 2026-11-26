@@ -5066,3 +5066,42 @@ call.
 **Tankun's words.** "What are these for, again?", "What are the built-in ones", "What does no `:` on gener mean?",
 "Wait, what? Is it all or nah", then, asked "Should Seal have requirements that list the methods a type must have,
 which a generic can ask for, alongside built-ins starting with `Number`?", the owner chose: "yea"
+
+## D167. A type meets a requirement only by saying so: `meets [ … ]` as its first line
+
+2026-11-26.
+
+**Chosen.** A script's record or `one_of` meets a requirement (D166) only when it says so, with `meets [ … ]` as the
+first line of its block:
+
+```
+record Player
+    meets [Scored]
+    name: Text
+    kills: Whole
+
+    proc score[p: Player] -> Whole
+        return p.kills * 10
+    end
+end
+```
+
+- **Seal checks it at the type:** every method a listed requirement asks for must be there, or the type is refused,
+  pointing at it rather than at some later call.
+- **Nothing meets a requirement by accident,** as a `Song` whose `score()` means its sheet music.
+- **The `[ ]` lists one or more,** as `meets [Scored, Named]`, in the shape of `handles [ … ]` (D110) and
+  `labels [ … ]` (D42).
+
+**Weighed.**
+- Meeting one automatically, by having the methods, as Go does. Nothing to write, but types fit by accident, and a
+  misspelt method shows up only at a distant call.
+- `satisfies`, Cyborg's word (its `satisfies` lines, D235): exactly accurate, from logic, but more formal; Seal picks
+  the plain word where both are accurate, as `mut` over `mutable`.
+- `implements` (Java), `is`, which suggests inheritance, `fits`, about size, and `can`.
+
+**Why this won.** The intent is written on the type, a mistake is caught where it's made, and the line reads as
+English: "Player meets Scored".
+
+**Tankun's words.** Asked "Should a type meet a requirement only by saying so, with a `[ … ]` line inside the record or
+`one_of`?", the owner chose: "yea, but what syntax?", then "Is `satisfies` accurate?", then, asked "Should a type
+state the requirements it meets with `meets [ … ]` as its first line?", the owner chose: "`meets`"

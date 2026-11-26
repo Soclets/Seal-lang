@@ -79,8 +79,12 @@ end
   and `Float` still don't mix (D16). Values with units aren't among them (D166).
 - **A script can write its own requirements,** listing methods a type must have, so a generic can call them (D166).
 
-**Not decided:** how a requirement is written and named, and how a type comes to meet one; generics over units;
-generic records and `one_of`s; how generics are compiled.
+- **A record or `one_of` meets a script's requirement only by saying so,** with `meets [ … ]` as its first line, as
+  `meets [Scored]`; Seal checks there that it has every method the requirement lists (D167). Nothing meets one by
+  accident.
+
+**Not decided:** how a requirement is written and named; generics over units; generic records and `one_of`s; how
+generics are compiled.
 
 **Not decided:** parameter words for reading, changing or taking over (Unio D130).
 A procedure's failures: chapter 7.
