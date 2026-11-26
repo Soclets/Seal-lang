@@ -401,8 +401,9 @@ impl Visitor for HandlingChecker<'_> {
 #[derive(Default)]
 struct WriteCollector {
     writes: BTreeSet<VariableId>,
-    /// The names it reads, for what a method lent a variable reaches (D165).
+    /// The names it reads, for what a method lent a variable reaches (D165), kept only when a script has one.
     reads: BTreeSet<VariableId>,
+    keep_reads: bool,
     calls: BTreeSet<ProcedureId>,
 }
 
@@ -434,7 +435,7 @@ impl Visitor for WriteCollector {
             ExpressionKind::Call { procedure, .. } => {
                 self.calls.insert(*procedure);
             }
-            ExpressionKind::Variable(variable) => {
+            ExpressionKind::Variable(variable) if self.keep_reads => {
                 self.reads.insert(*variable);
             }
             _ => {}
@@ -920,6 +921,15 @@ impl Checker<'_> {
         let mut settled = vec![false; count];
         let mut first = true;
         let mut concerns = Concerns { doors: self.doors, may_fail: false, loops: false };
+        // Whether any method changes its value, lent the variable it's called on (D165).
+        let lends = self.program.procedures.iter().any(|procedure| {
+            procedure.method
+                && procedure
+                    .parameters
+                    .first()
+                    .and_then(|&first| self.program.variable(first))
+                    .is_some_and(|first| first.mutable)
+        });
         loop {
             let mut changed = false;
             for index in 0..count {
@@ -932,12 +942,14 @@ impl Checker<'_> {
                 let mut finder = PauseFinder { facts: &facts, found: None };
                 let mut dependence = Dependence::default();
                 if first {
-                    let mut writes = WriteCollector::default();
+                    let mut writes = WriteCollector { keep_reads: lends, ..WriteCollector::default() };
                     let mut pauses_and_dependence = Both(&mut finder, &mut dependence);
                     let mut found = Both(&mut collector, &mut pauses_and_dependence);
                     let mut writes_and_concerns = Both(&mut writes, &mut concerns);
                     walk_block(&procedure.body, &mut Both(&mut found, &mut writes_and_concerns));
-                    may_reach.push(writes.writes.union(&writes.reads).copied().collect());
+                    if lends {
+                        may_reach.push(writes.writes.union(&writes.reads).copied().collect());
+                    }
                     may_write.push(writes.writes);
                     calls.push(writes.calls);
                 } else {
@@ -990,6 +1002,9 @@ impl Checker<'_> {
 
         // What each procedure may reach, itself or through what it calls (D165).
         loop {
+            if !lends {
+                break;
+            }
             let mut changed = false;
             for index in 0..count {
                 let callees: Vec<ProcedureId> =
@@ -1013,11 +1028,15 @@ impl Checker<'_> {
 
         let facts = Facts { program: &self.program, doors: self.doors, failure_ids: &self.failure_ids };
         let mut messages = Vec::new();
-        let mut lending = LendChecker { program: &self.program, may_reach: &may_reach, messages: Vec::new() };
-        for block in self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level]) {
-            walk_block(block, &mut lending);
+        if lends {
+            let mut lending = LendChecker { program: &self.program, may_reach: &may_reach, messages: Vec::new() };
+            for block in
+                self.program.procedures.iter().map(|procedure| &procedure.body).chain([&self.program.top_level])
+            {
+                walk_block(block, &mut lending);
+            }
+            messages.append(&mut lending.messages);
         }
-        messages.append(&mut lending.messages);
         let mut handling = HandlingChecker { facts: &facts, messages: Vec::new() };
         let mut loops = LoopChecker { facts: &facts, may_write: &may_write, messages: Vec::new() };
         // The procedures' bodies are looked at only for what one of them holds; the top level always is.
