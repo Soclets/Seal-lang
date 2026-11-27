@@ -1,0 +1,17 @@
+proc doubled[n: Whole] -> Whole
+    return n * 2
+end
+
+proc as_label[amount: Whole] -> Text
+    return "+{amount} hp"
+end
+
+potion = 40
+max_hp = 50
+heal = potion
+    |> doubled
+    // potions can't heal past full
+    |> clamp(low: 0, high: max_hp)
+    // shown as a label over the player
+    |> as_label;
+show_msg(heal)

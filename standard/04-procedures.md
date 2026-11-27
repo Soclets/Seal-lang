@@ -158,11 +158,13 @@ show_msg(be.Text(n))
 
 - **A statement holding a slide ends with `;`,** on one line or split, and a slide inside brackets counts too (D180).
 - **A split slide carries on until its `;`,** each carried line starting with `|>`; a line ending in `|>` is refused
-  (D8). A missing `;` is refused at the slide's last step, with the `;` in the fix (D180):
+  (D8). A missing `;` is refused at the slide's last step, with the `;` in the fix (D180). A comment on a line of its
+  own may stand between steps; a blank line may not (D181):
 
 ```
 heal = potion
     |> doubled
+    // potions can't heal past full
     |> clamp(low: 0, high: max_hp)
     |> as_label;
 total = (points |> doubled |> doubled |> doubled) + 1;

@@ -9,8 +9,10 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 
 ## Since the third prompt was pasted (2026-11-27)
 
-- D180 to build: a statement holding a slide ends with `;`, on one line or split, carried lines starting with `|>`;
-  `d180_slide_ends_with_semicolon` tests it.
+- D181 to build, answering its comment-line reading: a comment on a line of its own may stand between a split slide's
+  steps; a blank line may not. `d181_comment_in_slide` tests it.
+- Its D180 wordings: fine, but the missing-`;` example, `x = 3 |> doubled;`, is a one-step slide D128 refuses; use a
+  chain of three, as `x = 3 |> doubled |> doubled |> be.Text;`.
 - Its D179 and D72 draft wordings (its message of 2026-11-27): all fine as drafted, except that a message naming a
   handler writes it as the script did, `level_failed::begin_again` or `_::begin_again`, not always `_::name`.
 - Its 256-level crossing limit (Building rule 1): fine as it is.

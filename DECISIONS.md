@@ -5557,3 +5557,33 @@ one is caught exactly where it belongs.
 to when you make another var", "Is that grouping?", "Why not just `;`?", "Show me two slide sessions", "show me one
 line ver", "`;` reads better", then, asked "every statement holding a slide ends with `;`, on one line or split,
 with carried lines starting with `|>`", the owner chose: "yea"
+
+(Changed by D181: a comment on a line of its own may stand between a split slide's steps.)
+
+## D181. A split slide can hold whole-line comments between its steps
+
+2026-11-27.
+
+**Chosen.** A comment on a line of its own may stand between a split slide's steps, and the slide carries on past it to
+the next line starting with `|>`:
+
+```
+heal = potion
+    |> doubled
+    // potions can't heal past full
+    |> clamp(low: 0, high: max_hp)
+    |> as_label;
+```
+
+- **A blank line inside a split slide stays refused,** so a slide reads as one block.
+- **A comment after code on a step's line** is the open question about a comment after code inside a bracket; this
+  doesn't settle it.
+
+**Weighed.** Refusing the comment, as Seal Opus Claude's reading of D180 had it: the slide carried on only into a line
+starting with `|>`, so a comment ended it early, without its `;`. A note on why a step is there is what a long slide
+needs most, and a line of its own can't be mistaken for code.
+
+**Why this won.** Long slides get room to explain themselves, and the slide's end is still only ever its `;`.
+
+**Tankun's words.** Asked "allow whole-line comments between a split slide's steps, but not blank lines", the owner
+chose: "yea, back to MC?"
