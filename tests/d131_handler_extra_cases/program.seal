@@ -18,7 +18,7 @@ end
 
 group.handler level_failed
     handles [load_level, load_save]
-    ::start_over
+    _::start_over
         case not_found
             instead 1
         case broken
@@ -26,10 +26,10 @@ group.handler level_failed
     end
 end
 
-a = load_level("ruin") ?? ::start_over
-b = load_save("slot9") ?? ::start_over
+a = load_level("ruin") ?? _::start_over
+b = load_save("slot9") ?? _::start_over
 c = load_save("slot1") ?? level_failed::start_over
 d = load_save("slot2") otherwise
-    include ::start_over
+    include _::start_over
 end
 show_msg("{a} {b} {c} {d}")

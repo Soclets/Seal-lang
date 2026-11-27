@@ -3338,6 +3338,8 @@ of the left", "Ohhh, Idk about name being like that. Since, we usually don't do 
 `group.handler level_failed`, with `handles [ … ]`, members declared as `::start_over`, and `::start_over` usable after
 a handled procedure's call?", the owner chose: "yea"
 
+(Changed by D179: the short form and a member's declaration are written `_::start_over`; a bare `::` is refused.)
+
 ## D111. Units, as Cyborg's, as an optional layer
 
 2026-11-25.
@@ -3758,6 +3760,8 @@ show_msg("{price in dollars}")    // 3.5
 
 **Tankun's words.** "You saw Cyborg's already, right?", then, asked "Should a script declare its own units with
 `group.unit`, members as `::name`, the base marked `base`, and the others defined from it?", the owner chose: "yea"
+
+(Changed by D179: members are declared `_::cents base`.)
 
 ## D124. A `Decimal` never shows `~`
 
@@ -4490,6 +4494,8 @@ takes no word from the language.
 **Tankun's words.** has code (asking what a loop changing `enemy.hp` does), has code (proposing
 `enemies[pos: i].hp = _ - 1`, `_` saying the left side shortly), "So, then `__`?", then, asked "Should Seal write `_` for the current value of what's being
 changed, as `hp = _ - 1`, in place of `+=`-style shorthands?", the owner chose: "yea"
+
+(Changed by D179: `_` is "the one assumed here", allowed in the places D179 lists, so this isn't Seal's only `_`.)
 
 ## D148. Measuring is written `to`, leaving `in` to `for_each`
 
@@ -5450,3 +5456,60 @@ Ngin1 is one implementation of it. The crates' and commands' names stay the buil
 **Why this won.** Tankun's choice, in the family's style.
 
 **Tankun's words.** Unasked: "Btw, the first official Seal interpreter is called Ngin1"
+
+## D179. `_` is the one assumed from where it stands: the short handler form is `_::name`
+
+2026-11-27.
+
+**Chosen.** `_` means "the one Seal assumes here", and it's allowed only in the places a decision lists, each with one
+fixed direction to look in. Anywhere else it's refused. The places so far:
+
+| Where | What `_` assumes | Example |
+|---|---|---|
+| On the right of an `=` that changes a name | the left side's current value (D147) | `hp = _ - 1` |
+| Before `::`, right after a call | the group that handles that call (D110) | `?? _::start_over` |
+| Declaring a member inside a group | the group it's inside | `_::start_over` on its own line |
+
+```
+group.handler level_failed
+    handles [load_level, load_save]
+    _::start_over
+        case not_found
+            instead 1
+        case broken
+            instead 1
+    end
+end
+
+a = load_level("forest") ?? _::start_over
+b = load_save("slot1") ?? level_failed::start_over
+c = load_level("cave") otherwise
+    include _::start_over
+end
+```
+
+- **Every `::` has something on its left,** a group's name or `_`. A bare `::start_over` is refused.
+- **The two jobs never meet:** a value has no `::` members, so `_::` always means a group, and `_` on its own always a
+  value.
+- **The third row covers every group,** unit groups too: `_::cents base` (D123).
+- **A handler that can jump keeps `*`,** as `?? _::*give_up` (Unio D42).
+- **A new place for `_` needs a decision** naming its direction; there's no general "whatever is sensible" rule.
+
+**Weighed.**
+- `^` as the jump mark, so `*` would only multiply, as Tankun first asked. Cyborg's design session, asked by Tankun,
+  said Cyborg took `*` only because Cyborg multiplies with `x`, so it was free there, and saw no reason for Seal to keep
+  it. Tankun turned `^` down, so `*` keeps both jobs, in different places (Unio D60).
+- `::start_over` with nothing on its left, as D110 had it, which the design session recommended, comparing C++'s
+  `::name`. Tankun: a mark joining two things needs something on its left.
+- Giving `_` a second meaning only before `::`, which the design session first warned against as two jobs for one
+  symbol, when `_` already meant the left side (D147). Tankun's reading, "assumed", makes it one job.
+- One loose rule, "`_` assumes from whatever direction is sensible". Each new use would be a guess for the reader.
+
+**Why this won.** `_` keeps one meaning, the thing Seal fills in from where it stands, and every `::` reads the same way,
+something on its left and a member on its right.
+
+**Tankun's words.** "`*` is currently used for two things? We could swap the second use for `^`?", "Lua users also
+read `*` as times?", "Why for the sake of matching Unio and Cyborg? Ask Unio design claude and Cyborg design claude",
+"That's not how you use a dot", "Nope. Should it be `_::` instead?", "`_` just means assumed, then", "It could assume
+from the sensible direction in separate situations?", then, asked "allowed only in those three places, each with the
+direction in the table", the owner chose: "yea"

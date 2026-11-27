@@ -121,13 +121,13 @@ Seal's own unit groups are (D113):
 measured time in `secs per frames`. Other units, as money or a game's own, a script or host declares as a group of
 its own (D113).
 
-A script declares a unit group of its own with `group.unit`, its members written `::name`, one of them marked `base`,
-and each other one defined as so many of an earlier unit (D123):
+A script declares a unit group of its own with `group.unit`, its members written `_::name` (D179), one of them marked
+`base`, and each other one defined as so many of an earlier unit (D123):
 
 ```
 group.unit money
-    ::cents base
-    ::dollars = 100 cents
+    _::cents base
+    _::dollars = 100 cents
 end
 
 price = 3 dollars + 50 cents             // 350 cents

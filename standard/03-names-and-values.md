@@ -40,7 +40,20 @@ unused saved = save(game) ?? 0
   outside are visible inside, and while a name exists it can't be made again: `name = value` changes it (D56, Unio
   D93, D94).
 
-## `_`: what's being changed
+## `_`: the one assumed here
+
+`_` stands for the one Seal assumes from where it stands, and is allowed only in these places, each with one fixed
+direction to look in; anywhere else it's refused (D179):
+
+| Where | What `_` assumes | Example |
+|---|---|---|
+| On the right of an `=` that changes a name | the left side's current value | `hp = _ - 1` |
+| Before `::`, right after a call | the group that handles that call (chapter 7) | `?? _::start_over` |
+| Declaring a member inside a group | the group it's inside (chapters 6 and 7) | `_::start_over` |
+
+A value has no `::` members, so `_::` always means a group, and `_` on its own always a value.
+
+### What's being changed
 
 On the right of an `=` that changes a name, `_` is that name's current value, or the current value of whatever part of
 it is being changed (D147):
@@ -55,8 +68,8 @@ enemies[pos: i].hp = _ - 1
 - **It works with anything,** maths, calls or facts, so Seal has no `+=` and its kin.
 - **The left side is worked out once,** positions and keys included, and `_` reads it.
 - **It can appear more than once,** as `x = _ * _`.
-- **It's refused where nothing is being changed:** when the `=` makes a new name, and anywhere outside the right of a
-  changing `=`. The name must be `mut`, as for any change (D2).
+- **It's refused where nothing is being changed:** when the `=` makes a new name. The name must be `mut`, as for any
+  change (D2).
 - `_` alone is never a name, since a name never starts with `_` (D24).
 
 ## Spelling

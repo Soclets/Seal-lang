@@ -13,7 +13,7 @@ end
 
 group.handler level_failed
     handles [load_level]
-    ::start_at[level: Whole]
+    _::start_at[level: Whole]
         case not_found
             instead level
     end
@@ -21,6 +21,6 @@ end
 
 a = load_level("cave") ?? noisy(1)
 b = load_level("swamp") ?? noisy(2)
-c = load_level("cave") ?? ::start_at(noisy(3))
-d = load_level("swamp") ?? ::start_at(noisy(4))
+c = load_level("cave") ?? _::start_at(noisy(3))
+d = load_level("swamp") ?? _::start_at(noisy(4))
 show_msg("{a} {b} {c} {d}")
