@@ -489,6 +489,9 @@ From `design/seal-next-prompt.md`, each step committed and pushed:
 - [x] **C21. `_::` (D179).** A group's members are declared `_::name`, a call's handler is `?? _::name` or
   `include _::name`, and a bare `::` is refused with the line, `_` added, as the fix. Messages name members as
   `_::name`.
+- [x] **C23. `;` ends a statement holding a slide (D180).** A split slide carries on into lines starting with `|>`,
+  indented one level deeper; a missing `;` is refused at the slide's last step with the `;` in the fix; a `;`
+  anywhere else is refused.
 - [ ] **C22. D171 within twice LuaJIT's time** in the full benchmark run. In a loop of 1,000 different files: about
   650 ns a load this morning; 515 ns with Seal's own type table shared rather than copied and compared again; 474 ns
   with plain crossings read on the spot and an eight-lane checksum.
@@ -575,7 +578,15 @@ what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole li
 (Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
 marked.
 
-**New on 2026-11-27 (C19 to C21), sent to the design session:** C21's, for D179:
+**New on 2026-11-27 (C19 to C23), sent to the design session:** C23's, for D180:
+- refused, a missing `;`: fix: the slide's last line with `;` added
+  - why: `|>` points on to the next step, so a `;` says where the slide ends.
+- refused, a `;` on a statement with no slide: fix: the line without it
+  - why: the end of a line ends a statement; a `;` marks where a slide ends, since `|>` points on.
+- refused, a `;` inside brackets or with more after it: a `;` comes only at the end of a statement holding a slide
+  - why: the end of a line ends a statement, and a `;` marks where a slide ends; two statements never share a line.
+
+C21's, for D179:
 - refused, a bare `::`: fix: the line with `_` before the `::`
   - why: `::` reaches into a group, so something always stands on its left: the group's name, or `_` for the one assumed from where it stands.
 - refused: a handler group holds only handlers, each `_::name` / a unit group holds only units, each `_::name`

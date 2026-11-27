@@ -372,6 +372,10 @@ struct Lexer<'a> {
     mistakes: Vec<SpacingMistake>,
     /// The `///` comment waiting for the line it describes.
     documented: Option<Place>,
+    /// Whether the statement being read ended its slide with `;` (D180).
+    slide_ended: bool,
+    /// Whether the statement carries a slide on to its next line, which starts with `|>` (D180).
+    carrying: bool,
 }
 
 /// Splits a script's text into logical lines of tokens.
@@ -393,6 +397,8 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
         type_depth: 0,
         mistakes: Vec::new(),
         documented: None,
+        slide_ended: false,
+        carrying: false,
     };
     lexer.tokens.reserve(source.len() / 3);
     lexer.lines.reserve(source.len() / 24);
@@ -410,7 +416,8 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
     // for one only when the script has one.
     let has_carriage_return = source.as_bytes().contains(&b'\r');
     // One line's characters, and where each starts in the line's text, in room that every line reuses.
-    for (index, text) in physical_lines(source).enumerate() {
+    let mut physical = physical_lines(source).enumerate().peekable();
+    while let Some((index, text)) = physical.next() {
         let number = u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1);
         characters.clear();
         offsets.clear();
@@ -513,7 +520,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
                 wanted: 0,
             });
         }
-        let continued = !lexer.open_brackets.is_empty();
+        let continued = !lexer.open_brackets.is_empty() || lexer.carrying;
         let rest = characters.get(leading..).unwrap_or(&[]);
         // trace: D63, D91, Unio D74. A line that's only a comment, inside an open bracket too.
         if rest.starts_with(&['/', '/']) {
@@ -566,7 +573,19 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             lexer.current_place = Place::new(number, column_of(leading), width.saturating_sub(column_of(leading) - 1));
         }
         lexer.line(number, (&characters, text, &offsets), leading, continued)?;
+        lexer.carrying = false;
         if lexer.open_brackets.is_empty() {
+            // trace: D180. A statement holding a slide carries on to a line starting with `|>`, and otherwise ends
+            // with `;`.
+            if !lexer.slide_ended {
+                if physical.peek().is_some_and(|(_, next)| next.trim_start().starts_with("|>")) {
+                    lexer.carrying = true;
+                    continue;
+                }
+                if lexer.holds_slide() {
+                    return Err(lexer.missing_semicolon(text));
+                }
+            }
             lexer.finish_line(source)?;
         }
     }
@@ -595,11 +614,20 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
 /// right before a line break is part of the line break (D63, Unio D144).
 fn physical_lines(source: &str) -> impl Iterator<Item = &str> {
     let body = source.strip_suffix('\n').unwrap_or(source);
-    (!source.is_empty())
-        .then(|| body.split('\n'))
-        .into_iter()
-        .flatten()
-        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+    let mut rest = (!source.is_empty()).then_some(body);
+    // A plain look for each line's end: a script's lines are short, where a general search costs more to start
+    // than it saves (D140).
+    std::iter::from_fn(move || {
+        let text = rest?;
+        let line = if let Some(end) = text.bytes().position(|byte| byte == b'\n') {
+            rest = text.get(end + 1..);
+            text.get(..end).unwrap_or_default()
+        } else {
+            rest = None;
+            text
+        };
+        Some(line.strip_suffix('\r').unwrap_or(line))
+    })
 }
 
 /// Checks the comment lines waiting for this one: each is indented like it, or one level in when it's an `end`, an
@@ -666,7 +694,24 @@ impl<'a> Lexer<'a> {
             documented,
         });
         self.line_start = self.tokens.len();
+        self.slide_ended = false;
         Ok(())
+    }
+
+    /// Whether the statement being read holds a slide, `|>` (D180).
+    fn holds_slide(&self) -> bool {
+        self.current().iter().any(|token| matches!(token.kind, TokenKind::Symbol(Symbol::Slide)))
+    }
+
+    /// trace: D180. A statement holding a slide that ends without `;`, refused at the slide's last step.
+    fn missing_semicolon(&self, line: &str) -> Message {
+        let tokens = self.current();
+        let last_slide = tokens.iter().rposition(|token| matches!(token.kind, TokenKind::Symbol(Symbol::Slide)));
+        let step = last_slide.and_then(|at| tokens.get(at + 1)).map_or(self.current_place, |token| token.place);
+        let place = tokens.last().map_or(step, |last| step.to(last.place));
+        Message::refused(place, "a statement holding a slide ends with `;`")
+            .with_fix(format!("{};", line.trim_end()))
+            .with_why("`|>` points on to the next step, so a `;` says where the slide ends.")
     }
 
     /// The tokens of the statement being read.
@@ -927,9 +972,31 @@ impl<'a> Lexer<'a> {
                         (':', _) => (Symbol::Colon, 1),
                         ('.', _) => (Symbol::Dot, 1),
                         (';', _) => {
-                            // trace: D8
-                            return Err(Message::refused(place_of(1), "a statement has no `;`")
-                                .with_why("the end of a line ends its statement."));
+                            // trace: D8, D180. A `;` ends a statement holding a slide, and does nothing else.
+                            let after: String = characters.get(index + 1..).unwrap_or(&[]).iter().collect();
+                            let ends_line = after.trim_start().is_empty() || after.trim_start().starts_with("//");
+                            if !self.open_brackets.is_empty() || !ends_line {
+                                return Err(Message::refused(place_of(1), "a `;` comes only at the end of a statement holding a slide")
+                                    .with_why("the end of a line ends a statement, and a `;` marks where a slide ends; two statements never share a line."));
+                            }
+                            if !self.holds_slide() {
+                                let before: String =
+                                    characters.get(..index - spaces as usize).unwrap_or(&[]).iter().collect();
+                                return Err(Message::refused(place_of(1), "only a statement holding a slide ends with `;`")
+                                    .with_fix(format!("{before}{after}").trim_end().to_owned())
+                                    .with_why("the end of a line ends a statement; a `;` marks where a slide ends, since `|>` points on."));
+                            }
+                            if spaces > 0 {
+                                self.mistakes.push(SpacingMistake {
+                                    line: number,
+                                    column: column - spaces,
+                                    actual: spaces,
+                                    wanted: 0,
+                                });
+                            }
+                            self.slide_ended = true;
+                            index += 1;
+                            continue;
                         }
                         ('$', _) => {
                             // trace: D7

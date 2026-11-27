@@ -1,5 +1,5 @@
 {
-  "passed": 32,
+  "passed": 33,
   "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
@@ -33,6 +33,7 @@
     "d166_number_requirement": { "status": "pass" },
     "d168_requirements": { "status": "pass" },
     "d172_for_counts": { "status": "pass" },
-    "d179_underscore_assumed": { "status": "pass" }
+    "d179_underscore_assumed": { "status": "pass" },
+    "d180_slide_ends_with_semicolon": { "status": "pass" }
   }
 }

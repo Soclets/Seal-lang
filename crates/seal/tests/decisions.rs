@@ -624,3 +624,18 @@ fn d179_a_bare_path_is_refused_with_underscore_as_the_fix() {
     let unit = "group.unit money\n    ::cents base\nend\nx = 1 cents\nshow_msg(\"{x}\")\n";
     assert!(refusal(unit).contains("    _::cents base"), "{}", refusal(unit));
 }
+
+// trace: D180
+#[test]
+fn d180_a_statement_holding_a_slide_ends_with_a_semicolon() {
+    let doubled = "proc doubled[n: Whole] -> Whole\n    return n * 2\nend\n\n";
+    assert_eq!(shows(&format!("{doubled}x = 3\n    |> doubled\n    |> doubled\n    |> doubled;\nshow_msg(\"{{x}}\")\n")), ["24"]);
+    let missing = refusal(&format!("{doubled}x = 3 |> doubled\nshow_msg(\"{{x}}\")\n"));
+    assert!(missing.contains("`x = 3 |> doubled;`"), "{missing}");
+    let split = refusal(&format!("{doubled}x = 3\n    |> doubled\ny = 1\nshow_msg(\"{{x}} {{y}}\")\n"));
+    assert!(split.contains("`    |> doubled;`"), "{split}");
+    let plain = refusal("x = 3;\nshow_msg(\"{x}\")\n");
+    assert!(plain.contains("`x = 3`") && plain.contains("a `;` marks where a slide ends"), "{plain}");
+    let two = refusal(&format!("{doubled}x = 3 |> doubled; y = 2\nshow_msg(\"{{x}}\")\n"));
+    assert!(two.contains("two statements never share a line"), "{two}");
+}

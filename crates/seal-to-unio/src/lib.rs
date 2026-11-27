@@ -589,7 +589,7 @@ mod tests {
     // trace: D19, Unio D128
     #[test]
     fn d19_three_calls_in_a_chain_become_a_slide() {
-        let source = "points = 2.5\npoints |> sqrt |> be.Text |> show_msg\n";
+        let source = "points = 2.5\npoints |> sqrt |> be.Text |> show_msg;\n";
         let unio = translate(source, &test_host_doors()).unwrap_or_default();
         assert!(unio.contains("points |> sqrt |> be.Text |> show_msg;"), "{unio}");
     }

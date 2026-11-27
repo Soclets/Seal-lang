@@ -1698,7 +1698,7 @@ impl Generator {
 }
 
 /// The words and symbols of Seal, for scripts made of nothing but them.
-pub const VOCABULARY: [&str; 82] = [
+pub const VOCABULARY: [&str; 83] = [
     "mut",
     "unused",
     "if",
@@ -1776,6 +1776,7 @@ pub const VOCABULARY: [&str; 82] = [
     "/",
     "&",
     "|>",
+    ";",
     "??",
     "\\\\",
     "\"{newln}\"",

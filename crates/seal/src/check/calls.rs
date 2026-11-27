@@ -138,7 +138,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     place,
                     format!("this is a chain of {length} calls, each inside the next, and three or more are written as a slide"),
-                    "a slide reads in the order it runs, as in `points |> double |> be.Text |> show_msg`.",
+                    "a slide reads in the order it runs, as in `points |> double |> be.Text |> show_msg;`.",
                 );
             }
         }
