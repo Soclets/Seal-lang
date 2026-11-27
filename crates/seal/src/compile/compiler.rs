@@ -138,7 +138,7 @@ pub fn compile(program: &Program, doors: &[DoorSignature]) -> Result<Compiled, M
 pub fn compile_taking(mut program: Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiled = compile_parts(&program, doors, plain)?;
     compiled.failure_names = std::mem::take(&mut program.failure_names).into();
-    compiled.types = std::mem::take(&mut program.types);
+    compiled.types = std::sync::Arc::new(std::mem::take(&mut program.types));
     for (procedure, checked) in compiled.procedures.as_mut_vec().iter_mut().zip(&mut program.procedures) {
         procedure.name = std::mem::take(&mut checked.name);
         for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {
@@ -159,7 +159,7 @@ pub fn compile_taking(mut program: Program, doors: &[DoorSignature], plain: bool
 pub fn compile_as(program: &Program, doors: &[DoorSignature], plain: bool) -> Result<Compiled, Message> {
     let mut compiled = compile_parts(program, doors, plain)?;
     compiled.failure_names = program.failure_names.clone().into();
-    compiled.types = program.types.clone();
+    compiled.types = std::sync::Arc::new(program.types.clone());
     for (procedure, checked) in compiled.procedures.as_mut_vec().iter_mut().zip(&program.procedures) {
         procedure.name.clone_from(&checked.name);
         for (parameter, &variable) in procedure.parameters.iter_mut().zip(&checked.parameters) {

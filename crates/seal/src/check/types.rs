@@ -345,6 +345,19 @@ impl TypeTable {
         BASE.get_or_init(TypeTable::base).clone()
     }
 
+    /// Seal's own table, as `TypeTable::new` makes it, shared: what a compiled script that adds no types holds.
+    #[must_use]
+    pub fn shared_own() -> std::sync::Arc<TypeTable> {
+        static OWN: std::sync::OnceLock<std::sync::Arc<TypeTable>> = std::sync::OnceLock::new();
+        OWN.get_or_init(|| std::sync::Arc::new(TypeTable::new())).clone()
+    }
+
+    /// Whether this is the very table [`TypeTable::shared_own`] gives.
+    #[must_use]
+    pub fn is_shared_own(table: &std::sync::Arc<TypeTable>) -> bool {
+        std::sync::Arc::ptr_eq(table, &Self::shared_own())
+    }
+
     /// Whether the table holds Seal's own types and unit groups and nothing else, as `TypeTable::new` makes it.
     fn only_seal_own(&self) -> bool {
         self.types.len() == FIXED_TYPES
@@ -355,7 +368,10 @@ impl TypeTable {
             && self.parameters.is_empty()
             && self.requirement_names.is_empty()
             && self.meets.is_empty()
-            && *self.unit_groups == *Self::seal_groups()
+            && {
+                let own = Self::seal_groups();
+                std::sync::Arc::ptr_eq(&self.unit_groups, &own) || *self.unit_groups == *own
+            }
     }
 
     /// Seal's own unit groups, shared, which every table starts with (D113).
@@ -1026,9 +1042,10 @@ impl TypeTable {
     ///
     /// When the file ends, or a part of it isn't a type's.
     #[allow(clippy::too_many_lines)] // one case per kind of type, then each list in turn
-    pub fn read_file(input: &mut Reader) -> Result<TypeTable, FileError> {
+    pub fn read_file(input: &mut Reader) -> Result<std::sync::Arc<TypeTable>, FileError> {
+        // trace: D171. Seal's own table alone is shared by every script read with it, never copied or checked again.
         if input.flag()? {
-            return Ok(TypeTable::new());
+            return Ok(TypeTable::shared_own());
         }
         let unit = |input: &mut Reader| -> Result<UnitRef, FileError> {
             Ok(UnitRef { group: input.u16()?, member: input.u16()? })
@@ -1145,7 +1162,7 @@ impl TypeTable {
         }
         // Only checking looks types up by their kind, and a script from a file is checked already, so its table
         // has nothing to look up with: anything made from it later is simply a new type.
-        Ok(TypeTable {
+        Ok(std::sync::Arc::new(TypeTable {
             types,
             interned: HashMap::new(),
             bindings,
@@ -1158,7 +1175,7 @@ impl TypeTable {
             required,
             requirement_names,
             meets,
-        })
+        }))
     }
 
     /// trace: D141. Checks a table read from a file: every type it names is in it, every record, `one_of`, unit,

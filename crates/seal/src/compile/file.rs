@@ -66,7 +66,7 @@ impl std::fmt::Display for FileError {
 /// file damaged by chance, never one changed on purpose (D141).
 #[must_use]
 pub fn hash(bytes: &[u8]) -> u64 {
-    // Four lanes of eight bytes each, worked on side by side, so the processor needn't wait on one to start the next
+    // Eight lanes of eight bytes each, worked on side by side, so the processor needn't wait on one to start the next
     // (D171); then joined, and what's left over added a word or a byte at a time.
     const MULTIPLY: u64 = 0x9e37_79b9_7f4a_7c15;
     let word = |eight: &[u8]| {
@@ -83,8 +83,12 @@ pub fn hash(bytes: &[u8]) -> u64 {
         0x8422_2325_cbf2_9ce4,
         0x2545_f491_4f6c_dd1d,
         0x9e37_79b9_7f4a_7c15,
+        0x6a09_e667_f3bc_c908,
+        0xbb67_ae85_84ca_a73b,
+        0x3c6e_f372_fe94_f82b,
+        0xa54f_f53a_5f1d_36f1,
     ];
-    let mut blocks = bytes.chunks_exact(32);
+    let mut blocks = bytes.chunks_exact(64);
     for block in &mut blocks {
         for (lane, eight) in lanes.iter_mut().zip(block.chunks_exact(8)) {
             *lane = mix(*lane, word(eight));
@@ -1044,7 +1048,23 @@ fn write_crossing(crossing: &Crossing, out: &mut Writer) {
     }
 }
 
+#[inline]
 fn read_crossing(input: &mut Reader, depth: u32) -> Result<Crossing, FileError> {
+    // trace: D171. Nearly every crossing is a plain value's, read here with nothing more to it.
+    let plain = match input.bytes.get(input.at) {
+        Some(0) => Crossing::Nothing,
+        Some(1) => Crossing::Whole,
+        Some(2) => Crossing::Float,
+        Some(3) => Crossing::Bool,
+        Some(4) => Crossing::Text,
+        _ => return read_crossing_inside(input, depth),
+    };
+    input.at += 1;
+    Ok(plain)
+}
+
+#[inline(never)]
+fn read_crossing_inside(input: &mut Reader, depth: u32) -> Result<Crossing, FileError> {
     if depth > DEEPEST {
         return Err(FileError::Damaged("a type nested too deep"));
     }
@@ -1533,6 +1553,9 @@ fn verify_procedures(compiled: &Compiled, door_count: usize, starts: &mut Vec<(u
     }
     if compiled.built_in_failures.iter().any(|&failure| failure as usize > compiled.failure_names.count()) {
         return Err("a failure that isn't one of the script's".to_owned());
+    }
+    if TypeTable::is_shared_own(&compiled.types) {
+        return Ok(());
     }
     compiled.types.verify()
 }

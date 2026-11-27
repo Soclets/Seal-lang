@@ -1308,7 +1308,8 @@ pub struct Compiled {
     /// The numbers of the built-in failures `missing`, `not_a_whole` and `full`, 0 for one the script never meets.
     pub built_in_failures: [u32; 3],
     /// Each procedure's name, by the place its instructions start, for messages.
-    pub types: TypeTable,
+    /// Shared: a script that adds no types holds Seal's own table, the same one for every such script (D171).
+    pub types: std::sync::Arc<TypeTable>,
 }
 
 /// trace: D173, D140. The lists a compiled script read from a `.sealc` file needs most, kept on the thread when one is
