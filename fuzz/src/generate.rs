@@ -924,8 +924,8 @@ impl Generator {
             // trace: D98, D110. A handler on one line, short or with its group.
             let handler = *self
                 .random
-                .pick(&["::zero", "low_failed::zero", "::with(3)", "low_failed::with(-1)"])
-                .unwrap_or(&"::zero");
+                .pick(&["_::zero", "low_failed::zero", "_::with(3)", "low_failed::with(-1)"])
+                .unwrap_or(&"_::zero");
             format!("({call} ?? {handler})")
         } else {
             format!("({call} ?? {fallback})")
@@ -1413,7 +1413,7 @@ impl Generator {
                     if procedure.fails && self.handlers && self.random.chance(1, 2) {
                         // trace: D98, D110, Unio D43. A handler on one line, or brought into a block.
                         if self.random.chance(1, 2) {
-                            self.line(&format!("{call} ?? ::note"));
+                            self.line(&format!("{call} ?? _::note"));
                         } else {
                             self.line(&format!("{call} otherwise"));
                             self.depth += 1;
@@ -1665,7 +1665,7 @@ impl Generator {
         }
         // trace: D123. Now and then a unit group of the script's own.
         if self.seal() && self.random.chance(1, 3) {
-            self.out.push_str("group.unit coins\n    ::bits base\n    ::stacks = 12 bits\nend\n\n");
+            self.out.push_str("group.unit coins\n    _::bits base\n    _::stacks = 12 bits\nend\n\n");
             self.coins = true;
         }
         for _ in 0..self.random.below(4) {
@@ -1683,7 +1683,7 @@ impl Generator {
         if self.seal() && !failing.is_empty() {
             let _ = write!(
                 self.out,
-                "group.handler low_failed\n    handles [{}]\n    ::zero\n        case too_low\n            instead 0\n    end\n    ::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ ::with\n    ::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
+                "group.handler low_failed\n    handles [{}]\n    _::zero\n        case too_low\n            instead 0\n    end\n    _::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ _::with\n    _::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
                 failing.join(", ")
             );
             self.handlers = true;

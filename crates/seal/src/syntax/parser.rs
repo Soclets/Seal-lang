@@ -786,10 +786,13 @@ impl<'a> Parser<'a> {
         }
         let mut members = Vec::new();
         while self.in_body(&opener)? {
-            if !self.at_symbol(Symbol::Path) {
-                return Err(Message::refused(self.line_place(), "a handler group holds only handlers, each `::name`")
+            if self.at_symbol(Symbol::Path) {
+                return Err(self.bare_path());
+            }
+            if !self.at_assumed_path() {
+                return Err(Message::refused(self.line_place(), "a handler group holds only handlers, each `_::name`")
                     .with_why(
-                        "a handler group's members are written with the `::` they're reached with, as `::start_over`.",
+                        "a handler group's members are written with the `_::` that reaches them from inside it, as `_::start_over`.",
                     ));
             }
             self.block_depth += 1;
@@ -800,13 +803,14 @@ impl<'a> Parser<'a> {
         Ok(HandlerGroup { name, handles, members, place: opener.place })
     }
 
-    /// One handler: `::name[parameters]`, its `labels` and `defaults`, and its cases (D110, Unio D42, D44).
+    /// One handler: `_::name[parameters]`, its `labels` and `defaults`, and its cases (D110, D179, Unio D42, D44).
     fn handler(&mut self) -> Result<Handler<'a>, Message> {
-        let mut opener = self.opener("::");
+        let mut opener = self.opener("_::");
+        self.advance();
         self.expect_symbol(Symbol::Path)?;
         let name = self.expect_name("the handler's name")?;
-        opener.note = Note::new("::", name.text);
-        let parameters = self.parameters(&format!("::{}", name.text), name.text)?;
+        opener.note = Note::new("_::", name.text);
+        let parameters = self.parameters(&format!("_::{}", name.text), name.text)?;
         self.end_line()?;
         let (labels, labels_any_order, defaults) = self.labels_and_defaults(&opener)?;
         let mut cases = Vec::new();
@@ -822,14 +826,18 @@ impl<'a> Parser<'a> {
         Ok(Handler { name, parameters, labels, labels_any_order, defaults, cases, place: opener.place })
     }
 
-    /// A handler where it's used, after `??` or `include`: `::name`, `group::name`, `*` before a name that can jump,
-    /// and the arguments in `( )` (D98, D110, Unio D42, D44).
+    /// A handler where it's used, after `??` or `include`: `_::name` for the groups handling the call, `group::name`,
+    /// `*` before a name that can jump, and the arguments in `( )` (D98, D110, D179, Unio D42, D44).
     fn handler_use(&mut self) -> Result<HandlerUse<'a>, Message> {
         let place = self.here();
-        let group = if matches!(self.peek_kind(), Some(TokenKind::Name(_))) {
-            Some(self.expect_name("a handler group's name")?)
-        } else {
-            None
+        let group = match self.peek_kind() {
+            Some(TokenKind::Name(_)) => Some(self.expect_name("a handler group's name")?),
+            Some(TokenKind::Underscore) => {
+                self.advance();
+                None
+            }
+            Some(TokenKind::Symbol(Symbol::Path)) => return Err(self.bare_path()),
+            _ => None,
         };
         self.expect_symbol(Symbol::Path)?;
         let jumps = self.at_symbol(Symbol::Star);
@@ -848,7 +856,7 @@ impl<'a> Parser<'a> {
         Ok(HandlerUse { group, name, jumps, arguments, place: place.to(self.previous_place()) })
     }
 
-    /// trace: D123. `group.unit name`, then each member: `::name base`, or `::name = amount unit`.
+    /// trace: D123, D179. `group.unit name`, then each member: `_::name base`, or `_::name = amount unit`.
     fn unit_group(&mut self) -> Result<UnitGroup<'a>, Message> {
         let mut opener = self.opener("group.unit");
         self.advance();
@@ -859,12 +867,16 @@ impl<'a> Parser<'a> {
         self.end_line()?;
         let mut members = Vec::new();
         while self.in_body(&opener)? {
-            if !self.at_symbol(Symbol::Path) {
-                return Err(Message::refused(self.line_place(), "a unit group holds only units, each `::name`")
+            if self.at_symbol(Symbol::Path) {
+                return Err(self.bare_path());
+            }
+            if !self.at_assumed_path() {
+                return Err(Message::refused(self.line_place(), "a unit group holds only units, each `_::name`")
                     .with_why(
-                        "a unit group's members are written with the `::` they're reached with, as `::cents base`.",
+                        "a unit group's members are written with the `_::` that reaches them from inside it, as `_::cents base`.",
                     ));
             }
+            self.advance();
             self.advance();
             let member = self.expect_name("a unit's name")?;
             let size = if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "base") {
@@ -924,10 +936,27 @@ impl<'a> Parser<'a> {
         Ok(UnitWritten { top, point, per, place: start.to(self.previous_place()) })
     }
 
-    /// Whether a handler is written here: `::name`, or a group's name and `::`.
+    /// Whether `_::` starts here: a member of the group around it, or one the call before it is handled by (D179).
+    fn at_assumed_path(&self) -> bool {
+        matches!(self.peek_kind(), Some(TokenKind::Underscore))
+            && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path)))
+    }
+
+    /// trace: D179. A `::` with nothing on its left, refused with the line as it's written now, `_` before it.
+    fn bare_path(&self) -> Message {
+        let at = self.here();
+        let line = self.physical_line(at.line);
+        let start = at.column.saturating_sub(1) as usize;
+        let fixed: String = line.chars().take(start).chain("_".chars()).chain(line.chars().skip(start)).collect();
+        Message::refused(at, "a `::` has a group's name or `_` on its left")
+            .with_fix(fixed)
+            .with_why("`::` reaches into a group, so something always stands on its left: the group's name, or `_` for the one assumed from where it stands.")
+    }
+
+    /// Whether a handler is written here: `_::name`, or a group's name and `::`, or a bare `::` to refuse.
     fn at_handler(&self) -> bool {
         self.at_symbol(Symbol::Path)
-            || (matches!(self.peek_kind(), Some(TokenKind::Name(_)))
+            || (matches!(self.peek_kind(), Some(TokenKind::Name(_) | TokenKind::Underscore))
                 && matches!(self.peek_at(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path))))
     }
 
@@ -1306,7 +1335,7 @@ impl<'a> Parser<'a> {
             if matches!(self.peek_kind(), Some(TokenKind::Name(word)) if *word == "include")
                 && matches!(
                     self.peek_at(1).map(|token| &token.kind),
-                    Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_))
+                    Some(TokenKind::Symbol(Symbol::Path) | TokenKind::Name(_) | TokenKind::Underscore)
                 )
             {
                 self.advance();

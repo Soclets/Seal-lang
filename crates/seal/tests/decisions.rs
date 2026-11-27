@@ -138,13 +138,13 @@ fn d103_d104_settings_and_defaults_from_plain_values() {
 /// Two procedures that fail as the handler tests' handlers expect.
 const LOADERS: &str = "proc load_level[name: Text] -> Whole ! [not_found, broken]\n    if name eq \"forest\"\n        fail not_found\n    elif name eq \"swamp\"\n        fail broken\n    else\n        return 7\n    end\nend\n\nproc load_save[slot: Text] -> Whole ! [not_found, broken]\n    if slot eq \"slot1\"\n        fail not_found\n    elif slot eq \"slot2\"\n        fail broken\n    else\n        return 2\n    end\nend\n\n";
 
-const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_save]\n    ::start_over\n        case not_found\n            instead 1\n        case broken\n            instead 1\n    end \\\\ ::start_over\n    ::start_at[level: Whole]\n        labels [level as level]\n        case not_found\n            instead level\n        case broken\n            instead level\n    end\n    ::give_up\n        case not_found\n            return\n        case broken\n            return\n    end\nend \\\\ group.handler level_failed\n\n";
+const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_save]\n    _::start_over\n        case not_found\n            instead 1\n        case broken\n            instead 1\n    end \\\\ _::start_over\n    _::start_at[level: Whole]\n        labels [level as level]\n        case not_found\n            instead level\n        case broken\n            instead level\n    end\n    _::give_up\n        case not_found\n            return\n        case broken\n            return\n    end\nend \\\\ group.handler level_failed\n\n";
 
 // trace: D97, D98, D110, Unio D42, D43, D44
 #[test]
 fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
     let script = format!(
-        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? ::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? ::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include ::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include ::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
+        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? _::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? _::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include _::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include _::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
     );
     assert_eq!(shows(&script), ["1 3 7 9", "after"]);
 }
@@ -153,19 +153,20 @@ fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
 #[test]
 fn d110_handler_refusals() {
     let with = |line: &str| format!("{LOADERS}{GROUP}{line}\nshow_msg(\"{{a}}\")\n");
-    assert!(refusal(&with("a = load_level(\"x\") ?? ::give_up")).contains("::*give_up"));
-    assert!(refusal(&with("a = load_level(\"x\") ?? ::*start_over")).contains("takes no `*`"));
-    assert!(refusal(&with("a = load_level(\"x\") ?? ::begin_again")).contains("has `::begin_again`"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? _::give_up")).contains("::*give_up"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? _::*start_over")).contains("takes no `*`"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? _::begin_again")).contains("has `_::begin_again`"));
     assert!(
-        refusal(&with("a = load_level(\"x\") ?? level_failed::begin_again")).contains("has no handler `::begin_again`")
+        refusal(&with("a = load_level(\"x\") ?? level_failed::begin_again"))
+            .contains("has no handler `_::begin_again`")
     );
     let one_line = refusal(&with("a = load_level(\"x\") otherwise level_failed::start_over"));
     assert!(one_line.contains("a = load_level(\"x\") ?? level_failed::start_over"), "{one_line}");
     let twice =
-        with("a = load_level(\"x\") otherwise\n    include ::start_over\n    case broken\n        instead 2\nend");
+        with("a = load_level(\"x\") otherwise\n    include _::start_over\n    case broken\n        instead 2\nend");
     assert!(refusal(&twice).contains("handled twice"), "{}", refusal(&twice));
     let second = GROUP.replace("group.handler level_failed", "group.handler save_failed");
-    let both = format!("{LOADERS}{GROUP}{second}a = load_level(\"x\") ?? ::start_over\nshow_msg(\"{{a}}\")\n");
+    let both = format!("{LOADERS}{GROUP}{second}a = load_level(\"x\") ?? _::start_over\nshow_msg(\"{{a}}\")\n");
     assert!(refusal(&both).contains("could be"), "{}", refusal(&both));
     assert!(refusal("fam.handler level_failed\nend\n").contains("`group.handler`"));
 }
@@ -227,11 +228,11 @@ fn d121_points_and_spans() {
 
 #[test]
 fn d123_a_script_declares_its_own_units() {
-    let script = "group.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\nprice = 3 dollars + 50 cents\nshow_msg(\"{price} {price to dollars}\")\n";
+    let script = "group.unit money\n    _::cents base\n    _::dollars = 100 cents\nend\nprice = 3 dollars + 50 cents\nshow_msg(\"{price} {price to dollars}\")\n";
     assert_eq!(shows(script), ["350 cents 3.5"]);
-    let inexact = "group.unit length\n    ::m base\n    ::ft = ~0.3048 m\nend\nlong: Whole[unit: m] = 10 ft\nshow_msg(\"{long}\")\n";
+    let inexact = "group.unit length\n    _::m base\n    _::ft = ~0.3048 m\nend\nlong: Whole[unit: m] = 10 ft\nshow_msg(\"{long}\")\n";
     assert!(refusal(inexact).contains("isn't always a whole number"));
-    let two_bases = "group.unit money\n    ::cents base\n    ::dollars base\nend\nx = 1 cents\nshow_msg(\"{x}\")\n";
+    let two_bases = "group.unit money\n    _::cents base\n    _::dollars base\nend\nx = 1 cents\nshow_msg(\"{x}\")\n";
     assert!(refusal(two_bases).contains("exactly one"));
 }
 
@@ -334,7 +335,7 @@ fn d127_operations_on_the_new_number_types() {
 // trace: D107, D115, D120
 #[test]
 fn d115_a_huge_whole_takes_units_and_limits() {
-    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    return v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold to cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    ::cents base\n    ::dollars = 100 cents\nend\n";
+    let script = "mut x: HugeWhole[min.clamp: 0, max.clamp: 1000] = 5\nx = x * 1000\nbig: HugeWhole = 99999999999999999999\ny: HugeWhole[max.clamp: 7] = big\nproc cap[v: HugeWhole[min.clamp: 10]] -> HugeWhole\n    return v\nend\nz = cap(3)\nmut gold: HugeWhole[unit: cents] = 250 cents\ngold = gold + 2 dollars\nw = gold to cents\nmore = gold > 3 dollars\nshow_msg(\"{x} {y} {z} {gold} {w} {more}\")\ngroup.unit money\n    _::cents base\n    _::dollars = 100 cents\nend\n";
     assert_eq!(shows(script), ["1000 7 10 450 cents 450 true"]);
     assert!(refusal("h: HugeWhole[min: 0] = -5\nshow_msg(\"{h}\")\n").contains("below its type's `min: 0`"));
     assert!(refusal("d: Decimal[min: 0] = 5\nshow_msg(\"{d}\")\n").contains("isn't decided yet"));
@@ -361,10 +362,10 @@ fn d146_d157_d158_return_for_each_and_eq_are_the_words() {
 // trace: D131, Unio D42
 #[test]
 fn d131_a_handler_missing_a_case_after_question_marks_is_named_as_a_handler() {
-    let script = "proc load[name: Text] -> Whole ! [not_found, broken]\n    if name eq \"cave\"\n        fail not_found\n    elif name eq \"ruin\"\n        fail broken\n    else\n        return 3\n    end\nend\n\ngroup.handler load_failed\n    handles [load]\n    ::start_over\n        case not_found\n            instead 1\n    end\nend\n\nlevel = load(\"cave\") ?? ::start_over\nshow_msg(\"{level}\")\n";
+    let script = "proc load[name: Text] -> Whole ! [not_found, broken]\n    if name eq \"cave\"\n        fail not_found\n    elif name eq \"ruin\"\n        fail broken\n    else\n        return 3\n    end\nend\n\ngroup.handler load_failed\n    handles [load]\n    _::start_over\n        case not_found\n            instead 1\n    end\nend\n\nlevel = load(\"cave\") ?? _::start_over\nshow_msg(\"{level}\")\n";
     assert!(refusal(script).contains("this handler has no `case` for `broken`"), "{}", refusal(script));
     let included =
-        script.replace("load(\"cave\") ?? ::start_over", "load(\"cave\") otherwise\n    include ::start_over\nend");
+        script.replace("load(\"cave\") ?? _::start_over", "load(\"cave\") otherwise\n    include _::start_over\nend");
     assert!(refusal(&included).contains("this `otherwise` has no `case` for `broken`"), "{}", refusal(&included));
 }
 
@@ -608,4 +609,18 @@ fn d5_a_change_at_a_place_works_out_its_type_from_a_later_line() {
     let unsettled =
         format!("{empty}grid = empty()\nmut cell = grid[pos: 1]\ncell[pos: 1] = 3\nshow_msg(\"{{cell}}\")\n");
     assert!(refusal(&unsettled).contains("this value's type can't be worked out"), "{}", refusal(&unsettled));
+}
+
+// trace: D179
+#[test]
+fn d179_a_bare_path_is_refused_with_underscore_as_the_fix() {
+    let script = format!("{LOADERS}{GROUP}a = load_level(\"x\") ?? ::start_over\nshow_msg(\"{{a}}\")\n");
+    let refused = refusal(&script);
+    assert!(refused.contains("something always stands on its left"), "{refused}");
+    assert!(refused.contains("a = load_level(\"x\") ?? _::start_over"), "{refused}");
+    let member = GROUP.replace("    _::give_up", "    ::give_up");
+    let refused = refusal(&format!("{LOADERS}{member}a = 1\nshow_msg(\"{{a}}\")\n"));
+    assert!(refused.contains("    _::give_up"), "{refused}");
+    let unit = "group.unit money\n    ::cents base\nend\nx = 1 cents\nshow_msg(\"{x}\")\n";
+    assert!(refusal(unit).contains("    _::cents base"), "{}", refusal(unit));
 }

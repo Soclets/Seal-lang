@@ -24,7 +24,7 @@ fn taken(shown: &Mutex<Vec<String>>) -> Vec<String> {
 
 const GOBLIN: &str = "record Enemy\n    name: Text\n    hp: Whole\n\n    proc take_damage[mut enemy: Enemy, amount: Whole]\n        enemy.hp = max(_ - amount, 0)\n    end\nend\n\nmut goblin = Enemy[name: \"Goblin\", hp: 30]\ngoblin.take_damage(12)\nshow_msg(\"{goblin.name} {goblin.hp}\")\n";
 /// A unit group of the script's own, after Seal's, which a file writes and reads back (D123, D171).
-const COINS: &str = "group.unit coins\n    ::bits base\n    ::stacks = 12 bits\nend\n\nheap = 3 stacks\nbits = heap to bits\nshow_msg(\"{bits}\")\n";
+const COINS: &str = "group.unit coins\n    _::bits base\n    _::stacks = 12 bits\nend\n\nheap = 3 stacks\nbits = heap to bits\nshow_msg(\"{bits}\")\n";
 const COUNTER: &str =
     "mut total: HugeWhole = 1\nfor n from 1 to 30\n    total = total * n\nend\nshow_msg(\"{total}\")\n";
 

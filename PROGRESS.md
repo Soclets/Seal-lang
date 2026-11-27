@@ -486,7 +486,12 @@ From `design/seal-next-prompt.md`, each step committed and pushed:
   type where it's met again (`HostType::Named`) rather than going on for ever. Copies are made with a list of what's
   left rather than by recursion; at most 256 levels cross (Building rule 1). A host type that can never end is refused
   as a script's is.
-- [ ] **C21. D171 within twice LuaJIT's time** in the full benchmark run.
+- [x] **C21. `_::` (D179).** A group's members are declared `_::name`, a call's handler is `?? _::name` or
+  `include _::name`, and a bare `::` is refused with the line, `_` added, as the fix. Messages name members as
+  `_::name`.
+- [ ] **C22. D171 within twice LuaJIT's time** in the full benchmark run. In a loop of 1,000 different files: about
+  650 ns a load this morning; 515 ns with Seal's own type table shared rather than copied and compared again; 474 ns
+  with plain crossings read on the spot and an eight-lane checksum.
 
 ## Questions for the design session
 
@@ -570,8 +575,14 @@ what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole li
 (Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
 marked.
 
-**New on 2026-11-27 (C19, C20), sent to the design session:** C19 reuses the wordings a change with its type known
-already has. C20's, for D72:
+**New on 2026-11-27 (C19 to C21), sent to the design session:** C21's, for D179:
+- refused, a bare `::`: fix: the line with `_` before the `::`
+  - why: `::` reaches into a group, so something always stands on its left: the group's name, or `_` for the one assumed from where it stands.
+- refused: a handler group holds only handlers, each `_::name` / a unit group holds only units, each `_::name`
+  - why: a handler group's (a unit group's) members are written with the `_::` that reaches them from inside it, as `_::start_over` (`_::cents base`).
+- Every message naming a member writes it `_::name`, as "`level_failed` has no handler `_::begin_again`".
+
+C19 reuses the wordings a change with its type known already has. C20's, for D72:
 - refused, as a script loads with the host's types: the host's `{name}` holds itself with no way for a value to end
   - why: (the script's own: a type can hold itself only where a value can end, …)
 - refused, a host's call: argument {n} of `{procedure}` is nested more than 256 deep, too deep to go into a script

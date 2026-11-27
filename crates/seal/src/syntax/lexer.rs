@@ -1172,7 +1172,7 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Re
             matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::For)))
                 && index >= 2
                 && matches!(before.kind, TokenKind::Name("from" | "to" | "before" | "step_by"));
-        // trace: D110. `::*give_up` marks a handler that can jump, with the `*` against its name.
+        // trace: D110. `_::*give_up` marks a handler that can jump, with the `*` against its name.
         let jump_mark = index >= 1
             && matches!(before.kind, TokenKind::Symbol(Symbol::Star))
             && matches!(tokens.get(index - 1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path)));
@@ -1217,11 +1217,16 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Re
 /// Where a procedure's header line has its parameters' `[ ]`, by the tokens' places in the line: a line that's `proc`
 /// and a name, or a family member's name, followed by `[ … ]` and nothing but `->` or `!` after it (D21, D88, D97).
 fn header_brackets(tokens: &[Token]) -> Option<(usize, usize)> {
-    // A handler's header starts with `::` (D110).
-    let mut index = usize::from(matches!(
-        tokens.first().map(|token| &token.kind),
-        Some(TokenKind::Keyword(Keyword::Proc) | TokenKind::Symbol(Symbol::Path))
-    ));
+    // A handler's header starts with `_::` (D110, D179).
+    let mut index = match tokens.first().map(|token| &token.kind) {
+        Some(TokenKind::Keyword(Keyword::Proc)) => 1,
+        Some(TokenKind::Underscore)
+            if matches!(tokens.get(1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path))) =>
+        {
+            2
+        }
+        _ => 0,
+    };
     if !matches!(tokens.get(index).map(|token| &token.kind), Some(TokenKind::Name(_))) {
         return None;
     }
@@ -1271,9 +1276,11 @@ fn wanted_spaces(before: &TokenKind, after: &TokenKind) -> u32 {
     if let TokenKind::Symbol(OpenRound | OpenSquare | Dot | TypeOpen | Negate | Symbol::Path) = before {
         return 0;
     }
-    // trace: D110, Unio D43. A group's name touches its `::`; after `??` or `include`, the `::` stands apart.
+    // trace: D110, D179, Unio D43. A group's name or `_` touches its `::`.
     if matches!(after, TokenKind::Symbol(Symbol::Path)) {
-        return u32::from(!matches!(before, TokenKind::Name(name) if *name != "include"));
+        return u32::from(
+            !matches!(before, TokenKind::Underscore) && !matches!(before, TokenKind::Name(name) if *name != "include"),
+        );
     }
     let touches_brackets = matches!(
         before,

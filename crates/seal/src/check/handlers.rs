@@ -8,7 +8,7 @@ use crate::message::Message;
 use crate::syntax::tree as syntax;
 
 /// Why a handler is marked `*` where it's used (Unio D42, D129).
-const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? ::*give_up`; one that can't takes no `*`.";
+const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? _::*give_up`; one that can't takes no `*`.";
 
 /// The built-ins that can fail, which `handles [ … ]` can name (D101, D129).
 const FAILING_BUILT_INS: [&str; 6] =
@@ -84,7 +84,7 @@ impl<'a> Checker<'a> {
                 if group.members.iter().take(index).any(|earlier| earlier.name.text == member.name.text) {
                     self.refuse_why(
                         member.name.place,
-                        format!("the handler `::{}` is listed twice in `{}`", member.name.text, name.text),
+                        format!("the handler `_::{}` is listed twice in `{}`", member.name.text, name.text),
                         "each handler in a group has a name of its own.",
                     );
                 }
@@ -161,7 +161,7 @@ impl<'a> Checker<'a> {
             };
             group
         } else {
-            // trace: D110. A short `::name` reaches into the groups that handle the procedure just called.
+            // trace: D110. A short `_::name` reaches into the groups that handle the procedure just called.
             let mut handling: Vec<&'a syntax::HandlerGroup<'a>> = self
                 .handler_groups
                 .values()
@@ -186,15 +186,15 @@ impl<'a> Checker<'a> {
                 [] => {
                     let what = match (&called, handling.is_empty()) {
                         (Some(called), true) => {
-                            format!("no handler group handles `{called}`, so `::{member}` reaches nothing")
+                            format!("no handler group handles `{called}`, so `_::{member}` reaches nothing")
                         }
-                        (Some(called), false) => format!("no handler group that handles `{called}` has `::{member}`"),
-                        (None, _) => format!("`::{member}` follows something no handler group can name in `handles`"),
+                        (Some(called), false) => format!("no handler group that handles `{called}` has `_::{member}`"),
+                        (None, _) => format!("`_::{member}` follows something no handler group can name in `handles`"),
                     };
                     self.refuse_why(
                         using.place,
                         what,
-                        "a short `::name` reaches into the groups whose `handles [ … ]` line names the procedure just called; `group::name` works anywhere.",
+                        "a short `_::name` reaches into the groups whose `handles [ … ]` line names the procedure just called; `group::name` works anywhere.",
                     );
                     return None;
                 }
@@ -203,7 +203,7 @@ impl<'a> Checker<'a> {
                         several.iter().map(|group| format!("`{}::{member}`", group.name.text)).collect();
                     self.refuse_why(
                         using.place,
-                        format!("`::{member}` could be {}", names.join(" or ")),
+                        format!("`_::{member}` could be {}", names.join(" or ")),
                         "when two groups that handle the call both have the handler, the group is written, as `group::name`.",
                     );
                     return None;
@@ -211,10 +211,10 @@ impl<'a> Checker<'a> {
             }
         };
         let Some(handler) = group.members.iter().find(|known| known.name.text == member) else {
-            let known: Vec<String> = group.members.iter().map(|known| format!("`::{}`", known.name.text)).collect();
+            let known: Vec<String> = group.members.iter().map(|known| format!("`_::{}`", known.name.text)).collect();
             self.refuse_why(
                 using.name.place,
-                format!("`{}` has no handler `::{member}`", group.name.text),
+                format!("`{}` has no handler `_::{member}`", group.name.text),
                 &format!("`{}`'s handlers are {}.", group.name.text, known.join(", ")),
             );
             return None;
@@ -223,9 +223,9 @@ impl<'a> Checker<'a> {
         if jumps != using.jumps {
             // trace: Unio D42
             let what = if jumps {
-                format!("`::{member}` can `return`, `break` or `fail`, so it's marked `::*{member}` where it's used")
+                format!("`_::{member}` can `return`, `break` or `fail`, so it's marked `_::*{member}` where it's used")
             } else {
-                format!("`::{member}` can't `return`, `break` or `fail`, so it takes no `*`")
+                format!("`_::{member}` can't `return`, `break` or `fail`, so it takes no `*`")
             };
             self.refuse_why(using.place, what, JUMP_MARK);
             return None;
@@ -251,7 +251,7 @@ impl<'a> Checker<'a> {
                 }
                 None => self.refuse(
                     declaration.parameter.place,
-                    format!("`{}` isn't one of `::{member}`'s parameters", declaration.parameter.text),
+                    format!("`{}` isn't one of `_::{member}`'s parameters", declaration.parameter.text),
                 ),
             }
         }
@@ -261,7 +261,7 @@ impl<'a> Checker<'a> {
             else {
                 self.refuse(
                     declaration.label.place,
-                    format!("`{}` isn't one of `::{member}`'s labels", declaration.label.text),
+                    format!("`{}` isn't one of `_::{member}`'s labels", declaration.label.text),
                 );
                 continue;
             };
@@ -274,7 +274,7 @@ impl<'a> Checker<'a> {
         }
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
         let bound = self.bind_arguments(
-            &format!("::{member}"),
+            &format!("_::{member}"),
             (labels.as_slice(), handler.labels_any_order),
             &has_default,
             &using.arguments,
@@ -286,7 +286,7 @@ impl<'a> Checker<'a> {
             match argument.and_then(|index| using.arguments.get(index)) {
                 Some(entry) => {
                     let value = self.expression(&entry.value, Some(wanted));
-                    self.expect(&value, wanted, &format!("`::{member}`'s argument"));
+                    self.expect(&value, wanted, &format!("`_::{member}`'s argument"));
                     values.push(self.land(value, wanted));
                 }
                 None => {

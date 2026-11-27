@@ -77,7 +77,7 @@ impl<'a> Checker<'a> {
                 if members.iter().any(|known| known.name == member.name.text) {
                     self.refuse_why(
                         member.name.place,
-                        format!("the unit `::{}` is listed twice in `{}`", member.name.text, group.name.text),
+                        format!("the unit `_::{}` is listed twice in `{}`", member.name.text, group.name.text),
                         "each unit in a group has a name of its own.",
                     );
                     continue;
@@ -119,7 +119,7 @@ impl<'a> Checker<'a> {
                 self.refuse_why(
                     amount.place,
                     "a unit's size is a number written out",
-                    "a unit is so many of an earlier one, as `::dollars = 100 cents`.",
+                    "a unit is so many of an earlier one, as `_::dollars = 100 cents`.",
                 );
                 return None;
             }
