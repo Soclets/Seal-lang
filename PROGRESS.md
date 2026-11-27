@@ -413,11 +413,7 @@ The VM, and its optimizations (Building rule 5):
 
 ## Benchmarks
 
-`bench/RESULTS.md` has every number; it was re-run on 2026-11-26 at about 3:30 PM, every goal met but D171's, which
-came after. Loading a patrolling script from a text of its own: 4.67 µs against Luau's 4.78 µs, a thin margin. On
-2026-11-25 (evening), Normal: `fib` 30 to 33 ms, n-body 64 ms,
-spectral-norm 17.8 ms, fannkuch 102 ms, word count 26.5 ms, text building 343 µs, binary-trees 99 ms, patrol run
-2.2 ms. Loading a 12-line script from a text of its own: about 4.45 µs (12.3 µs this morning).
+`bench/RESULTS.md` has every number; it was re-run on 2026-11-27 at about 9:30 AM, at 0bdbc62, every goal met.
 
 In short, judged Normal against Normal (D58), against both of goal 1's bars, Luau's interpreter and, by D142,
 LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
@@ -449,18 +445,21 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: not met.** 0.66 µs against
-  LuaJIT's 0.29 µs (2.25×; side by side, best of several, about 0.61 µs). From 2.1 µs this afternoon: D173's block,
-  the lists a dropped script recycles, one look at each instruction when verifying, Seal's own type table as one flag.
-  The same file loaded again reuses what was verified, in about 0.15 µs.
-- **`fib` against LuaJIT's interpreter: met, 32.0 against 33.6 ms (95%; about 29.5 ms side by side).** After D173 it
+- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met,** 532 ns against
+  LuaJIT's 285 ns (187%). From 2.1 µs on 2026-11-26: D173's block, the lists a dropped script recycles, one look at
+  each instruction when verifying; then on 2026-11-27 Seal's own type table shared by every such script rather than
+  copied and compared back, plain crossings read on the spot, and an eight-lane checksum. The same file loaded again
+  reuses what was verified, in about 0.14 µs.
+- **`fib` against LuaJIT's interpreter: met, 30.8 against 36.1 ms (85%) on 2026-11-27.** After D173 it
   fell to LuaJIT's time with the same instructions: D173's lists left in a file made each about 120 bytes inline in a
   compiled script, which changed how the whole run loop was compiled (about 10% more cycles). With those lists behind
   one shared allocation, the script is near its old size and `fib` is back, at the cost of about 37 ns on loading a
   compiled file. Memory placement was ruled out first: shifting it moved neither build out of its range. LLVM's
   alignment flags didn't help, and a table for a base case's comparison made it slower (the branch is always
   predicted), so neither is in.
-- **Loading from a text of its own against Luau: met, thinly** (98% to 100% across today's runs).
+- **Loading from a text of its own against Luau: met, thinly** (97% on 2026-11-27; 103% in a run earlier that day
+  with Luau measured faster, Seal's own time the same). The compiler now starts from the lists a dropped script left
+  on the thread, about 4% off.
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
@@ -492,7 +491,7 @@ From `design/seal-next-prompt.md`, each step committed and pushed:
 - [x] **C23. `;` ends a statement holding a slide (D180).** A split slide carries on into lines starting with `|>`,
   indented one level deeper; a missing `;` is refused at the slide's last step with the `;` in the fix; a `;`
   anywhere else is refused.
-- [ ] **C22. D171 within twice LuaJIT's time** in the full benchmark run. In a loop of 1,000 different files: about
+- [x] **C22. D171 within twice LuaJIT's time** in the full benchmark run: 532 ns against LuaJIT's 285 ns (187%). In a loop of 1,000 different files: about
   650 ns a load this morning; 515 ns with Seal's own type table shared rather than copied and compared again; 474 ns
   with plain crossings read on the spot and an eight-lane checksum.
 
