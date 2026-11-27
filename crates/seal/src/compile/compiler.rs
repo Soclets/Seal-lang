@@ -183,8 +183,12 @@ fn compile_parts(program: &Program, doors: &[DoorSignature], plain: bool) -> Res
             out.built_in_failures = ["missing", "not_a_whole", "full"].map(|wanted| {
                 (1u32..).zip(&program.failure_names).find(|(_, known)| *known == wanted).map_or(0, |(number, _)| number)
             });
-            // Room for a small script's instructions from the start, rather than growing to it.
-            out.code = Vec::with_capacity(32);
+            // Room for a small script's instructions from the start, rather than growing to it, in the lists a
+            // dropped script left on this thread when there are some (D140).
+            out.code = super::bytecode::spare_code(32);
+            out.entries = super::bytecode::spare_entries(program.procedures.len());
+            out.door_sites = super::bytecode::spare_door_sites(8);
+            out.door_arguments = super::bytecode::spare_door_arguments(8);
             out.places = Vec::with_capacity(32).into();
             out
         },
