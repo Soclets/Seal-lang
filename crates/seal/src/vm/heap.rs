@@ -25,6 +25,8 @@ pub enum HeapError {
     OutOfMemory { needed: usize, in_use: usize, cap: usize },
     /// A handle didn't lead to the kind of value its instruction works on: a bug in Seal.
     Broken(&'static str),
+    /// A value going to the host is nested deeper than a copy may go (D72).
+    TooDeep,
 }
 
 #[derive(Debug)]

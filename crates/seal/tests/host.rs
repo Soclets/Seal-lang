@@ -366,3 +366,121 @@ end
     assert_eq!(usual.memory_in_use(), plain.memory_in_use());
     Ok(())
 }
+
+/// A tree that holds itself through a `one_of`'s case, boxed as Rust needs it to be (D72).
+#[derive(Seal, Clone, Debug, PartialEq)]
+enum Tree {
+    Leaf,
+    Node { left: Box<Tree>, right: Box<Tree> },
+}
+
+/// A dialogue that holds itself through a list (D72).
+#[derive(Seal, Clone, Debug, PartialEq)]
+struct Dialogue {
+    line: String,
+    choices: Vec<Dialogue>,
+}
+
+fn grown(depth: i64) -> Tree {
+    if depth == 0 { Tree::Leaf } else { Tree::Node { left: Box::new(grown(depth - 1)), right: Box::new(Tree::Leaf) } }
+}
+
+const SELF_HOLDING: &str = "proc count[tree: Tree] -> Whole
+    match tree
+        case leaf
+            return 1
+        case node[left, right]
+            return 1 + count(left) + count(right)
+    end
+end
+
+proc mirror[tree: Tree] -> Tree
+    match tree
+        case leaf
+            return Tree.leaf
+        case node[left, right]
+            return Tree.node[left: mirror(right), right: mirror(left)]
+    end
+end
+
+proc lines[talk: Dialogue] -> Whole
+    mut total = 1
+    for_each choice in talk.choices
+        total = _ + lines(choice)
+    end
+    return total
+end
+
+proc chain[length: Whole] -> Dialogue
+    mut talk = Dialogue[line: \"end\", choices: []]
+    for unused step from 1 to length
+        talk = Dialogue[line: \"more\", choices: [talk]]
+    end
+    return talk
+end
+
+counted = count(grow(3))
+show_msg(\"{counted}\")
+";
+
+// trace: D72
+#[test]
+fn d72_a_type_that_holds_itself_crosses_both_ways() -> Result<(), Box<dyn std::error::Error>> {
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let mut doors = Doors::new();
+    let into = Arc::clone(&shown);
+    doors.add("show_msg", move |text: String| {
+        into.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(text);
+    })?;
+    doors.add("grow", grown)?;
+    doors.add_type::<Dialogue>()?;
+    let limits = Limits { steps: 10_000_000, memory: 1 << 24 };
+    let mut script = Script::load("trees.seal", SELF_HOLDING, &doors, limits)?;
+    // A door's tree went into the script, and was counted there.
+    assert_eq!(*shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner), ["7"]);
+    // The host's tree goes in, and the script's comes back out.
+    let tree = grown(4);
+    let Called::Finished(mirrored) = script.call::<Tree>("mirror", (tree.clone(),))? else { panic!("paused") };
+    let Called::Finished(back) = script.call::<Tree>("mirror", (mirrored.clone(),))? else { panic!("paused") };
+    assert_ne!(mirrored, tree);
+    assert_eq!(back, tree);
+    let talk = Dialogue {
+        line: "Hello".to_owned(),
+        choices: vec![
+            Dialogue { line: "Bye".to_owned(), choices: Vec::new() },
+            Dialogue {
+                line: "Tell me more".to_owned(),
+                choices: vec![Dialogue { line: "Bye".to_owned(), choices: Vec::new() }],
+            },
+        ],
+    };
+    assert_eq!(script.call::<i64>("lines", (talk,))?, Called::Finished(4));
+    // As deep as a value may cross, it does, and the host can copy, compare, show and drop it on a test's stack.
+    let Called::Finished(deepest) = script.call::<Dialogue>("chain", (127,))? else { panic!("paused") };
+    assert_eq!(deepest.clone(), deepest);
+    assert!(format!("{deepest:?}").len() > 127);
+    // One level deeper is turned away on the way out, and on the way in.
+    let refused = script.call::<Dialogue>("chain", (128,));
+    assert!(
+        matches!(&refused, Err(Error::Stopped(message)) if message.text().contains("nested more than 256 deep, too deep to go to the host")),
+        "{refused:?}"
+    );
+    let mut script = Script::load("trees.seal", SELF_HOLDING, &doors, limits)?;
+    let mut deep = Dialogue { line: "end".to_owned(), choices: Vec::new() };
+    for _ in 0..128 {
+        deep = Dialogue { line: "more".to_owned(), choices: vec![deep] };
+    }
+    let refused = script.call::<i64>("lines", (deep.clone(),));
+    assert!(
+        matches!(&refused, Err(Error::Refused(messages)) if messages.text().contains("argument 1 of `lines` is nested more than 256 deep")),
+        "{refused:?}"
+    );
+    // From a compiled file, the same.
+    let built = seal::build(&[("trees.seal", SELF_HOLDING)], &doors)?;
+    let mut compiled = Script::load_compiled(&built, "trees.seal", &doors, limits)?;
+    let Called::Finished(mirrored) = compiled.call::<Tree>("mirror", (tree.clone(),))? else { panic!("paused") };
+    let Called::Finished(back) = compiled.call::<Tree>("mirror", (mirrored,))? else { panic!("paused") };
+    assert_eq!(back, tree);
+    assert!(compiled.call::<i64>("lines", (deep,)).is_err());
+    Ok(())
+}

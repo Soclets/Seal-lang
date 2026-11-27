@@ -9,7 +9,9 @@ pub mod signing;
 pub mod value;
 
 pub use compiled::{Cache, build, names};
-pub use convert::{Argument, Arguments, Failures, FromSeal, IntoArgument, IntoSeal, Labelled, SealType, labelled};
+pub use convert::{
+    Argument, Arguments, Failures, FromSeal, IntoArgument, IntoSeal, Labelled, SealType, describing, labelled,
+};
 pub use doors::{DoorOptions, DoorResult, Doors, IntoDoor, Pause};
 pub use script::{Called, Error, Limits, Script, TaskId};
 pub use value::Value;

@@ -913,8 +913,8 @@ pub enum Crossing {
         name: String,
         cases: Vec<CrossingCase>,
     },
-    /// A type met again inside itself, as `Tree` inside `Tree` (D72). Passing such a value between a host and a
-    /// script isn't built yet, so nothing is ever read through this.
+    /// A type met again inside itself, as `Tree` inside `Tree` (D72), by its name: a value crossing here is read as
+    /// the record or `one_of` of that name around it.
     Itself {
         name: String,
     },
@@ -929,28 +929,6 @@ pub struct CrossingCase {
 }
 
 impl Crossing {
-    /// Whether the type holds itself somewhere inside (D72).
-    #[must_use]
-    pub fn holds_itself(&self) -> bool {
-        match self {
-            Crossing::Itself { .. } => true,
-            Crossing::Nothing
-            | Crossing::Whole
-            | Crossing::Float
-            | Crossing::Bool
-            | Crossing::Text
-            | Crossing::HugeWhole
-            | Crossing::Decimal
-            | Crossing::HugeDecimal => false,
-            Crossing::List(inner) | Crossing::Maybe { inner, .. } => inner.holds_itself(),
-            Crossing::Dict(key, value) => key.holds_itself() || value.holds_itself(),
-            Crossing::Record { fields, .. } => fields.iter().any(|(_, field)| field.holds_itself()),
-            Crossing::OneOf { cases, .. } => {
-                cases.iter().any(|case| case.fields.iter().any(|(_, field)| field.holds_itself()))
-            }
-        }
-    }
-
     /// Whether a slot of this kind holds a heap value.
     #[must_use]
     pub fn is_reference(&self) -> bool {
@@ -1015,8 +993,6 @@ pub struct CompiledProcedure {
     pub result_type: crate::check::types::TypeId,
     pub failures: Vec<String>,
     pub can_pause: bool,
-    /// Whether a parameter's type or the result's holds itself, which can't cross yet (D72).
-    pub holds_itself: bool,
     /// A generic procedure, which runs only as its instances (D161); a host can't call it yet.
     pub generic: bool,
     /// A method, called only with a dot (D164); a host can't call it yet.

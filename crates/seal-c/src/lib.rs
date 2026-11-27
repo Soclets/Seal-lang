@@ -541,7 +541,8 @@ fn crossing_kind(host_type: &HostType) -> seal_kind {
         HostType::List(_) => LIST,
         HostType::Dict(..) => DICT,
         HostType::Maybe(_) => MAYBE,
-        HostType::Record { .. } => RECORD,
+        // A C door takes no records, so a record met again inside itself never comes here (D72).
+        HostType::Record { .. } | HostType::Named(_) => RECORD,
         HostType::OneOf { .. } => CASE,
         HostType::Measured { base, .. } => crossing_kind(base),
     }

@@ -203,7 +203,7 @@ fn record(name: &str, fields: &[Field]) -> String {
     format!(
         "impl ::seal::SealType for {name} {{
             fn host_type() -> ::seal::HostType {{
-                ::seal::HostType::Record {{ name: {name:?}.to_owned(), fields: {types} }}
+                ::seal::describing({name:?}, || ::seal::HostType::Record {{ name: {name:?}.to_owned(), fields: {types} }})
             }}
         }}
         impl ::seal::IntoSeal for {name} {{
@@ -264,7 +264,7 @@ fn one_of(name: &str, cases: &[Case]) -> String {
     let mut out = format!(
         "impl ::seal::SealType for {name} {{
             fn host_type() -> ::seal::HostType {{
-                ::seal::HostType::OneOf {{ name: {name:?}.to_owned(), cases: {case_types} }}
+                ::seal::describing({name:?}, || ::seal::HostType::OneOf {{ name: {name:?}.to_owned(), cases: {case_types} }})
             }}
         }}
         impl ::seal::IntoSeal for {name} {{

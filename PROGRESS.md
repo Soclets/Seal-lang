@@ -14,8 +14,8 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 
 1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
-2. **Decisions built.** D1 to D177 are built, except the language server's parts and what's listed under "Not built
-   yet" below. All 31 tests in `tests/` pass, from text and from compiled files.
+2. **Decisions built.** D1 to D178 are built (D178 only names this implementation Ngin1), except the language server's
+   parts and what's listed under "Not built yet" below. All 31 tests in `tests/` pass, from text and from compiled files.
 3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
@@ -474,6 +474,20 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
 - **Ceil.source programs:** only n-body has one. For the others the Normal program stands in, and each such row says so;
   the Benchmarks Game's hand-tuned Lua and JavaScript programs weren't fetched.
 
+## Plan from 2026-11-27 (seal opus claude): D171's last row and what's left unbuilt
+
+From `design/seal-next-prompt.md`, each step committed and pushed:
+
+- [x] **C19. A change at a place works out its type from a later line (D5).** `name[pos: n] = v`, and a place on the
+  way in to a deeper change, on a name whose type a later line settles, as after a generic call: it's a list or an
+  array, either changed the same way, refused with the known-type wordings if the later line says otherwise.
+- [x] **C20. Types that hold themselves cross the doors (D72),** both ways, from text and from compiled files. A host
+  declares one with `#[derive(Seal)]`, through `Vec`, `Option`, `HashMap` or `Box`, and the description names the
+  type where it's met again (`HostType::Named`) rather than going on for ever. Copies are made with a list of what's
+  left rather than by recursion; at most 256 levels cross (Building rule 1). A host type that can never end is refused
+  as a script's is.
+- [ ] **C21. D171 within twice LuaJIT's time** in the full benchmark run.
+
 ## Questions for the design session
 
 Sent 2026-11-25 (batch 1 of this session, 21 questions): all answered by D119 to D129 and built, and n-body's Normal
@@ -541,13 +555,12 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 
 - A generic procedure filled in with more than 10,000 sets of types, or with types nested more than 100 deep, as
   one calling itself with a list of what it was given (D161).
-- Working out a type from a later line (D5) in one spot: a change at a place, `name[pos: n] = v`, on a name whose
-  type isn't known by then, since a place doesn't say whether it's a list or an array. (A `??`, a `match`, `.add`,
-  `.remove`, and a change by field or by key now say what the type must be, and it's worked out there.)
 - More than 65,000 top-level names used by procedures, registers in one procedure, or constants.
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
-- Passing a value of a type that holds itself between a host and a script (D72).
+- Values nested more than 256 deep crossing between a host and a script (D72), counting every list, `Maybe`, record
+  and case: Seal copies them without recursion, but the host's own code drops, copies, compares, prints and converts
+  a `Value` one level at a time on its stack, about 2 KB a level in a debug build.
 - The language server (D47): an empty package, as the prompt says.
 
 ## Draft wordings
@@ -556,6 +569,16 @@ Refusals, failed checks and stops whose wording no decision gives, drafted in Un
 what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole line, `fix:` stands in place of `what:`
 (Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
 marked.
+
+**New on 2026-11-27 (C19, C20), sent to the design session:** C19 reuses the wordings a change with its type known
+already has. C20's, for D72:
+- refused, as a script loads with the host's types: the host's `{name}` holds itself with no way for a value to end
+  - why: (the script's own: a type can hold itself only where a value can end, …)
+- refused, a host's call: argument {n} of `{procedure}` is nested more than 256 deep, too deep to go into a script
+- refused, a resume: this task was resumed with a value nested more than 256 deep, too deep to go into a script
+- host's mistake, a door's value: a door gave a value nested more than 256 deep, too deep to go into a script
+- check failed, a script's value going to its host: this value is nested more than 256 deep, too deep to go to the host
+  - why: a value reaches its host as a copy, which the host's own code goes through one level at a time on its stack, and that holds only so many.
 
 422 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26, after both of the design
 session's reviews (`design/wording-review-2026-11-26.md` and `-26b.md`) were built. The ones marked **(changed

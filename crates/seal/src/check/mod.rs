@@ -76,6 +76,9 @@ enum Requirement {
     Indexable { item: TypeId },
     /// Gone through by `for_each`, giving `item` (D33, Unio D171).
     Iterable { item: TypeId },
+    /// Changed at `pos:` or `offset:`, giving `item`: a list or an array (D62). The purpose names what's changed, as
+    /// "`grid`", for the refusal.
+    ChangedItem { item: TypeId },
 }
 
 #[derive(Clone, Debug)]
@@ -665,6 +668,27 @@ impl<'a> Checker<'a> {
                     }
                 }
                 _ => {}
+            }
+        }
+        // The host's own types are held to the same rule, refused as a script is loaded with them.
+        for host in self.host_types {
+            let (name, ends) = match host {
+                HostType::Record { name, .. } => {
+                    (name, self.record_names.get(name.as_str()).and_then(|&index| records.get(index as usize)))
+                }
+                HostType::OneOf { name, .. } => {
+                    (name, self.one_of_names.get(name.as_str()).and_then(|&index| one_ofs.get(index as usize)))
+                }
+                _ => continue,
+            };
+            if ends == Some(&false) {
+                let mut message = Message::refused(
+                    Place::default(),
+                    format!("the host's `{name}` holds itself with no way for a value to end"),
+                )
+                .with_why(why);
+                message.file = format!("the host's type `{name}`");
+                self.messages.push(message);
             }
         }
     }
@@ -2599,6 +2623,7 @@ impl<'a> Checker<'a> {
                     return None;
                 };
                 let label = entry.label.as_ref().map(|label| label.text);
+                let kind = self.open_item(kind, variable_type, label, target.place, name);
                 match (kind, label) {
                     (Type::List { item, .. } | Type::Array { item, .. }, Some(label @ ("pos" | "offset"))) => {
                         let index = self.expression(&entry.value, Some(WHOLE));
@@ -2633,7 +2658,9 @@ impl<'a> Checker<'a> {
                         let checked = self.land(checked, value_type);
                         StatementKind::SetKey { variable, key: checked_key, value: checked }
                     }
-                    (Type::Error, _) => return None,
+                    // trace: D5. A `key:` worked out a `Dict` before this, and a place an item; anything else is
+                    // refused once the type is known.
+                    (Type::Error | Type::Variable(_), _) => return None,
                     (Type::List { .. } | Type::Array { .. }, _) => {
                         // trace: Unio D75
                         self.refuse_why(
@@ -2645,13 +2672,6 @@ impl<'a> Checker<'a> {
                     }
                     (Type::Dict { .. }, _) => {
                         self.refuse(target.place, "a dictionary's value is reached with `key:`");
-                        return None;
-                    }
-                    (Type::Variable(_), _) => {
-                        self.not_built(
-                            target.place,
-                            "working out a type from a later line (D5), which this change needs, isn't",
-                        );
                         return None;
                     }
                     _ => {
@@ -2729,6 +2749,18 @@ impl<'a> Checker<'a> {
             other => other,
         };
         StatementKind::Inside { path: way, change: Box::new(Statement { kind: change, place }) }
+    }
+
+    /// trace: D5, D62. With a value's type not worked out yet, a change at `pos:` or `offset:` says it's a list or an
+    /// array, either of which is changed the same way; which one, and the item's type, are settled once a later line
+    /// says. Gives the kind to change through.
+    fn open_item(&mut self, kind: Type, subject: TypeId, label: Option<&str>, place: Place, what: &str) -> Type {
+        if !matches!(kind, Type::Variable(_)) || !matches!(label, Some("pos" | "offset")) {
+            return kind;
+        }
+        let item = self.program.types.fresh();
+        self.require(subject, Requirement::ChangedItem { item }, place, what);
+        Type::List { item, max: None }
     }
 
     /// trace: D5. With a value's type not worked out yet, a step into it can say what it must be: a field only one
@@ -2898,6 +2930,7 @@ impl<'a> Checker<'a> {
                         return None;
                     };
                     let label = entry.label.as_ref().map(|label| label.text);
+                    let kind = self.open_item(kind, reached, label, place, "this");
                     match (kind, label) {
                         (Type::List { item, .. } | Type::Array { item, .. }, Some(label @ ("pos" | "offset"))) => {
                             let index = self.expression(&entry.value, Some(WHOLE));
@@ -2915,20 +2948,13 @@ impl<'a> Checker<'a> {
                             );
                             return None;
                         }
-                        (Type::Error, _) => return None,
+                        (Type::Error | Type::Variable(_), _) => return None,
                         (Type::List { .. } | Type::Array { .. }, _) => {
                             // trace: Unio D75
                             self.refuse_why(
                                 place,
                                 "a list's item is reached with `pos:` or `offset:`",
                                 "`pos:` counts from 1 and `offset:` from 0, so a bare number is never guessed at.",
-                            );
-                            return None;
-                        }
-                        (Type::Variable(_), _) => {
-                            self.not_built(
-                                place,
-                                "working out a type from a later line (D5), which this change needs, isn't",
                             );
                             return None;
                         }
@@ -3456,6 +3482,21 @@ impl<'a> Checker<'a> {
                 match self.host_unit(unit) {
                     Some(unit) => self.measured_type(base, unit),
                     None => ERROR,
+                }
+            }
+            // trace: D72. A type met again inside itself is the one opened around it.
+            HostType::Named(name) => {
+                let found = self
+                    .record_names
+                    .get(name.as_str())
+                    .map(|&record| Type::Record(record))
+                    .or_else(|| self.one_of_names.get(name.as_str()).map(|&one_of| Type::OneOf(one_of)));
+                match found {
+                    Some(found) if self.host_type_names.contains(name.as_str()) => self.program.types.intern(found),
+                    _ => {
+                        self.messages.push(Message::internal(format!("the host's type `{name}` wasn't opened")));
+                        ERROR
+                    }
                 }
             }
         }

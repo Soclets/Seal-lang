@@ -32,6 +32,9 @@ pub enum HostType {
     OneOf { name: String, cases: Vec<HostCase> },
     /// A `Whole` or a `Float` with a unit, written as a script writes it, as `secs` or `px per secs` (D111).
     Measured { base: Box<HostType>, unit: String },
+    /// A record or `one_of` met again inside itself, as `Tree` inside `Tree`, by its name (D72): the one being
+    /// described around it, not described again.
+    Named(String),
 }
 
 /// A unit group the host declares for its scripts, as a script's `group.unit` does (D111, D123): its name, and each

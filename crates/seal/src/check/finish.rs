@@ -592,9 +592,10 @@ impl Checker<'_> {
     fn refused_on_parameter(&mut self, pending: &Pending, kind: &Type, purpose: &str) -> bool {
         let place = pending.place;
         let on_parameter = match &pending.requirement {
-            Requirement::Member { .. } | Requirement::Indexable { .. } | Requirement::Iterable { .. } => {
-                matches!(kind, Type::Parameter(_))
-            }
+            Requirement::Member { .. }
+            | Requirement::Indexable { .. }
+            | Requirement::Iterable { .. }
+            | Requirement::ChangedItem { .. } => matches!(kind, Type::Parameter(_)),
             Requirement::Comparable => false,
             _ => self.program.types.has_parameter(pending.subject),
         };
@@ -607,7 +608,8 @@ impl Checker<'_> {
             match &pending.requirement {
                 Requirement::Member { result: open, .. }
                 | Requirement::Indexable { item: open }
-                | Requirement::Iterable { item: open } => self.program.types.settle_as_error(*open),
+                | Requirement::Iterable { item: open }
+                | Requirement::ChangedItem { item: open } => self.program.types.settle_as_error(*open),
                 _ => {}
             }
             return true;
@@ -624,7 +626,8 @@ impl Checker<'_> {
             match &pending.requirement {
                 Requirement::Member { result: open, .. }
                 | Requirement::Indexable { item: open }
-                | Requirement::Iterable { item: open } => self.program.types.settle_as_error(*open),
+                | Requirement::Iterable { item: open }
+                | Requirement::ChangedItem { item: open } => self.program.types.settle_as_error(*open),
                 _ => {}
             }
             return;
@@ -717,6 +720,25 @@ impl Checker<'_> {
                     self.program.types.settle_as_error(*item);
                 }
             },
+            // trace: D62. The same refusals as a change whose type was known on its own line.
+            Requirement::ChangedItem { item } => match kind {
+                Type::List { item: found_item, .. } | Type::Array { item: found_item, .. } => {
+                    self.program.types.unify(*item, found_item);
+                }
+                Type::Dict { .. } => {
+                    self.refuse(place, "a dictionary's value is reached with `key:`");
+                    self.program.types.settle_as_error(*item);
+                }
+                _ => {
+                    let what = if purpose == "this" {
+                        format!("this is {found}, which has no items")
+                    } else {
+                        format!("{purpose} is {found}, which has no items to change")
+                    };
+                    self.refuse(place, what);
+                    self.program.types.settle_as_error(*item);
+                }
+            },
             Requirement::Iterable { item } => match kind {
                 Type::List { item: found_item, .. } | Type::Array { item: found_item, .. } => {
                     self.program.types.unify(*item, found_item);
@@ -784,7 +806,8 @@ impl Checker<'_> {
             Requirement::Comparable
             | Requirement::Textable
             | Requirement::Indexable { .. }
-            | Requirement::Iterable { .. } => None,
+            | Requirement::Iterable { .. }
+            | Requirement::ChangedItem { .. } => None,
         }
     }
 

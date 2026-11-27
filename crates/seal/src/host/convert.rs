@@ -136,6 +136,52 @@ impl<T: FromSeal> FromSeal for Vec<T> {
     }
 }
 
+/// trace: D72. A `Box` holds a value where Rust needs one to hold its own type, as `left: Box<Tree>`; in a script it's
+/// the value itself.
+impl<T: SealType> SealType for Box<T> {
+    fn host_type() -> HostType {
+        T::host_type()
+    }
+}
+
+impl<T: IntoSeal> IntoSeal for Box<T> {
+    fn into_seal(self) -> Value {
+        (*self).into_seal()
+    }
+}
+
+impl<T: FromSeal> FromSeal for Box<T> {
+    fn from_seal(value: Value) -> Option<Self> {
+        T::from_seal(value).map(Box::new)
+    }
+}
+
+thread_local! {
+    /// The records and `one_of`s being described on this thread, outermost first (D72).
+    static DESCRIBING: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Ends a description, even one that panics, so the thread's list stays right.
+struct Described;
+
+impl Drop for Described {
+    fn drop(&mut self) {
+        DESCRIBING.with_borrow_mut(Vec::pop);
+    }
+}
+
+/// trace: D72. Describes a record or `one_of` for `#[derive(Seal)]`: met again inside itself, as `Tree` inside `Tree`,
+/// it's [`HostType::Named`] there rather than described again, which would never end.
+#[doc(hidden)]
+pub fn describing(name: &'static str, describe: impl FnOnce() -> HostType) -> HostType {
+    if DESCRIBING.with_borrow(|open| open.contains(&name)) {
+        return HostType::Named(name.to_owned());
+    }
+    DESCRIBING.with_borrow_mut(|open| open.push(name));
+    let _ended = Described;
+    describe()
+}
+
 impl<T: SealType> SealType for Option<T> {
     fn host_type() -> HostType {
         HostType::Maybe(Box::new(T::host_type()))

@@ -14,7 +14,7 @@ use crate::compile::compiler::compile_taking;
 use crate::message::{Message, MessageKind, Messages, Place};
 use crate::signature::HostType;
 use crate::syntax::parser::parse;
-use crate::vm::crossing::{CrossingError, describe, plain_slot, plain_value, to_slot, to_value};
+use crate::vm::crossing::{CrossingError, DEEPEST, describe, plain_slot, plain_value, to_slot, to_value};
 use crate::vm::heap::Heap;
 use crate::vm::machine::{Machine, Outcome, Stop, Task, run};
 
@@ -183,6 +183,8 @@ fn fits(host: &HostType, crossing: &Crossing) -> bool {
         | (HostType::Decimal, Crossing::Decimal)
         | (HostType::HugeDecimal, Crossing::HugeDecimal) => true,
         (HostType::Measured { base, .. }, crossing) => fits(base, crossing),
+        // trace: D72. A type met again inside itself, on either side, is the one around it, which is being matched.
+        (HostType::Named(host_name), Crossing::Itself { name }) => host_name == name,
         (HostType::List(host), Crossing::List(crossing)) => fits(host, crossing),
         (HostType::Dict(host_key, host_value), Crossing::Dict(key, value)) => {
             fits(host_key, key) && fits(host_value, value)
@@ -554,21 +556,6 @@ impl Script {
             message.file = self.name.to_string();
             return Err(Error::Refused(Messages::one(message)));
         }
-        // trace: D72. A type that holds itself can't cross between a host and a script yet.
-        if found.holds_itself
-            && let Some(parameter) = found.parameters.iter().find(|parameter| parameter.crossing.holds_itself())
-        {
-            return Err(self.not_built(format!(
-                "passing a `{}`, a type that holds itself, from a host to a script (D72), which calling `{procedure}` needs, isn't",
-                self.compiled.types.written(parameter.type_id)
-            )));
-        }
-        if found.holds_itself && found.result.holds_itself() {
-            return Err(self.not_built(format!(
-                "passing {}, a type that holds itself, from a script to its host (D72), which calling `{procedure}` needs, isn't",
-                describe(&found.result)
-            )));
-        }
         // The usual call gives every argument in order with no labels; anything else is matched up by label.
         let plain = arguments.len() == found.parameters.len()
             && arguments
@@ -618,18 +605,19 @@ impl Script {
                                 self.compiled.types.written(parameter.type_id)
                             ),
                         ),
+                        // trace: D72
+                        CrossingError::TooDeep => refusal(
+                            &self.name,
+                            format!(
+                                "argument {} of `{procedure}` is nested more than {DEEPEST} deep, too deep to go into a script",
+                                position + 1
+                            ),
+                        ),
                     });
                 }
             }
         }
         self.drive(Running { task, procedure: index }, None)
-    }
-
-    /// A refusal for something decided that isn't built yet.
-    fn not_built(&self, what: String) -> Error {
-        let mut message = Message::not_built_yet(Place::default(), what);
-        message.file = self.name.to_string();
-        Error::Refused(Messages::one(message))
     }
 
     /// Runs a task on, and deals with how it ends. `reuse` is the task's place when it was paused before.
@@ -782,15 +770,20 @@ impl Script {
                 }
             }
             Err(CrossingError::Heap(error)) => return Err(self.stop(Stop::from(error), running.task.pc)),
-            Err(CrossingError::WrongType { wanted, found }) => {
+            Err(error @ (CrossingError::WrongType { .. } | CrossingError::TooDeep)) => {
+                let what = match error {
+                    CrossingError::WrongType { wanted, found } => {
+                        format!("the door this task waits on gives {wanted}, but it was resumed with {found}")
+                    }
+                    _ => format!(
+                        "this task was resumed with a value nested more than {DEEPEST} deep, too deep to go into a script"
+                    ),
+                };
                 // The task stays paused, as it was.
                 if let Some(slot) = self.tasks.get_mut(task.index as usize) {
                     slot.running = Some(running);
                 }
-                return Err(refusal(
-                    &self.name,
-                    format!("the door this task waits on gives {wanted}, but it was resumed with {found}"),
-                ));
+                return Err(refusal(&self.name, what));
             }
         }
         running.task.waiting = None;

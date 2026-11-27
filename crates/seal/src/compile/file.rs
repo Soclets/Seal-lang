@@ -808,7 +808,8 @@ fn check_kept(
         for _ in 0..input.count(4)? {
             input.text_in_file()?;
         }
-        for _ in 0..4 {
+        // Whether it can pause, is generic, and is a method.
+        for _ in 0..3 {
             input.flag()?;
         }
     }
@@ -951,7 +952,6 @@ fn write_procedure(procedure: &CompiledProcedure, out: &mut Writer) {
         out.text(failure);
     }
     out.flag(procedure.can_pause);
-    out.flag(procedure.holds_itself);
     out.flag(procedure.generic);
     out.flag(procedure.method);
 }
@@ -985,7 +985,6 @@ fn read_procedure(input: &mut Reader) -> Result<CompiledProcedure, FileError> {
         result_type,
         failures,
         can_pause: input.flag()?,
-        holds_itself: input.flag()?,
         generic: input.flag()?,
         method: input.flag()?,
     })

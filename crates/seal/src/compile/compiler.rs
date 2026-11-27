@@ -544,7 +544,12 @@ impl<'p> Compiler<'p> {
         let kind = self.kind(type_id).clone();
         if matches!(kind, Type::Record(_) | Type::OneOf(_)) {
             if self.crossing_open.contains(&kind) {
-                return Crossing::Itself { name: self.program.types.describe(type_id) };
+                let name = match kind {
+                    Type::Record(record) => self.program.types.records.get(record as usize).map(|found| &found.name),
+                    Type::OneOf(one_of) => self.program.types.one_ofs.get(one_of as usize).map(|found| &found.name),
+                    _ => None,
+                };
+                return Crossing::Itself { name: name.cloned().unwrap_or_default() };
             }
             self.crossing_open.push(kind.clone());
             let crossing = self.crossing_of(type_id);
@@ -774,7 +779,6 @@ impl<'p> Compiler<'p> {
                 result_type: crate::check::types::NOTHING,
                 failures: Vec::new(),
                 can_pause: false,
-                holds_itself: false,
                 generic: true,
                 method: false,
             });
@@ -846,8 +850,6 @@ impl<'p> Compiler<'p> {
         let failures =
             procedure.failures.iter().map(|&failure| self.program.failure_name(failure).to_owned()).collect();
         let result = self.crossing(procedure.result);
-        let holds_itself = result.holds_itself()
-            || parameters.iter().any(|parameter: &CompiledParameter| parameter.crossing.holds_itself());
         self.out.entries.push(ProcedureEntry { entry, frame_size: self.function.high_water + 1 });
         self.out.procedures.push(CompiledProcedure {
             // The name comes from the checked script once compiling is done.
@@ -859,7 +861,6 @@ impl<'p> Compiler<'p> {
             result_type: procedure.result,
             failures,
             can_pause: procedure.can_pause,
-            holds_itself,
             generic: false,
             method: procedure.method,
         });

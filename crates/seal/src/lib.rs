@@ -22,7 +22,7 @@ mod wide;
 
 pub use host::{
     Argument, Arguments, Cache, Called, DoorOptions, DoorResult, Doors, Error, Failures, FromSeal, IntoArgument,
-    IntoDoor, IntoSeal, Labelled, Limits, Pause, Script, SealType, TaskId, Value, build, labelled, names,
+    IntoDoor, IntoSeal, Labelled, Limits, Pause, Script, SealType, TaskId, Value, build, describing, labelled, names,
 };
 pub use message::{Message, MessageKind, Messages, Place};
 /// Makes a struct a Seal record, or an enum a Seal `one_of`, at the doors (D27, D35, D48).

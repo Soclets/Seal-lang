@@ -572,3 +572,40 @@ fn d172_for_counts_and_for_each_goes_through_items() {
     let changed = "for i from 1 to 2\n    i = 5\nend\n";
     assert!(refusal(changed).contains("`i` can't be given a new value"), "{}", refusal(changed));
 }
+
+/// A list made by a generic call that nothing has said the item type of yet, changed at a place before a later line
+/// says it (D5, D62, D161).
+const LATER_LINE: &str = "proc empty<?T> -> List<?T>\n    items: List<?T> = []\n    return items\nend\n\nrecord Spot\n    hits: Whole\nend\n\nmut grid = empty()\ngrid.add([[1, 2], [3, 4]])\nmut plane = grid[pos: 1]\nplane[pos: 2][pos: 1] = 9\nshow_msg(\"{plane}\")\nmut spots = empty()\nspots.add([Spot[hits: 0]])\nmut row = spots[pos: 1]\nrow[pos: 1].hits = 5\nshow_msg(\"{row}\")\n\nproc marked[n: Whole] -> List<Whole>\n    mut lists = empty()\n    lists.add([0, 0, 0])\n    mut marks = lists[pos: 1]\n    marks[offset: n] = 1\n    return marks\nend\n";
+
+// trace: D5, D62
+#[test]
+fn d5_a_change_at_a_place_works_out_its_type_from_a_later_line() {
+    assert_eq!(shows(LATER_LINE), ["[[1, 2], [9, 4]]", "[Spot[hits: 5]]"]);
+    // Through the host, from the text and from a compiled file.
+    let doors = {
+        let mut doors = Doors::new();
+        let added = doors.add("show_msg", |_: String| {});
+        assert!(added.is_ok());
+        doors
+    };
+    let Ok(mut script) = Script::load("later.seal", LATER_LINE, &doors, LIMITS) else { panic!("didn't load") };
+    let called = script.call::<Vec<i64>>("marked", (1,));
+    assert!(matches!(called, Ok(seal::Called::Finished(ref marks)) if marks == &[0, 1, 0]), "{called:?}");
+    let Ok(bytes) = seal::build(&[("later.seal", LATER_LINE)], &doors) else { panic!("didn't build") };
+    let Ok(mut compiled) = Script::load_compiled(&bytes, "later.seal", &doors, LIMITS) else { panic!("didn't load") };
+    let called = compiled.call::<Vec<i64>>("marked", (2,));
+    assert!(matches!(called, Ok(seal::Called::Finished(ref marks)) if marks == &[0, 0, 1]), "{called:?}");
+    // What the later line says is held to the same rules as a type known on the change's own line.
+    let empty = "proc empty<?T> -> List<?T>\n    items: List<?T> = []\n    return items\nend\n\n";
+    let text = format!(
+        "{empty}mut words = empty()\nmut word = words[pos: 1]\nword[pos: 1] = \"x\"\nwords.add(\"ab\")\nshow_msg(word)\n"
+    );
+    assert!(refusal(&text).contains("`word` is `Text`, which has no items to change"), "{}", refusal(&text));
+    let deeper = format!(
+        "{empty}mut words = empty()\nwords.add(\"ab\")\nmut word = words[pos: 1]\nword[pos: 1][pos: 1] = 2\nshow_msg(\"{{word}}\")\n"
+    );
+    assert!(refusal(&deeper).contains("this is `Text`, which has no items"), "{}", refusal(&deeper));
+    let unsettled =
+        format!("{empty}grid = empty()\nmut cell = grid[pos: 1]\ncell[pos: 1] = 3\nshow_msg(\"{{cell}}\")\n");
+    assert!(refusal(&unsettled).contains("this value's type can't be worked out"), "{}", refusal(&unsettled));
+}

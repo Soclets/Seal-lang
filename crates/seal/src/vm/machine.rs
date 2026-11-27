@@ -3,7 +3,7 @@
 //! Nothing here can crash the host (D14): every register, instruction and heap value is reached through a check,
 //! and anything that doesn't add up stops the script and says so, as a bug in Seal to report.
 
-use super::crossing::{CrossingError, plain_slot, plain_value, to_slot, to_value};
+use super::crossing::{CrossingError, DEEPEST, plain_slot, plain_value, to_slot, to_value};
 use super::dict::{Dict, Probe};
 use super::heap::{Heap, HeapError, Object, SLOT_COST};
 use super::show::{equal, show};
@@ -65,6 +65,15 @@ impl From<HeapError> for Stop {
         match error {
             HeapError::OutOfMemory { needed, in_use, cap } => Stop::OutOfMemory { needed, in_use, cap },
             HeapError::Broken(detail) => Stop::Internal(format!("the heap met {detail}")),
+            // trace: D72, Building rule 1
+            HeapError::TooDeep => Stop::CheckFailed {
+                what: format!("this value is nested more than {DEEPEST} deep, too deep to go to the host"),
+                when: None,
+                why: Some(
+                    "a value goes to its host as a copy, made one level at a time on the host's own stack, which only holds so many."
+                        .to_owned(),
+                ),
+            },
         }
     }
 }
@@ -1150,6 +1159,14 @@ fn call_door(
             Err(CrossingError::WrongType { wanted, found }) => {
                 return Err((
                     Stop::HostMistake(format!("a door gave {found}, but it's declared to give {wanted}")),
+                    pc,
+                ));
+            }
+            Err(CrossingError::TooDeep) => {
+                return Err((
+                    Stop::HostMistake(format!(
+                        "a door gave a value nested more than {DEEPEST} deep, too deep to go into a script"
+                    )),
                     pc,
                 ));
             }
