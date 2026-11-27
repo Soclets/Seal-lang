@@ -1,0 +1,24 @@
+proc doubled[n: Whole] -> Whole
+    return n * 2
+end
+
+proc after_armor[damage: Whole, armor: Whole] -> Whole
+    labels [armor as minus]
+    return max(damage - armor, 0)
+end
+
+proc as_label[damage: Whole] -> Text
+    return "-{damage} hp"
+end
+
+base = 30
+shield = 15
+hit = base |> doubled |> after_armor(minus: shield) |> as_label;
+heal = base
+    |> doubled
+    |> clamp(low: 0, high: 50)
+    |> as_label;
+total = (base |> doubled |> doubled |> doubled) + 1;
+show_msg(hit)
+show_msg(heal)
+show_msg("{total}")

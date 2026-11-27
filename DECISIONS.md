@@ -242,6 +242,8 @@ going.
 **Tankun's words.** "What does that make?", then, asked "Should a statement end at the end of its line, with no `;`,
 carrying on only inside an open `(` or `[`?", the owner chose: "yea".
 
+(Changed by D180: a statement holding a slide ends with `;`, and a split slide carries on until it.)
+
 ## D9. Lines that open a block have no `:`
 
 2026-11-23.
@@ -650,6 +652,8 @@ A later Unio decision changing one of these is brought to Tankun for Seal too; i
 
 **Tankun's words.** Asked "Should Seal adopt these seven groups from Unio, with Seal's syntax changes applied?", the
 owner chose: "Yea. How the fuck does Luau shorten Workspace, should we have that?"
+
+(Changed by D180: a statement holding a slide ends with `;`.)
 
 ## D23. No host-given values: a script gets what it needs from the host through doors
 
@@ -5513,3 +5517,43 @@ read `*` as times?", "Why for the sake of matching Unio and Cyborg? Ask Unio des
 "That's not how you use a dot", "Nope. Should it be `_::` instead?", "`_` just means assumed, then", "It could assume
 from the sensible direction in separate situations?", then, asked "allowed only in those three places, each with the
 direction in the table", the owner chose: "yea"
+
+## D180. A statement holding a slide ends with `;`
+
+2026-11-27.
+
+**Chosen.** Every statement that holds a slide ends with `;`, on one line or split over several:
+
+```
+hit = base |> doubled |> after_armor(minus: armor) |> with_crit(roll: roll) |> as_label;
+heal = potion
+    |> doubled
+    |> clamp(low: 0, high: max_hp)
+    |> as_label;
+total = (points |> doubled |> doubled |> doubled) + 1;
+show_msg(hit)
+```
+
+- **A split slide carries on until its `;`,** each carried line starting with `|>`. A line ending in `|>` stays refused
+  (D8), so `|>` always starts the carried line.
+- **A missing `;` is refused at the slide's last step,** with the `;` in the fix: the next line doesn't start with
+  `|>`, so where it belongs is never in doubt.
+- **A slide inside brackets counts too:** the statement holding it ends with `;`.
+- **`;` does nothing else.** Every other statement ends at its line's end, and two statements still can't share a line
+  (D8).
+
+**Weighed.**
+- Brackets around a split slide, as D8's rule already allowed and the design session first showed, as Python splits
+  long chains. Tankun: they're grouping brackets, which here group nothing and only keep the line going.
+- A line starting with `|>` carrying on the slide above, with no end mark, as Elixir, F# and Elm write it, which the
+  design session recommended: nothing to forget, and the next line's first mark shows the end. Tankun: a slide reads
+  as if it carries on, even into the next variable, and `;` reads better, seen side by side on one line and split.
+- `;` on split slides only. Two rules for one thing.
+
+**Why this won.** Tankun's choice: `|>` points onward, so a slide gets a mark that says it has ended, and a forgotten
+one is caught exactly where it belongs.
+
+**Tankun's words.** "Should we require slides to end with `;`? Since, it's just that it reads like it continues, even
+to when you make another var", "Is that grouping?", "Why not just `;`?", "Show me two slide sessions", "show me one
+line ver", "`;` reads better", then, asked "every statement holding a slide ends with `;`, on one line or split,
+with carried lines starting with `|>`", the owner chose: "yea"

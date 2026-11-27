@@ -152,8 +152,20 @@ A call writes the procedure's name and `( )`, with its arguments inside (Unio D3
   and one or two as calls (D22, Unio D5, D128):
 
 ```
-points |> double |> be.Text |> show_msg
+points |> double |> be.Text |> show_msg;
 show_msg(be.Text(n))
+```
+
+- **A statement holding a slide ends with `;`,** on one line or split, and a slide inside brackets counts too (D180).
+- **A split slide carries on until its `;`,** each carried line starting with `|>`; a line ending in `|>` is refused
+  (D8). A missing `;` is refused at the slide's last step, with the `;` in the fix (D180):
+
+```
+heal = potion
+    |> doubled
+    |> clamp(low: 0, high: max_hp)
+    |> as_label;
+total = (points |> doubled |> doubled |> doubled) + 1;
 ```
 
 Unio's standard, chapter 4, has the rules for slides in full.

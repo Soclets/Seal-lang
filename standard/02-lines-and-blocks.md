@@ -10,7 +10,8 @@ end
 
 ## Lines
 
-- **The end of a line ends its statement.** There's no `;` (D8).
+- **The end of a line ends its statement.** There's no `;` (D8), except at the end of a statement holding a slide
+  (chapter 4, D180).
 - **Inside an open `(` or `[`, a line break carries on** until the bracket closes, with no blank line inside (D8,
   D93):
 

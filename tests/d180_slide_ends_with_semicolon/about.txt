@@ -1,0 +1,1 @@
+A statement holding a slide ends with ;, on one line or split, with carried lines starting with |>. D180, D8, D22, Unio D128.
