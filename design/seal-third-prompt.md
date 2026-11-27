@@ -1,6 +1,6 @@
 # Prompt for Seal Opus Claude's next job: D171's last row and what's left unbuilt
 
-**Not handed over yet:** Tankun pastes it when they choose.
+**Pasted by Tankun on 2026-11-27.**
 
 Paste the block below into the existing "Seal Opus Claude" session, on Claude Opus 5.5 at `high` effort, as it already
 runs. Written by the design session on 2026-11-27, after reading Anthropic's "Prompting Claude Opus 5.5", the
