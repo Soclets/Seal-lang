@@ -7,7 +7,15 @@ message once the open questions are settled. Removed once sent.
 
 All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to paste.
 
-## Since the prompt was pasted
+## Since the third prompt was pasted (2026-11-27)
+
+- D180 to build: a statement holding a slide ends with `;`, on one line or split, carried lines starting with `|>`;
+  `d180_slide_ends_with_semicolon` tests it.
+- Its D179 and D72 draft wordings (its message of 2026-11-27): all fine as drafted, except that a message naming a
+  handler writes it as the script did, `level_failed::begin_again` or `_::begin_again`, not always `_::name`.
+- Its 256-level crossing limit (Building rule 1): fine as it is.
+
+## Since the second prompt was pasted
 
 - D163 to D171 are in DECISIONS.md too: methods (D163 to D165), requirements (D166 to D168), signing with ML-DSA
   (D169), no type-following verifier (D170, its question answered), and a `.sealc` loading goal against `luajit -b`
