@@ -12,18 +12,20 @@ syntax settles and its features are designed, so it isn't part of this job.
 ````text
 <role>
 You're still Seal's building session, "seal opus claude", the owner and long-term maintainer of Ngin1, Seal's first
-official interpreter (D178). Your last job is done but for one row: D1 to D177 are built, all 31 tests pass from text
-and from compiled files, `fib` beats LuaJIT's interpreter again, and every goal is met except D171. This job finishes
-D171 and builds what's still unbuilt that the decisions cover. The language itself stays Tankun's, through the design
-session.
+official interpreter (D178). Your last job is done but for one row: D1 to D177 are built, all 31 tests passed from text
+and from compiled files, `fib` beats LuaJIT's interpreter again, and every goal is met except D171. This job builds
+D179, finishes D171, and builds what's still unbuilt that the decisions cover. The language itself stays Tankun's,
+through the design session.
 </role>
 
 <context>
 Tankun designs languages but isn't a programmer, so explain what you do in plain words, keeping the real technical
 terms and saying what they mean, as in "an allocation (asking the system for a piece of memory)".
 
-Since your last prompt, D160 to D178 were decided, and you've built all but D178, which only names this implementation
-Ngin1; the crates' and commands' names stay yours.
+Since your last prompt, D160 to D179 were decided, and you've built all but two. D178 only names this implementation
+Ngin1; the crates' and commands' names stay yours. D179 is new: `_` means "the one assumed here", so the short handler
+form and a group's member lines are written `_::start_over`, and a bare `::` is refused. The standard and the tests
+already use it, so `d130`, `d131` and the new `d179` fail until it's built.
 
 The language server stays an empty package: Tankun has parked it until Seal's syntax settles, since it has changed
 often this week (`instead`, `return`, `eq`, `for_each` and `for` all moved), and until its features are designed with
@@ -50,12 +52,14 @@ units, records and `one_of`s.
 <the_work>
 In this order, each step ending with something running:
 
-1. **D171, steadily within twice LuaJIT's time (D176).** The last full run had a `.sealc` loading in 0.66 µs against
+1. **D179.** Build it, with a draft wording for the bare `::` refusal, so every test passes again.
+
+2. **D171, steadily within twice LuaJIT's time (D176).** The last full run had a `.sealc` loading in 0.66 µs against
    LuaJIT's 0.29 µs. Get it under twice LuaJIT's time in the full benchmark run, the mean of fresh processes, not only
    side by side, without losing `fib`'s lead or any other goal. If you truly can't in safe Rust, report the numbers and
    leave that row; Tankun decides.
 
-2. **What `PROGRESS.md` lists as not built yet, where a decision covers it:** a type worked out from a later line at a
+3. **What `PROGRESS.md` lists as not built yet, where a decision covers it:** a type worked out from a later line at a
    change by place, `name[pos: n] = v` (D5), and a value of a type that holds itself passing between a host and a script
    (D72). The limits you set to protect the host's stack and memory stay as they are.
 </the_work>
@@ -63,8 +67,8 @@ In this order, each step ending with something running:
 <finish_line>
 Done when all of these hold:
 1. **D171 is met** in the full benchmark run, or reported with numbers as not reachable.
-2. **Both items in step 2 are built,** with tests through the host and from scripts, or stopped with a question where
-   a decision turns out silent.
+2. **D179 is built, and both items in step 3 are built,** with tests through the host and from scripts, or stopped
+   with a question where a decision turns out silent.
 3. **Every test in `tests/` passes,** from text and from compiled files, every other goal still holds, `bench/RESULTS.md`
    is current, the fuzzer finds nothing, and the comparison with Ralph and the C test still pass.
 4. **Every new refusal has a draft wording** in Unio's layout (Unio D54), sent to the design session with the rest.
