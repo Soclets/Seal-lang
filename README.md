@@ -1,7 +1,7 @@
 # Seal
 
 Seal is an interpreted, embeddable, sandboxed scripting language, inspired by [Unio](https://github.com/Soclets/Unio-lang)
-and meant to be easier to write. It's implemented in Rust.
+and meant to be easier to write. Its first official interpreter, Ngin1, is written in Rust.
 
 It's sealed: a Seal script can reach nothing outside itself except through the doors the program embedding it opens.
 

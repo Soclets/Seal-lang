@@ -5435,3 +5435,18 @@ used without its own random-number feature, so only `seal keygen` and `seal buil
 
 **Tankun's words.** Asked "Should Seal also depend on `generic-array`, `block-buffer`, `cpufeatures` and `libc`, which
 come in through `sha3`?", the owner chose: "yea"
+
+## D178. Seal's first official interpreter is called Ngin1
+
+2026-11-27.
+
+**Chosen.** The implementation in this repository, the `seal` library and its tools, built since D1, is Seal's first
+official interpreter, named **Ngin1**. The name joins Tankun's Ngin family: NginSeal, the 2D engine (its D1), NginJIT
+and NginLearn (D111's words), and NginB, the native option still undecided. Seal, the language, keeps its own name;
+Ngin1 is one implementation of it. The crates' and commands' names stay the building session's.
+
+**Weighed.** Nothing; Tankun named it.
+
+**Why this won.** Tankun's choice, in the family's style.
+
+**Tankun's words.** Unasked: "Btw, the first official Seal interpreter is called Ngin1"

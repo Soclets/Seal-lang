@@ -1,5 +1,7 @@
 # Seal's architecture
 
+This is Ngin1, Seal's first official interpreter (D178).
+
 How Seal is built, as decided so far. The language itself is in `standard/`; this is the shape of the implementation,
 for the building session. The details inside each part are the building session's to propose (IMPLEMENTATION.md,
 Building rule 5).
