@@ -7,6 +7,10 @@ message once the open questions are settled. Removed once sent.
 
 All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to paste.
 
+## Since the rename prompt was built (2026-11-28)
+
+- Its D181 and D182 draft wordings (its message of 2026-11-28): all fine as drafted.
+
 ## Since the third prompt was pasted (2026-11-27)
 
 All of these were in `design/wax-rename-prompt.md`, pasted by Tankun and built on 2026-11-28 (7a1b0b8).
