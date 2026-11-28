@@ -1,18 +1,18 @@
-# Prompt for the honeycomb session: the Wax website's landing video
+# Prompt for website claude: the Wax website's landing video
 
 **Not pasted yet.** Tankun pastes it when they choose.
 
-Start a new Claude Code session in a new folder, `/Users/ts/WaxHoneycomb`, on Claude Opus 5.5 at `high` effort, and
-paste the block below. Written by the design session on 2026-11-28, after reading Anthropic's "Prompting Claude Opus
+Start a new Claude Code session named "website claude" in a new folder, `/Users/ts/WaxHoneycomb`, on Claude Opus 5.5
+at `high` effort, and paste the block below. Written by the design session on 2026-11-28, after reading Anthropic's "Prompting Claude Opus
 5.5", the "Prompting Claude Opus 5" guide it points to, and the general "Prompting best practices", each in full, that
 morning, as IMPLEMENTATION.md's Prompting rule asks. The session starts outside the Wax repository, so no hook prints
 any rules file into it; the rules it needs are in the block.
 
 ````text
 <role>
-You're the honeycomb session: you make the looping background video for the first thing people see on the website of
-Wax, a programming language. Tankun, the person you're working for, designed the shot. You build it in Blender and
-hand over finished video files. You don't build the website itself.
+You're "website claude", working on the website of Wax, a programming language. Your first job is the looping
+background video for the first thing people see there. Tankun, the person you're working for, designed the shot. You
+build it in Blender and hand over finished video files. The website itself isn't part of this job.
 </role>
 
 <context>
