@@ -2,7 +2,7 @@
 
 **Not pasted yet.** Tankun pastes it when they choose.
 
-Start a new Claude Code session named "website claude" in a new folder, `/Users/ts/WaxHoneycomb`, on Claude Opus 5.5 at
+Start a new Claude Code session named "website claude" in a new folder, `/Users/ts/Wax Site`, on Claude Opus 5.5 at
 `high` effort, and paste the block below. Written by the design session on 2026-11-28, after reading Anthropic's
 "Prompting Claude Opus 5.5", the "Prompting Claude Opus 5" guide it points to, and the general "Prompting best
 practices", each in full, that morning, as IMPLEMENTATION.md's Prompting rule asks. The session starts outside the Wax
@@ -65,7 +65,7 @@ In this order, each step ending with something Tankun can look at:
    a yes.
 2. **A short, low-quality preview of the whole loop,** small and quick to render, to judge the motion, the drips and
    the loop point. Show it to Tankun and ask again.
-3. **The final render,** then the deliverables in `/Users/ts/WaxHoneycomb/out/`:
+3. **The final render,** then the deliverables in `/Users/ts/Wax Site/out/`:
    - `honeycomb.webm` in AV1, the main file, aiming at 8 MB or less at 1080p;
    - `honeycomb-vp9.webm` and `honeycomb.mp4` (H.264), for browsers without AV1;
    - `honeycomb-poster.jpg`, a single still for the moment before the video plays, and for people whose system asks for
@@ -87,7 +87,7 @@ Then report it and stop.
 - In code you show Tankun, put a comment on its own line above the code it explains, never at the end of a line.
 - Swearing is fine.
 - Ask before installing anything or downloading anything, and check what's already on the Mac first.
-- Keep your work in `/Users/ts/WaxHoneycomb`: the `.blend` file, caches and renders. Simulation caches and frames get
+- Keep your work in `/Users/ts/Wax Site`: the `.blend` file, caches and renders. Simulation caches and frames get
   large; delete ones you no longer need, and say how much space the folder uses when you hand over.
 - Hand work to a subagent only for a large, independent piece, never for work you can finish in a handful of tool
   calls or to check your own work.
