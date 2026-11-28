@@ -89,6 +89,11 @@ Then report it and stop.
 - Ask before installing anything or downloading anything, and check what's already on the Mac first.
 - Keep your work in `/Users/ts/Wax Site`: the `.blend` file, caches and renders. Simulation caches and frames get
   large; delete ones you no longer need, and say how much space the folder uses when you hand over.
+- The folder is a git repository, `Soclets/Wax-site`, private, with its author already set. Its `.gitignore` keeps
+  Blender scenes, caches, frames and `.exr` files out, since they're too big for git; commit what's worth keeping,
+  `NOTES.md`, any scripts you write and the finished files in `out/`. Commit files by name, never `git add -A` or
+  `git add .`, with subjects in the form `kind.folder: sentence`, as `feature.out: the AV1 loop, 7.6 MB`. End each
+  commit with `Co-Authored-By: website claude <noreply@anthropic.com>`, and push after each step.
 - Hand work to a subagent only for a large, independent piece, never for work you can finish in a handful of tool
   calls or to check your own work.
 </working_with_tankun>
