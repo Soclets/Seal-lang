@@ -13,7 +13,7 @@ end
 ```
 
 - **No `:`** after `if`, `elif` or `else` (D9), **one `end`** for the whole `if` (D20).
-- **`elif`** is short for "else if" (D10, D40). Unio writes `else if`, and Seal's `elif` is a deliberate difference.
+- **`elif`** is short for "else if" (D10, D40). Unio writes `else if`, and Wax's `elif` is a deliberate difference.
 - **A condition must be a `Bool`:** `if lives` is refused, with `if lives not_eq 0` as the fix (D16, Unio D187).
 
 ## Comparisons and logic
@@ -77,7 +77,7 @@ end
 
 - **`to` includes the last number, `before` stops short of it,** and `step_by` is optional, counting by 1, negative to
   count down, as `range`'s labels are (Unio D170, D172). A step of 0, or one pointing away from the end, is refused
-  where Seal can see it and stops with a failed check otherwise, as for `range`.
+  where Wax can see it and stops with a failed check otherwise, as for `range`.
 - **The counter is a new immutable variable for each pass,** ending with the loop; `break` leaves it.
 - **`for_each` goes through items; `for` counts.** A `range[…]` written straight into a `for_each`, as
   `for_each i in range[from: 1, to: 3]`, is refused, with `for i from 1 to 3` as the fix; a range kept in a variable

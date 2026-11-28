@@ -1,25 +1,25 @@
-# The Seal standard
+# The Wax standard
 
-What Seal is now, by topic. [`DECISIONS.md`](../DECISIONS.md) records how each rule was decided; this standard says
+What Wax is now, by topic. [`DECISIONS.md`](../DECISIONS.md) records how each rule was decided; this standard says
 what the rules are today.
 
 ## How it's written
 
 - **`DECISIONS.md` is the source.** Every rule here names its decision, as in "(D7)". Where the two disagree, the
   decision wins and the standard is wrong.
-- **Seal takes many rules from Unio** (D15, D16, D22). Those name Unio's decision, as in "(Unio D170)", and point to the
+- **Wax takes many rules from Unio** (D15, D16, D22). Those name Unio's decision, as in "(Unio D170)", and point to the
   chapter of [Unio's standard](https://github.com/Soclets/Unio-lang/tree/main/standard) that has them in full. Unio's
-  examples are read in Seal's syntax, as the table below shows.
+  examples are read in Wax's syntax, as the table below shows.
 - **Undecided means "Not decided".** Anything the decisions leave open is marked **Not decided** where it would go,
   never filled in here. A building session stops there with "not designed yet" (IMPLEMENTATION.md, rule 11).
-- **No compatibility promise.** Any new version of Seal may change any rule here, and scripts and hosts are updated to
+- **No compatibility promise.** Any new version of Wax may change any rule here, and scripts and hosts are updated to
   match (D137).
 
-## Reading Unio's rules in Seal's syntax
+## Reading Unio's rules in Wax's syntax
 
-Where a chapter here points to Unio's standard, Unio's examples change only as Seal's decisions say:
+Where a chapter here points to Unio's standard, Unio's examples change only as Wax's decisions say:
 
-| Unio | Seal | Decided in |
+| Unio | Wax | Decided in |
 |---|---|---|
 | `proc.main:` … `end proc.main` around the program | the script's top level, run once when it's loaded | D4 |
 | `let $x: Whole = 0;` | `x = 0`, the type worked out | D2, D7, D8 |
@@ -32,7 +32,7 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 | `show_msg("{x}")` | `"{x}"`: every text fills its braces in both | D75 |
 | `for each $x in $xs:` | `for_each x in xs` | D146 |
 | `show_msg`, `ask`, `random` | doors, if the host opens them, under the names it chooses | D11 |
-| `.unio` | `.seal` | D25 |
+| `.unio` | `.wax` | D25 |
 
 ## Chapters
 
@@ -43,6 +43,6 @@ Where a chapter here points to Unio's standard, Unio's examples change only as S
 5. [Control flow](05-control-flow.md): `if`, `elif`, comparisons, logic, `while`, `for_each` and `break`
 6. [Types](06-types.md): `Whole`, `Float`, `Bool`, `Text`, lists and arrays, records, dictionaries, options and `match`, `Maybe`, filling in text, converting
 7. [Failures](07-failures.md): `?`, `??` and `otherwise`
-8. [Built in](08-built-in.md): what Seal provides itself
+8. [Built in](08-built-in.md): what Wax provides itself
 9. [Hosts](09-hosts.md): loading, doors, narrowings on doors, IDs and limits
 10. [Checks and messages](10-checks-and-messages.md): when checks run, build modes, and how the host is told

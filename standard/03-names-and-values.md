@@ -42,7 +42,7 @@ unused saved = save(game) ?? 0
 
 ## `_`: the one assumed here
 
-`_` stands for the one Seal assumes from where it stands, and is allowed only in these places, each with one fixed
+`_` stands for the one Wax assumes from where it stands, and is allowed only in these places, each with one fixed
 direction to look in; anywhere else it's refused (D179):
 
 | Where | What `_` assumes | Example |
@@ -65,7 +65,7 @@ hp = clamp(_ + heal, low: 0, high: max_hp)
 enemies[pos: i].hp = _ - 1
 ```
 
-- **It works with anything,** maths, calls or facts, so Seal has no `+=` and its kin.
+- **It works with anything,** maths, calls or facts, so Wax has no `+=` and its kin.
 - **The left side is worked out once,** positions and keys included, and `_` reads it.
 - **It can appear more than once,** as `x = _ * _`.
 - **It's refused where nothing is being changed:** when the `=` makes a new name. The name must be `mut`, as for any
@@ -83,23 +83,23 @@ beyond plain English, as in `café`, are refused in any name for now (D93).
 - **A name can't be a keyword:** `mut if = 3` is refused (D7).
 - **A name can't be `all`,** since `[all: 5]` would read both as a list of 5s and as a `Dict` keyed by the name (D83,
   Unio D207).
-- **Colours and font are recommended, never forced:** Seal's docs show code in Unio's colours and font (Unio D194,
-  D197, D198), and Seal's editor extension offers Unio's colours as a theme, suggested once when it's installed. The
-  language server only says what kind each piece of code is, for any theme, and a host shows Seal's messages however
+- **Colours and font are recommended, never forced:** Wax's docs show code in Unio's colours and font (Unio D194,
+  D197, D198), and Wax's editor extension offers Unio's colours as a theme, suggested once when it's installed. The
+  language server only says what kind each piece of code is, for any theme, and a host shows Wax's messages however
   it likes (D7, D78).
 - **A name can't be made where its spelling already means something,** a top-level name, another name in use, a
   procedure, a door or a built-in, whether as a name, a parameter, a `for_each` name or a `case` value: there's no
   shadowing (D71). A procedure can't take a built-in's or a door's name either (D93).
 - **The host's doors and their narrowings follow the same spelling,** checked when the host opens them (D24).
 
-**Not decided:** letters beyond English; Seal's full list of keywords.
+**Not decided:** letters beyond English; Wax's full list of keywords.
 
 ## Values
 
 Every name owns its own value: after `b = a`, changing `b` never touches `a`, lists included. No reference can be
 kept, so nothing dangles, nothing leaks, and no cycles form (D15, Unio D130).
 
-- **There's no garbage collector.** Seal counts the holders of each big value, copies one only when it's written while
+- **There's no garbage collector.** Wax counts the holders of each big value, copies one only when it's written while
   shared (copy-on-write), and frees it the moment its last holder ends (D15).
 - **Something that's really one thing, shared with the host, is held by an ID** and changed through the host's doors,
   as in `damage(enemy_id, 10)` (D15, chapter 9).

@@ -1,6 +1,6 @@
 # 8. Built in
 
-Seal's built-ins are only what touches nothing outside the script, so they behave the same in every host (D11). Showing
+Wax's built-ins are only what touches nothing outside the script, so they behave the same in every host (D11). Showing
 text, asking, files, time, sound and randomness aren't built in: they're doors, if the host opens them (chapter 9).
 
 | Built-in | What it does | Decided in |

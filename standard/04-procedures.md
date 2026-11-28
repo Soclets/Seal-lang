@@ -32,7 +32,7 @@ end
   D84).
 - **The line has no `:`** (D9).
 
-Seal has no contracts, `requires` or `ensures`, for now (D39).
+Wax has no contracts, `requires` or `ensures`, for now (D39).
 
 A procedure that takes nothing has no brackets, and every call writes `()`: `proc on_tick`, called as `on_tick()`
 (D60, Unio D4).
@@ -91,7 +91,7 @@ end
   A type's method matches a listed one when its name, the types it takes (with `?Self` as the type), their labels,
   its result and its failures are the same; its parameters' names and its body are its own.
 - **A record or `one_of` meets a script's requirement only by saying so,** with `meets [ … ]` as its first line, as
-  `meets [Scored]`; Seal checks there that it has every method the requirement lists (D167). Nothing meets one by
+  `meets [Scored]`; Wax checks there that it has every method the requirement lists (D167). Nothing meets one by
   accident.
 
 **Not decided:** generics over units; generic records and `one_of`s; how generics are compiled.

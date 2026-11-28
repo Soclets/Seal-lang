@@ -1,12 +1,12 @@
-# Seal: rules
+# Wax: rules
 
-The rules for every session working on Seal. A hook prints this file into every session started in this repository,
+The rules for every session working on Wax. A hook prints this file into every session started in this repository,
 at startup, after a compaction and after a clear. A subagent doesn't get it from the hook, so its prompt carries these
 rules (Prompting). A changed rule is changed here, with Tankun's OK. Built on 2026-11-23 from Unio's rules and Cyborg's,
 each rule saying where it came from (owner, 2026-11-23).
 
-The **design session** designs Seal with Tankun. It's the same session that designs Unio, working in Unio's folder,
-and it keeps Seal's record in DECISIONS.md here. **Building sessions**, such as Seal's interpreter session, build from
+The **design session** designs Wax with Tankun. It's the same session that designs Unio, working in Unio's folder,
+and it keeps Wax's record in DECISIONS.md here. **Building sessions**, such as Wax's interpreter session, build from
 the decisions; they follow their prompt in `design/` as well as these rules, and they never decide anything about the
 language. Tankun designs languages but isn't a programmer, so every session explains in plain words. The design
 choices are Tankun's.
@@ -32,7 +32,7 @@ From Unio's rules:
 - A remark or a question from Tankun isn't a yes. When an answer is unclear, check which was meant before logging.
 - Weigh Tankun's hints on their merits: a mentioned option is a prompt to compare it, not to agree with it. Equally,
   don't invent problems: if an idea is fine, say so.
-- Before proposing anything, search DECISIONS.md for what's already decided, here and in Unio's where Seal takes
+- Before proposing anything, search DECISIONS.md for what's already decided, here and in Unio's where Wax takes
   Unio's rules (D15, D16), and build on it.
 - Before saying there's no rule or no way for something, check what Tankun's other projects do: Unio's and Cyborg's
   `IMPLEMENTATION.md` and `.claude/settings.json` (`/Users/ts/Plainly v2/`, `/Users/ts/Cyborg - maybe this time it's
@@ -51,7 +51,7 @@ Tankun's words are quoted whole and exactly, typos included, never in pieces or 
 message can't be quoted, write a marker without quotes instead: *too long* (over 300 characters in DECISIONS.md, or
 over 60 in a commit subject) or *has code* (a code block, or in a commit subject any backticks). Pick by the check in
 Unio's IMPLEMENTATION.md, never by feel, and before committing a decision run Unio's checker on it:
-`python3 -I design/check-quotes.py TRANSCRIPT.jsonl --log PATH/TO/Seal/DECISIONS.md`, from Unio's folder.
+`python3 -I design/check-quotes.py TRANSCRIPT.jsonl --log PATH/TO/Wax/DECISIONS.md`, from Unio's folder.
 
 The design session may correct a document that contradicts the decisions, but only when the proof is firsthand in its
 current context, and never an entry in DECISIONS.md, which changes only through a new decision.
@@ -59,7 +59,7 @@ current context, and never an entry in DECISIONS.md, which changes only through 
 ## Code
 
 From Unio's rules:
-1. **Code uses Seal's terms,** the ones its decisions and Unio's standard use (procedure, narrowing, door, host), one
+1. **Code uses Wax's terms,** the ones its decisions and Unio's standard use (procedure, narrowing, door, host), one
    name per concept.
 2. **Full words, not abbreviations:** `expression`, not `expr`.
 3. **Rust's own casing:** `snake_case` for functions and variables, `CamelCase` for types.
@@ -70,18 +70,18 @@ From Unio's rules:
 
 1. **The host is never harmed** (D14). No script, however wrong or hostile, may crash the host, freeze it past its
    step budget, take more memory than its cap, or reach anything but the doors the host opened (D11). A bug that breaks
-   this is the worst kind, and is fixed before anything else. (Seal's own.)
+   this is the worst kind, and is fixed before anything else. (Wax's own.)
 2. **No `unsafe` at all, except in `seal-c`.** The sandbox's walls are the Rust compiler's guarantees, so every crate
    forbids `unsafe_code`, dependencies are chosen to need none where one exists, and any that do are listed with why
    they're trusted. The one exception is `seal-c`, the C API (D136), since crossing into C needs it: its `unsafe` is
-   kept as small as it can be, each block says why it's sound, and it's tested hard. (Seal's own, from Cyborg's D65,
+   kept as small as it can be, each block says why it's sound, and it's tested hard. (Wax's own, from Cyborg's D65,
    with the exception by Tankun's OK, 2026-11-25.)
 3. **Style and checks.** `rustfmt`, `clippy`, and comments that say why. Every crate but
    `seal-c` has `#![forbid(unsafe_code)]`, `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` and
    `#![warn(clippy::pedantic)]`, with warnings as errors. No `unwrap`, `expect`, indexing that can panic, or panic of
-   any kind on a path a script can reach: failures are `Result`, checked. If Seal itself goes wrong, it says so and how
+   any kind on a path a script can reach: failures are `Result`, checked. If Wax itself goes wrong, it says so and how
    to report it, and the host carries on. (From Cyborg's rules 6 and 7, and its D65.)
-4. **Language.** Seal and its tools are Rust, built with `cargo`, on one pinned stable Rust toolchain, recorded in
+4. **Language.** Wax and its tools are Rust, built with `cargo`, on one pinned stable Rust toolchain, recorded in
    `rust-toolchain.toml`. (From Unio's rule 9 and Cyborg's rule 1.)
 5. **Optimizations from the start.** The interpreter is built with its optimizations as it goes, never as a plain
    version sped up later, each part of the language arriving with them. A check is removed only where it's proved
@@ -89,9 +89,9 @@ From Unio's rules:
    propose. (From Unio's rule 1 and Cyborg's rule 10.)
 6. **A fuzzer from the start.** Random scripts, valid and invalid, are thrown at the interpreter continually, built
    from the decisions, never from the interpreter's own source. Anything that breaks rule 1 is shrunk to the smallest
-   script that shows it. (Seal's own, from Unio's rule 12.)
+   script that shows it. (Wax's own, from Unio's rule 12.)
 7. **Ralph stays a black box** (D19). Shared meaning is compared against Unio's oracle, Ralph, through a translator, on
-   tests and fuzzed scripts. The Seal session runs Ralph's program but never reads `oracle/` in Unio's repository, so
+   tests and fuzzed scripts. The Wax session runs Ralph's program but never reads `oracle/` in Unio's repository, so
    their bugs can't agree. A difference is a bug in one of them, and the decisions say which; if they're silent, it's a
    question for Tankun. (From Unio's rule 12.)
 8. **Keep going.** In long work, a finished step, a report or a wrap-up isn't a reason to stop: send the report in the
@@ -113,7 +113,7 @@ From Unio's rules:
     session may fail until what it tests is built. Output matches the expected files byte for byte, and a building
     session never edits an expected file: a test that looks wrong goes to the design session. (From Unio's rule 11 and
     Cyborg's rule 5.)
-13. **Cores.** On Tankun's 10-core Mac, Seal's building session uses 3, as in `cargo build -j 3`. (From Unio's rule 6.)
+13. **Cores.** On Tankun's 10-core Mac, Wax's building session uses 3, as in `cargo build -j 3`. (From Unio's rule 6.)
 14. **Scratchpad.** Scratch space is for what can be lost. Anything needed later goes in the repository and gets
     committed. (From Unio's rule 7.)
 15. **Downloads are free.** A dependency or tool is chosen on maturity, safety, maintenance and speed. A less mature or
@@ -145,7 +145,7 @@ From Unio's rules:
 - Subjects are `kind.folder.narrowing: sentence`. Kinds: `decision`, `design`, `feature`, `fix`, `test`, `house`. A
   decision's commit credits who chose it and its number, as in `(owner: "yea"; D2)`.
 - Every commit ends with its own session's trailer: `Co-Authored-By: design claude <noreply@anthropic.com>` for the
-  design session, and one for each of Seal's building sessions, named for itself so `git log` shows who did what:
+  design session, and one for each of Wax's building sessions, named for itself so `git log` shows who did what:
   `seal claude` for the first, on Claude Fable 5.2, and `seal opus claude` for the one carrying it on, on Claude Opus
   5.5 (owner, 2026-11-25).
 

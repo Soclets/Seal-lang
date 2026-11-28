@@ -12,7 +12,7 @@
 
 ## Build modes
 
-Seal has none: a script loads and runs one way in every host, with every check on. A host chooses a script's doors and
+Wax has none: a script loads and runs one way in every host, with every check on. A host chooses a script's doors and
 limits, never whether checking happens (D17).
 
 ## Messages
@@ -22,7 +22,7 @@ Every message goes to the host two ways (D26):
 - **as its parts:** its kind (`refused` or `check failed`), file, line, column, and its `what`, `when`, `fix` and `why`.
 
 ```
-refused: goblin.seal:4:5, line 4 column 5
+refused: goblin.wax:4:5, line 4 column 5
  4 |     tires = tries + 1
    |     ^^^^^
  what:    `tires` is never used
@@ -36,9 +36,9 @@ script.
 ## The same everywhere
 
 A script, given the same calls and the same answers from its doors, gives the same results on every machine, bit for
-bit, floats included (D50). A maths function Seal adds later must be correctly rounded (D50).
+bit, floats included (D50). A maths function Wax adds later must be correctly rounded (D50).
 
 ## Testing against Ralph
 
-What Seal shares with Unio is compared against Unio's oracle, Ralph, as a black box, through a translator from Seal to
+What Wax shares with Unio is compared against Unio's oracle, Ralph, as a black box, through a translator from Wax to
 Unio and a fuzzer (D19).

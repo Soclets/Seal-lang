@@ -1,4 +1,4 @@
-# Seal's decisions
+# Wax's decisions (named Seal until D183)
 
 Every design choice for Seal, with what was weighed and why it won, in the order made. Tankun designs Seal with the
 design session; the choices are Tankun's. Seal is inspired by Unio, so many entries point to the Unio decision
@@ -716,6 +716,8 @@ language server recognise Seal files by it.
 was already `guessing_game.seal`.
 
 **Tankun's words.** Asked "Should Seal scripts use the `.seal` extension?", the owner chose: "yea".
+
+(Changed by D183: scripts end in `.wax`.)
 
 ## D26. Every message goes to the host as Unio-style text and as its separate parts
 
@@ -4276,6 +4278,8 @@ loaded?", the owner chose: "yea"
 
 (Changed by D170: the verifier checks that everything is in range, not each value's type; the VM's run-time checks and signing do the rest.)
 
+(Changed by D183: compiled files end in `.waxc`.)
+
 ## D142. LuaJIT's interpreter joins Luau's as a bar Seal must beat
 
 2026-11-25.
@@ -5615,3 +5619,30 @@ only multiplies in Seal's code; `^` had no job there, since D108 turned it down 
 
 **Tankun's words.** has code (a C+ sketch, then asking to change the handler jump marker to `^` in Seal), "It's still
 the same noticability, right?", then, asked "still:** Seal's jump mark becomes `^`", the owner chose: "yea"
+
+## D183. Seal is renamed Wax
+
+2026-11-28.
+
+**Chosen.** The language is renamed **Wax**, as in sealing wax:
+- **Its home is `wax-lang.com`,** once Tankun registers it, and its repository becomes `Soclets/Wax-lang`.
+- **Scripts end in `.wax`,** in place of `.seal` (D25), and compiled files in `.waxc`, in place of `.sealc` (D141).
+- **The engine becomes NginWax.** Ngin1 keeps its name, as Wax's first official interpreter (D178).
+- **The crates' and the command's new names stay the building session's** (D178), suggested as `wax-lang` on
+  crates.io, where `wax` is taken, and `wax` for the command.
+
+Decisions before this one keep the name Seal, as written at the time.
+
+**Weighed.**
+- Keeping Seal, which the design session recommended once Wax's clashes were found: LingDong-'s wax, a small language
+  that transpiles to many others (858 stars, last changed in March 2025); alibaba's Wax, Lua for iPhone apps (about
+  1,800 stars, last changed in 2019); and the `wax` crate, a glob library with 3.6 million downloads. Seal's own
+  clashes, as Microsoft SEAL, are mostly not languages. Tankun: `seal-lang.org` and `seallang.org` are taken, while
+  `waxlang.org`, `waxlang.com`, `wax-lang.org`, `wax-lang.com` and `wax-lang.net` were all free.
+- Hermit and Tin, which the design session listed beside Wax.
+
+**Why this won.** A free home for the language, under a name that still means sealing, and clashes that are old,
+small or not languages.
+
+**Tankun's words.** "Lol, whatever. Later. If we rename Seal, what should the new name be?", "Wax. Go ahead check",
+"No mfs own the domains, though", "wax-lang.com looks better, tbh", "Rename"

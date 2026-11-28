@@ -1,8 +1,8 @@
-# Seal's architecture
+# Wax's architecture
 
-This is Ngin1, Seal's first official interpreter (D178).
+This is Ngin1, Wax's first official interpreter (D178).
 
-How Seal is built, as decided so far. The language itself is in `standard/`; this is the shape of the implementation,
+How Wax is built, as decided so far. The language itself is in `standard/`; this is the shape of the implementation,
 for the building session. The details inside each part are the building session's to propose (IMPLEMENTATION.md,
 Building rule 5).
 
@@ -37,10 +37,10 @@ run:   a register VM runs the bytecode, counting steps
 
 - **The host's side** (D48): doors are typed Rust closures; a host chooses each script's doors and limits when loading
   it; loading checks and runs the top level, returning a handle; calls in are checked by name and types; refusals,
-  failed checks and limits come back as errors, never crashes; records and `one_of` cross by `#[derive(Seal)]`.
+  failed checks and limits come back as errors, never crashes; records and `one_of` cross by `#[derive(Wax)]`.
 
 ```rust
-let mut goblin_script = Script::load("goblin.seal", &source, &doors, limits)?;
+let mut goblin_script = Script::load("goblin.wax", &source, &doors, limits)?;
 goblin_script.call("on_hit", (10,))?;
 ```
 
@@ -59,6 +59,6 @@ goblin_script.call("on_hit", (10,))?;
   Purpose benchmark for the cost of checks.
   Binary-trees joins the benchmarks now that a type can hold itself (D72).
 
-- **An oracle,** if Seal ever has one, not soon: proven to match the standard entirely, trusting only the third-party
+- **An oracle,** if Wax ever has one, not soon: proven to match the standard entirely, trusting only the third-party
   tools it's built on, such as Rocq or SPARK at Platinum (D138). Until then, the shared parts are checked against
   Ralph (D19).

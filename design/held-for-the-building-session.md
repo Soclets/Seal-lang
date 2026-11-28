@@ -9,6 +9,11 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 
 ## Since the third prompt was pasted (2026-11-27)
 
+- D183, Seal renamed Wax, to carry out on the code side: the crates and the command (your names, suggested
+  `wax-lang` on crates.io, where `wax` is taken, and `wax` for the command), `.seal` scripts read as `.wax` and
+  compiled files written as `.waxc`, every message and doc in `crates/`, `bench/` and `PROGRESS.md`, and the test
+  runner, which must now read `tests/*/program.wax`: the design session renamed all 35 test files, so every test fails
+  until it does. The repository becomes `Soclets/Wax-lang`; the folder on disk stays `/Users/ts/Seal` for now.
 - D182 to build: a handler that can jump is marked `^`, as `?? _::^give_up`, in place of `*` (D179); `d179` now uses
   it and `d182_jump_mark_caret` is new.
 - D181 to build, answering its comment-line reading: a comment on a line of its own may stand between a split slide's

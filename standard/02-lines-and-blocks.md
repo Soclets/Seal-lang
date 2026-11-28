@@ -90,6 +90,6 @@ A line break or a tab inside text is written with the built-in names `{newln}` a
 
 ## Files
 
-A script is one file ending in `.seal` (D25).
+A script is one file ending in `.wax` (D25).
 
 **Not decided:** whether a script can use another script.

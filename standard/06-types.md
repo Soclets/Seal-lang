@@ -1,7 +1,7 @@
 # 6. Types
 
-Seal's types are Unio's, with Unio's rules for them (D16). Unio's standard, chapter 7, has them in full; read its
-examples in Seal's syntax (README).
+Wax's types are Unio's, with Unio's rules for them (D16). Unio's standard, chapter 7, has them in full; read its
+examples in Wax's syntax (README).
 
 | Type | What it holds | At the doors, in Rust |
 |---|---|---|
@@ -36,7 +36,7 @@ examples in Seal's syntax (README).
   number too big for a `Whole` beside a `HugeWhole` (D116, D119).
 - **Text counts graphemes by default,** what a person sees as one character: `.len` counts them, and `[pos:]`,
   `[offset:]` and `for_each` each give one grapheme as a `Text`. `.len.ucp` counts Unicode code points and `.len.bytes`
-  UTF-8 bytes. Each Seal version pins one Unicode version (D65, D66).
+  UTF-8 bytes. Each Wax version pins one Unicode version (D65, D66).
 - **`.split(by: t)` gives a `List<Text>`,** keeping empty pieces, and `.split.no_empty(by: t)` drops them (D65).
 - **Splitting by empty text is refused while loading** wherever the empty text can be seen, as `split(by: "")`; one
   that only turns out empty while running is a failed check, as dividing by zero is (D89).
@@ -46,7 +46,7 @@ examples in Seal's syntax (README).
   length and their items in order; `Dict`s by their keys, each with an equal value, whatever order they were added in; and
   `one_of`s by their case and its values.
 - **Text is written in double quotes, and joined only by filling it in with braces,** as in `"{first} {last}"` (D16,
-  D75, D77, Unio D21, D201). Seal has no operator for joining text: `&` is refused, and so is `+` on text, each with
+  D75, D77, Unio D21, D201). Wax has no operator for joining text: `&` is refused, and so is `+` on text, each with
   the braces form as the fix.
 - **Maths:** `+`, `-`, `*`, `/`, `div.floor`, `div.trunc`, `rem` and `sqrt` (D22, Unio D27, D70, D71, D185). Floats
   are checked after every operation (D18).
@@ -107,9 +107,9 @@ total = 2 secs + 500 ms                  // 2500 ms
 - **A unit is an amount, a span, unless it's marked a point,** with the narrowing `.point`, as `px.point` for a place
   on screen or `secs.point` for a moment. A point plus a span is a point, a point minus a point is a span, and two
   points added are refused (D121).
-- **Prefixes and showing a unit follow Cyborg's units** where Seal hasn't decided its own (D111).
+- **Prefixes and showing a unit follow Cyborg's units** where Wax hasn't decided its own (D111).
 
-Seal's own unit groups are (D113):
+Wax's own unit groups are (D113):
 
 | Group | Units |
 |---|---|
@@ -146,7 +146,7 @@ mut speed: Float[min: 0.0, max: 12.5] = 0.0
 ```
 
 - **`min:` and `max:` are hard limits:** storing a value outside them stops the script with a failed check, and one
-  Seal can see while loading, as `gold: Whole[min: 0] = -5`, is refused (D18, D54, D107).
+  Wax can see while loading, as `gold: Whole[min: 0] = -5`, is refused (D18, D54, D107).
 - **`min.clamp:` and `max.clamp:` pull a value back to that edge** each time one is stored, so `hp = hp - 150` leaves
   `hp` at 0. Each edge chooses for itself (D107).
 - **A ranged number is its type plus a check:** a plain `Whole` goes into a `Whole[min: 0]` freely, checked or pulled
@@ -284,7 +284,7 @@ end
 
 ## `Maybe`
 
-Seal has no `nil`, `null` or `None`: a name of a type always holds a real value of that type (D38). "Might not be
+Wax has no `nil`, `null` or `None`: a name of a type always holds a real value of that type (D38). "Might not be
 there" is `Maybe<T>`, a built-in `one_of` with the cases `none` and `some[value: T]`, read with `match` or given a
 fallback with `??`, and Rust's `Option<T>` at the doors (D38):
 
@@ -316,7 +316,7 @@ show_msg("Correct! You got it in {tries} tries")
 
 - **Braces hold a name, which may be followed by its fields and facts,** as `{goblin.name}` and `{names.len}`, never
   a calculation or a call; a name, field or fact that doesn't exist is refused at load time (D12, D28, Unio D29).
-- **Every value shows as it's written in Seal,** a list, record, `Dict` or `one_of` included, with text inside in its
+- **Every value shows as it's written in Wax,** a list, record, `Dict` or `one_of` included, with text inside in its
   quotes and a `Float` with its `~` when it isn't exact: `"{bag}"` with `["Gem", "Key"]` shows `["Gem", "Key"]`, and
   `be.Text` gives the same (D100, Unio D155).
 - **`{newln}` and `{tab}` give a line break and a tab,** built-in names filled in like any other, as

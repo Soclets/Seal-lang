@@ -1,23 +1,23 @@
-# Getting started with Seal
+# Getting started with Wax
 
-How to run a script, and how to embed Seal in a Rust program. What Seal is, and its rules, are in the
+How to run a script, and how to embed Wax in a Rust program. What Wax is, and its rules, are in the
 [README](../README.md) and the [standard](../standard/README.md).
 
 ## Trying it
 
-Seal needs Rust, at the version [rust-toolchain.toml](../rust-toolchain.toml) names.
+Wax needs Rust, at the version [rust-toolchain.toml](../rust-toolchain.toml) names.
 
 Run a script with the test host, which opens `show_msg`, `ask`, `rand` and `wait`, and makes the calls listed in a
 `calls.txt` beside the script:
 
 ```
-cargo run --release -p seal-command -- run tests/d004_host_calls/program.seal
+cargo run --release -p seal-command -- run tests/d004_host_calls/program.wax
 ```
 
 Check a script without running it:
 
 ```
-cargo run --release -p seal-command -- check tests/d004_host_calls/program.seal
+cargo run --release -p seal-command -- check tests/d004_host_calls/program.wax
 ```
 
 Build, lint and test everything, the fuzzer and the comparison with Ralph included:
@@ -32,7 +32,7 @@ cargo run --release -p seal-check-all
 use seal::{Doors, Limits, Script};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = std::fs::read_to_string("goblin.seal")?;
+    let source = std::fs::read_to_string("goblin.wax")?;
 
     // The doors this script may use: here, only one.
     let mut doors = Doors::new();
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limits = Limits { steps: 1_000_000, memory: 1 << 20 };
 
     // Loading checks the whole script, then runs its top level.
-    let mut goblin = Script::load("goblin.seal", &source, &doors, limits)?;
+    let mut goblin = Script::load("goblin.wax", &source, &doors, limits)?;
     goblin.call::<()>("on_hit", (10,))?;
     Ok(())
 }

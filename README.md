@@ -1,9 +1,9 @@
-# Seal
+# Wax
 
-Seal is an interpreted, embeddable, sandboxed scripting language, inspired by [Unio](https://github.com/Soclets/Unio-lang)
+Wax is an interpreted, embeddable, sandboxed scripting language, inspired by [Unio](https://github.com/Soclets/Unio-lang)
 and meant to be easier to write. Its first official interpreter, Ngin1, is written in Rust.
 
-It's sealed: a Seal script can reach nothing outside itself except through the doors the program embedding it opens.
+It's sealed: a Wax script can reach nothing outside itself except through the doors the program embedding it opens.
 
 ## A script
 
@@ -22,7 +22,7 @@ The top level runs once, when the script is loaded. After that the host calls th
 
 ## Where things are
 
-- [docs/getting-started.md](docs/getting-started.md): running a script, and embedding Seal in a Rust program.
+- [docs/getting-started.md](docs/getting-started.md): running a script, and embedding Wax in a Rust program.
 - [DECISIONS.md](DECISIONS.md): every design choice, with what was weighed and why it won.
 - [standard/](standard/README.md): what the rules are today.
 - [tests/](tests/README.md): the contract the implementation is built to.
@@ -32,13 +32,13 @@ The top level runs once, when the script is loaded. After that the host calls th
 ## Licences
 
 - [`LICENSE`](LICENSE): Apache-2.0 WITH LLVM-exception, for the implementation: the `seal` library, its C API, the
-  `seal` command and the other tools. It allows commercial use and gives a patent promise; a game shipping Seal
-  includes this licence, as Apache-2.0 asks, and scripts Seal compiles owe nothing.
+  `seal` command and the other tools. It allows commercial use and gives a patent promise; a game shipping Wax
+  includes this licence, as Apache-2.0 asks, and scripts Wax compiles owe nothing.
 - [`LICENSE-MIT-0`](LICENSE-MIT-0): MIT-0, for examples and demos: the test scripts in `tests/`, the benchmark programs
   in `bench/programs/`, and every code sample inside the Markdown files. Copy and remix them freely, with no credit
   needed.
 - [`LICENSE-CC-BY-4.0`](LICENSE-CC-BY-4.0): CC BY 4.0, for the text of this repo's Markdown files, including this
-  README, `DECISIONS.md` and the standard, apart from their code samples. Credit them as `Seal GitHub repo text:
+  README, `DECISIONS.md` and the standard, apart from their code samples. Credit them as `Wax GitHub repo text:
   https://github.com/Soclets/Seal-lang`, say they're under CC BY 4.0, and say whether you changed them.
 
 [`REUSE.toml`](REUSE.toml) maps each file to its licence.
