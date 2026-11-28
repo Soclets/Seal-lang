@@ -505,8 +505,10 @@ From `design/wax-next-prompt.md`, each step committed and pushed:
 - [x] **C25. `^` marks a handler that can jump (D182).** `*` after `::` is refused with `^` as the fix, and a `^`
   anywhere but right after `::` is refused as it's read, naming `**` for powers. Messages name a handler as the script
   wrote it, `level_failed::give_up` or `_::give_up` (the design session's first wording change).
-- [ ] **C26. Comment lines between a split slide's steps (D181).**
-- [ ] **C27. The design session's two wording changes** of 2026-11-28.
+- [x] **C26. Comment lines between a split slide's steps (D181).** The slide carries on past them to the next line
+  starting with `|>`; a blank line on the way is refused.
+- [x] **C27. The design session's two wording changes** of 2026-11-28: handlers named as written (with C25), and
+  the missing-`;` example a three-step slide.
 
 ## Questions for the design session
 
@@ -590,8 +592,18 @@ what's wrong, `why:` gives the rule once. Where a fix can be shown as a whole li
 (Unio D101), as for indentation, spacing, a `return`'s header, a `mut` that goes or one that's missing; those are
 marked.
 
+**New on 2026-11-28 (C25, C26), sent to the design session:**
+- refused, `*` as a jump mark: fix: the line with `^` in its place, as `level = load_level(name) ?? _::^give_up`
+  - why: `*` only multiplies; `^` after `::` says a handler can `return`, `break` or `fail`.
+- refused, a `^` anywhere but right after `::`: `^` marks a handler that can jump, right after `::`
+  - why: `^` says a handler can `return`, `break` or `fail`, as `?? _::^give_up`; a power is written `**`, as `2 ** 3`.
+- refused, a blank line in a split slide: this blank line is inside a split slide
+  - why: a slide carries on to the line starting with `|>` and reads as one block, with comment lines between its steps but no blank line.
+- The jump mark's existing refusals now say `^`: "`_::give_up` can `return`, `break` or `fail`, so it's marked
+  `_::^give_up` where it's used", "… so it takes no `^`".
+
 **New on 2026-11-27 (C19 to C23), sent to the design session:** C23's, for D180:
-- refused, a missing `;`: fix: the slide's last line with `;` added
+- refused, a missing `;`: fix: the slide's last line with `;` added, as `x = 3 |> doubled |> doubled |> be.Text;`
   - why: `|>` points on to the next step, so a `;` says where the slide ends.
 - refused, a `;` on a statement with no slide: fix: the line without it
   - why: the end of a line ends a statement; a `;` marks where a slide ends, since `|>` points on.

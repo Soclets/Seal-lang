@@ -581,7 +581,24 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             // trace: D180. A statement holding a slide carries on to a line starting with `|>`, and otherwise ends
             // with `;`.
             if !lexer.slide_ended {
-                if physical.peek().is_some_and(|(_, next)| next.trim_start().starts_with("|>")) {
+                // trace: D181. Comment lines may stand between a split slide's steps; a blank line may not.
+                let mut ahead = physical.clone();
+                let mut blank = None;
+                let next_code = loop {
+                    match ahead.next() {
+                        Some((at, next)) if next.trim().is_empty() => {
+                            blank.get_or_insert(at);
+                        }
+                        Some((_, next)) if next.trim_start().starts_with("//") => {}
+                        other => break other,
+                    }
+                };
+                if next_code.is_some_and(|(_, next)| next.trim_start().starts_with("|>")) {
+                    if let Some(at) = blank {
+                        let line = u32::try_from(at).unwrap_or(u32::MAX).saturating_add(1);
+                        return Err(Message::refused(Place::new(line, 1, 1), "this blank line is inside a split slide")
+                            .with_why("a slide carries on to the line starting with `|>` and reads as one block, with comment lines between its steps but no blank line."));
+                    }
                     lexer.carrying = true;
                     continue;
                 }
@@ -615,7 +632,7 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
 
 /// A script's lines, as written: its last line break ends its last line rather than starting an empty one, and a `\r`
 /// right before a line break is part of the line break (D63, Unio D144).
-fn physical_lines(source: &str) -> impl Iterator<Item = &str> {
+fn physical_lines(source: &str) -> impl Iterator<Item = &str> + Clone {
     let body = source.strip_suffix('\n').unwrap_or(source);
     let mut rest = (!source.is_empty()).then_some(body);
     // A plain look for each line's end: a script's lines are short, where a general search costs more to start

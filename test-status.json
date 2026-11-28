@@ -1,6 +1,6 @@
 {
-  "passed": 32,
-  "failed": 3,
+  "passed": 35,
+  "failed": 0,
   "tests": {
     "d002_mut_and_unused": { "status": "pass" },
     "d004_guessing_game": { "status": "pass" },
@@ -33,9 +33,9 @@
     "d166_number_requirement": { "status": "pass" },
     "d168_requirements": { "status": "pass" },
     "d172_for_counts": { "status": "pass" },
-    "d179_underscore_assumed": { "status": "fail", "why": "exit status 1, expected 0" },
+    "d179_underscore_assumed": { "status": "pass" },
     "d180_slide_ends_with_semicolon": { "status": "pass" },
-    "d181_comment_in_slide": { "status": "fail", "why": "exit status 1, expected 0" },
-    "d182_jump_mark_caret": { "status": "fail", "why": "exit status 1, expected 0" }
+    "d181_comment_in_slide": { "status": "pass" },
+    "d182_jump_mark_caret": { "status": "pass" }
   }
 }

@@ -662,3 +662,16 @@ fn d182_a_handler_that_can_jump_is_marked_with_a_caret() {
     let power = refusal("x = 2 ^ 3\nshow_msg(\"{x}\")\n");
     assert!(power.contains("a power is written `**`"), "{power}");
 }
+
+// trace: D181
+#[test]
+fn d181_a_split_slide_holds_comment_lines_but_not_blank_ones() {
+    let doubled = "proc doubled[n: Whole] -> Whole\n    return n * 2\nend\n\n";
+    let commented = format!(
+        "{doubled}x = 3\n    |> doubled\n    // twice more\n    // and once again\n    |> doubled\n    |> doubled;\nshow_msg(\"{{x}}\")\n"
+    );
+    assert_eq!(shows(&commented), ["24"]);
+    let blank =
+        refusal(&format!("{doubled}x = 3\n    |> doubled\n\n    |> doubled\n    |> doubled;\nshow_msg(\"{{x}}\")\n"));
+    assert!(blank.contains("this blank line is inside a split slide"), "{blank}");
+}
