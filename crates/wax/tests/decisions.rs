@@ -144,7 +144,7 @@ const GROUP: &str = "group.handler level_failed\n    handles [load_level, load_s
 #[test]
 fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
     let script = format!(
-        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? _::*give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? _::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include _::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include _::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
+        "{LOADERS}{GROUP}proc try_both\n    lost = load_level(\"swamp\") ?? _::^give_up\n    show_msg(\"never {{lost}}\")\nend\n\na = load_level(\"forest\") ?? _::start_over\nb = load_save(\"slot1\") ?? level_failed::start_at(level: 3)\nc = load_level(\"cave\") otherwise\n    include _::start_over\nend\nd = load_level(\"swamp\") otherwise\n    include _::start_at(level: 9)\nend\nshow_msg(\"{{a}} {{b}} {{c}} {{d}}\")\ntry_both()\nshow_msg(\"after\")\n"
     );
     assert_eq!(shows(&script), ["1 3 7 9", "after"]);
 }
@@ -153,12 +153,12 @@ fn d110_handlers_are_used_as_if_their_cases_were_written_at_the_call() {
 #[test]
 fn d110_handler_refusals() {
     let with = |line: &str| format!("{LOADERS}{GROUP}{line}\nshow_msg(\"{{a}}\")\n");
-    assert!(refusal(&with("a = load_level(\"x\") ?? _::give_up")).contains("::*give_up"));
-    assert!(refusal(&with("a = load_level(\"x\") ?? _::*start_over")).contains("takes no `*`"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? _::give_up")).contains("::^give_up"));
+    assert!(refusal(&with("a = load_level(\"x\") ?? _::^start_over")).contains("takes no `^`"));
     assert!(refusal(&with("a = load_level(\"x\") ?? _::begin_again")).contains("has `_::begin_again`"));
     assert!(
         refusal(&with("a = load_level(\"x\") ?? level_failed::begin_again"))
-            .contains("has no handler `_::begin_again`")
+            .contains("has no handler `level_failed::begin_again`")
     );
     let one_line = refusal(&with("a = load_level(\"x\") otherwise level_failed::start_over"));
     assert!(one_line.contains("a = load_level(\"x\") ?? level_failed::start_over"), "{one_line}");
@@ -641,4 +641,24 @@ fn d180_a_statement_holding_a_slide_ends_with_a_semicolon() {
     assert!(plain.contains("`x = 3`") && plain.contains("a `;` marks where a slide ends"), "{plain}");
     let two = refusal(&format!("{doubled}x = 3 |> doubled; y = 2\nshow_msg(\"{{x}}\")\n"));
     assert!(two.contains("two statements never share a line"), "{two}");
+}
+
+// trace: D182
+#[test]
+fn d182_a_handler_that_can_jump_is_marked_with_a_caret() {
+    let with = |line: &str| format!("{LOADERS}{GROUP}{line}\nshow_msg(\"{{a}}\")\n");
+    let star = refusal(&with(
+        "proc give\n    a = load_level(\"x\") ?? level_failed::*give_up\n    show_msg(\"{a}\")\nend\n\na = 1",
+    ));
+    assert!(star.contains("?? level_failed::^give_up`"), "{star}");
+    // A message names the handler as the script wrote it, with its group or with `_` (D179).
+    let named = refusal(&with("a = load_level(\"x\") ?? level_failed::give_up"));
+    assert!(
+        named.contains(
+            "`level_failed::give_up` can `return`, `break` or `fail`, so it's marked `level_failed::^give_up`"
+        ),
+        "{named}"
+    );
+    let power = refusal("x = 2 ^ 3\nshow_msg(\"{x}\")\n");
+    assert!(power.contains("a power is written `**`"), "{power}");
 }

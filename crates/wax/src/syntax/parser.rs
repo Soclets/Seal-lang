@@ -840,7 +840,18 @@ impl<'a> Parser<'a> {
             _ => None,
         };
         self.expect_symbol(Symbol::Path)?;
-        let jumps = self.at_symbol(Symbol::Star);
+        if self.at_symbol(Symbol::Star) {
+            // trace: D182. The jump mark was `*` until D182 made it `^`, so `*` only multiplies.
+            let at = self.here();
+            let line = self.physical_line(at.line);
+            let start = at.column.saturating_sub(1) as usize;
+            let fixed: String =
+                line.chars().take(start).chain("^".chars()).chain(line.chars().skip(start + 1)).collect();
+            return Err(Message::refused(at, "a handler that can jump is marked `^`, not `*`")
+                .with_fix(fixed)
+                .with_why("`*` only multiplies; `^` after `::` says a handler can `return`, `break` or `fail`."));
+        }
+        let jumps = self.at_symbol(Symbol::Caret);
         if jumps {
             self.advance();
         }

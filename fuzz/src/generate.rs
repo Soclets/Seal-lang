@@ -1698,7 +1698,7 @@ impl Generator {
 }
 
 /// The words and symbols of Wax, for scripts made of nothing but them.
-pub const VOCABULARY: [&str; 83] = [
+pub const VOCABULARY: [&str; 84] = [
     "mut",
     "unused",
     "if",
@@ -1777,6 +1777,7 @@ pub const VOCABULARY: [&str; 83] = [
     "&",
     "|>",
     ";",
+    "^",
     "??",
     "\\\\",
     "\"{newln}\"",

@@ -502,7 +502,9 @@ From `design/wax-next-prompt.md`, each step committed and pushed:
   `wax-derive`, `wax-command` (the `wax` command), `wax-language-server`, `wax-to-unio`, `wax-check-all`, `wax-c`
   (C functions `wax_*`, header `wax.h`), `wax-fuzzer`, `wax-bench`. The derive is `#[derive(Wax)]`, with
   `WaxType`, `IntoWax` and `FromWax`. A `.waxc` file starts `WAXC`, and a signed one ends `WAXSIG`.
-- [ ] **C25. `^` marks a handler that can jump (D182).**
+- [x] **C25. `^` marks a handler that can jump (D182).** `*` after `::` is refused with `^` as the fix, and a `^`
+  anywhere but right after `::` is refused as it's read, naming `**` for powers. Messages name a handler as the script
+  wrote it, `level_failed::give_up` or `_::give_up` (the design session's first wording change).
 - [ ] **C26. Comment lines between a split slide's steps (D181).**
 - [ ] **C27. The design session's two wording changes** of 2026-11-28.
 

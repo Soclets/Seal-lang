@@ -170,6 +170,8 @@ pub enum Symbol {
     /// A `-` right before a value (Unio D27).
     Negate,
     Star,
+    /// `^`, marking a handler that can jump, after `::` (D182).
+    Caret,
     /// `**`, raising to a power (D108).
     Power,
     Slash,
@@ -200,6 +202,7 @@ impl Symbol {
             Symbol::Plus => "+",
             Symbol::Minus | Symbol::Negate => "-",
             Symbol::Star => "*",
+            Symbol::Caret => "^",
             Symbol::Power => "**",
             Symbol::Slash => "/",
             Symbol::Ampersand => "&",
@@ -960,6 +963,17 @@ impl<'a> Lexer<'a> {
                         }
                         ('*', Some('*')) => (Symbol::Power, 2),
                         ('*', _) => (Symbol::Star, 1),
+                        ('^', _) => {
+                            // trace: D108, D182. `^` has one job, after `::`; a power is `**`.
+                            if !matches!(
+                                self.current().last().map(|token| &token.kind),
+                                Some(TokenKind::Symbol(Symbol::Path))
+                            ) {
+                                return Err(Message::refused(place_of(1), "`^` marks a handler that can jump, right after `::`")
+                                    .with_why("`^` says a handler can `return`, `break` or `fail`, as `?? _::^give_up`; a power is written `**`, as `2 ** 3`."));
+                            }
+                            (Symbol::Caret, 1)
+                        }
                         ('/', _) => (Symbol::Slash, 1),
                         ('&', _) => (Symbol::Ampersand, 1),
                         ('?', _) => (Symbol::Question, 1),
@@ -1239,9 +1253,10 @@ fn check_spacing(tokens: &[Token], found: &[SpacingMistake], source: &str) -> Re
             matches!(tokens.first().map(|token| &token.kind), Some(TokenKind::Keyword(Keyword::For)))
                 && index >= 2
                 && matches!(before.kind, TokenKind::Name("from" | "to" | "before" | "step_by"));
-        // trace: D110. `_::*give_up` marks a handler that can jump, with the `*` against its name.
+        // trace: D110, D182. `_::^give_up` marks a handler that can jump, with the `^` against its name; a `*` there
+        // is refused as it's read, so its spacing is the same.
         let jump_mark = index >= 1
-            && matches!(before.kind, TokenKind::Symbol(Symbol::Star))
+            && matches!(before.kind, TokenKind::Symbol(Symbol::Caret | Symbol::Star))
             && matches!(tokens.get(index - 1).map(|token| &token.kind), Some(TokenKind::Symbol(Symbol::Path)));
         let wanted = if jump_mark {
             0

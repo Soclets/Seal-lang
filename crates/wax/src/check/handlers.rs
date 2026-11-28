@@ -8,7 +8,7 @@ use crate::message::Message;
 use crate::syntax::tree as syntax;
 
 /// Why a handler is marked `*` where it's used (Unio D42, D129).
-const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `*` where it's used, as `?? _::*give_up`; one that can't takes no `*`.";
+const JUMP_MARK: &str = "a handler that can `return`, `break` or `fail` leaves the code around the call, so it's marked `^` where it's used, as `?? _::^give_up`; one that can't takes no `^`.";
 
 /// The built-ins that can fail, which `handles [ … ]` can name (D101, D129).
 const FAILING_BUILT_INS: [&str; 6] =
@@ -154,6 +154,9 @@ impl<'a> Checker<'a> {
             _ => None,
         };
         let member = using.name.text;
+        // A handler is named in a message as the script wrote it, with its group or `_`.
+        let prefix = using.group.as_ref().map_or("_", |word| word.text);
+        let written = format!("{prefix}::{member}");
         let group: &'a syntax::HandlerGroup<'a> = if let Some(word) = &using.group {
             let Some(&group) = self.handler_groups.get(word.text) else {
                 self.refuse(word.place, format!("there's no handler group named `{}`", word.text));
@@ -214,7 +217,7 @@ impl<'a> Checker<'a> {
             let known: Vec<String> = group.members.iter().map(|known| format!("`_::{}`", known.name.text)).collect();
             self.refuse_why(
                 using.name.place,
-                format!("`{}` has no handler `_::{member}`", group.name.text),
+                format!("`{}` has no handler `{written}`", group.name.text),
                 &format!("`{}`'s handlers are {}.", group.name.text, known.join(", ")),
             );
             return None;
@@ -223,9 +226,11 @@ impl<'a> Checker<'a> {
         if jumps != using.jumps {
             // trace: Unio D42
             let what = if jumps {
-                format!("`_::{member}` can `return`, `break` or `fail`, so it's marked `_::*{member}` where it's used")
+                format!(
+                    "`{written}` can `return`, `break` or `fail`, so it's marked `{prefix}::^{member}` where it's used"
+                )
             } else {
-                format!("`_::{member}` can't `return`, `break` or `fail`, so it takes no `*`")
+                format!("`{written}` can't `return`, `break` or `fail`, so it takes no `^`")
             };
             self.refuse_why(using.place, what, JUMP_MARK);
             return None;
@@ -251,7 +256,7 @@ impl<'a> Checker<'a> {
                 }
                 None => self.refuse(
                     declaration.parameter.place,
-                    format!("`{}` isn't one of `_::{member}`'s parameters", declaration.parameter.text),
+                    format!("`{}` isn't one of `{written}`'s parameters", declaration.parameter.text),
                 ),
             }
         }
@@ -261,7 +266,7 @@ impl<'a> Checker<'a> {
             else {
                 self.refuse(
                     declaration.label.place,
-                    format!("`{}` isn't one of `_::{member}`'s labels", declaration.label.text),
+                    format!("`{}` isn't one of `{written}`'s labels", declaration.label.text),
                 );
                 continue;
             };
@@ -274,7 +279,7 @@ impl<'a> Checker<'a> {
         }
         let has_default: Vec<bool> = defaults.iter().map(Option::is_some).collect();
         let bound = self.bind_arguments(
-            &format!("_::{member}"),
+            &written,
             (labels.as_slice(), handler.labels_any_order),
             &has_default,
             &using.arguments,
@@ -286,7 +291,7 @@ impl<'a> Checker<'a> {
             match argument.and_then(|index| using.arguments.get(index)) {
                 Some(entry) => {
                     let value = self.expression(&entry.value, Some(wanted));
-                    self.expect(&value, wanted, &format!("`_::{member}`'s argument"));
+                    self.expect(&value, wanted, &format!("`{written}`'s argument"));
                     values.push(self.land(value, wanted));
                 }
                 None => {
