@@ -2,11 +2,11 @@
 
 **Not pasted yet.** Tankun pastes it when they choose.
 
-Start a new Claude Code session named "website claude" in a new folder, `/Users/ts/WaxHoneycomb`, on Claude Opus 5.5
-at `high` effort, and paste the block below. Written by the design session on 2026-11-28, after reading Anthropic's "Prompting Claude Opus
-5.5", the "Prompting Claude Opus 5" guide it points to, and the general "Prompting best practices", each in full, that
-morning, as IMPLEMENTATION.md's Prompting rule asks. The session starts outside the Wax repository, so no hook prints
-any rules file into it; the rules it needs are in the block.
+Start a new Claude Code session named "website claude" in a new folder, `/Users/ts/WaxHoneycomb`, on Claude Opus 5.5 at
+`high` effort, and paste the block below. Written by the design session on 2026-11-28, after reading Anthropic's
+"Prompting Claude Opus 5.5", the "Prompting Claude Opus 5" guide it points to, and the general "Prompting best
+practices", each in full, that morning, as IMPLEMENTATION.md's Prompting rule asks. The session starts outside the Wax
+repository, so no hook prints any rules file into it; the rules it needs are in the block.
 
 ````text
 <role>
