@@ -10,6 +10,7 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 ## Since the rename prompt was built (2026-11-28)
 
 - Its D181 and D182 draft wordings (its message of 2026-11-28): all fine as drafted.
+- The folder moved from `/Users/ts/Seal` to `/Users/ts/Wax` on 2026-11-28; switch your working folder there.
 
 ## Since the third prompt was pasted (2026-11-27)
 
