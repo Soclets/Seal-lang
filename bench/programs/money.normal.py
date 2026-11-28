@@ -1,4 +1,4 @@
-# trace: D155, D159. The sums of `money.normal.seal` in Python's `decimal`, set to decimal128's rules.
+# trace: D155, D159. The sums of `money.normal.wax` in Python's `decimal`, set to decimal128's rules.
 import decimal
 from decimal import Decimal
 decimal.setcontext(decimal.Context(prec=34, Emax=6144, Emin=-6143, rounding=decimal.ROUND_HALF_EVEN, clamp=1))

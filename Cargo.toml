@@ -1,13 +1,13 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/seal",
-    "crates/seal-derive",
-    "crates/seal-command",
-    "crates/seal-language-server",
-    "crates/seal-to-unio",
-    "crates/seal-check-all",
-    "crates/seal-c",
+    "crates/wax",
+    "crates/wax-derive",
+    "crates/wax-command",
+    "crates/wax-language-server",
+    "crates/wax-to-unio",
+    "crates/wax-check-all",
+    "crates/wax-c",
     "fuzz",
     "bench",
 ]
@@ -24,7 +24,7 @@ license = "Apache-2.0 WITH LLVM-exception"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 # A build made only to measure what a check costs (D58) says so with this setting.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(seal_measure_without_float_checks)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(wax_measure_without_float_checks)'] }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

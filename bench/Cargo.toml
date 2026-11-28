@@ -1,5 +1,5 @@
 [package]
-name = "seal-bench"
+name = "wax-bench"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
@@ -10,12 +10,12 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-seal = { path = "../crates/seal" }
+wax = { package = "wax-lang", path = "../crates/wax" }
 
 [[bin]]
-name = "seal-bench"
+name = "wax-bench"
 path = "src/main.rs"
 
 [[bin]]
-name = "seal-dump"
+name = "wax-dump"
 path = "src/dump.rs"

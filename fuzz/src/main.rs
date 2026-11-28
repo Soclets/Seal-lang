@@ -1,16 +1,16 @@
-//! Seal's fuzzer: random scripts, valid and not, thrown at loading and running (Building rule 6).
+//! Wax's fuzzer: random scripts, valid and not, thrown at loading and running (Building rule 6).
 //!
 //! ```text
-//! seal-fuzzer [--seed N] [--count N] [--seconds N] [--ralph]
+//! wax-fuzzer [--seed N] [--count N] [--seconds N] [--ralph]
 //! ```
 //!
 //! Every script is loaded and run with the test host's doors, under a small step budget and memory cap. Nothing a
-//! script does may harm its host (D14): the fuzzer fails a script that makes Seal report a bug of its own, takes
+//! script does may harm its host (D14): the fuzzer fails a script that makes Wax report a bug of its own, takes
 //! too long for its step budget, holds more than its memory cap, leaves memory behind after a call, or gives
 //! different results on a second run (D50). A failing script is shrunk to the smallest one that still fails, and
 //! written to `fuzz/found/`.
 //!
-//! With `--ralph`, scripts are made from what Seal shares with Unio, translated, and compared with Unio's oracle,
+//! With `--ralph`, scripts are made from what Wax shares with Unio, translated, and compared with Unio's oracle,
 //! Ralph, as a black box (D19).
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use generate::{Dialect, Generator, Random, mutate, soup};
-use seal::{Called, Doors, Error, Limits, Message, MessageKind, Pause, Script, Value};
+use wax::{Called, Doors, Error, Limits, Message, MessageKind, Pause, Script, Value};
 
 /// Small limits, so a script that loops or hoards is stopped quickly.
 const LIMITS: Limits = Limits { steps: 20_000, memory: 256 * 1024 };
@@ -86,11 +86,11 @@ fn ending_of(error: &Error) -> (String, String, Option<String>) {
             };
             let broken = kinds
                 .contains(&MessageKind::Internal)
-                .then(|| "Seal reported a bug of its own while loading".to_owned());
+                .then(|| "Wax reported a bug of its own while loading".to_owned());
             (ending.to_owned(), messages.text(), broken)
         }
         Error::Stopped(message) => {
-            let broken = (message.kind == MessageKind::Internal).then(|| "Seal reported a bug of its own".to_owned());
+            let broken = (message.kind == MessageKind::Internal).then(|| "Wax reported a bug of its own".to_owned());
             (message.kind.word().to_owned(), message.text(), broken)
         }
         Error::Failed(failure) => ("failed".to_owned(), failure.clone(), None),
@@ -104,19 +104,19 @@ enum Loading {
     Text,
     /// From its text, compiled with none of the compiler's shortcuts.
     Plainly,
-    /// Built into a `.sealc` file and loaded from that (D141).
+    /// Built into a `.waxc` file and loaded from that (D141).
     Compiled,
-    /// Built into a `.sealc` file that's then changed, with its checksum made to match: refused, or run without
+    /// Built into a `.waxc` file that's then changed, with its checksum made to match: refused, or run without
     /// harming the host (D141, Building rule 1). The number picks the changes.
     Tampered(u64),
 }
 
-/// A `.sealc` file's bytes changed at a few places, then its checksum made to match, as someone changing it on
+/// A `.waxc` file's bytes changed at a few places, then its checksum made to match, as someone changing it on
 /// purpose would.
 fn tamper(bytes: &mut [u8], seed: u64) {
     let mut random = Random::new(seed);
     let body = bytes.len().saturating_sub(8);
-    // Past the header, which holds Seal's fingerprint and the doors' key, so the change reaches the script itself.
+    // Past the header, which holds Wax's fingerprint and the doors' key, so the change reaches the script itself.
     let start = 32.min(body);
     for _ in 0..=random.below(3) {
         let at = start + random.below((body - start).max(1));
@@ -124,7 +124,7 @@ fn tamper(bytes: &mut [u8], seed: u64) {
             *byte = u8::try_from(random.below(256)).unwrap_or(0);
         }
     }
-    let checksum = seal::compile::file::hash(bytes.get(..body).unwrap_or(&[]));
+    let checksum = wax::compile::file::hash(bytes.get(..body).unwrap_or(&[]));
     if let Some(end) = bytes.get_mut(body..) {
         end.copy_from_slice(&checksum.to_le_bytes());
     }
@@ -134,7 +134,7 @@ fn tamper(bytes: &mut [u8], seed: u64) {
 fn damage_is_refused(source: &str, seed: u64) -> Option<String> {
     let output = Arc::new(Mutex::new(String::new()));
     let doors = doors(&output).ok()?;
-    let mut bytes = seal::build(&[("fuzz.seal", source)], &doors).ok()?;
+    let mut bytes = wax::build(&[("fuzz.wax", source)], &doors).ok()?;
     let mut random = Random::new(seed);
     let length = bytes.len();
     if random.chance(1, 4) {
@@ -146,10 +146,10 @@ fn damage_is_refused(source: &str, seed: u64) -> Option<String> {
             *byte ^= u8::try_from(1 + random.below(255)).unwrap_or(1);
         }
     }
-    match Script::load_compiled(&bytes, "fuzz.seal", &doors, LIMITS) {
+    match Script::load_compiled(&bytes, "fuzz.wax", &doors, LIMITS) {
         Err(Error::Refused(_)) => None,
-        Ok(_) => Some("a damaged `.sealc` file loaded".to_owned()),
-        Err(_) => Some("a damaged `.sealc` file stopped instead of being refused".to_owned()),
+        Ok(_) => Some("a damaged `.waxc` file loaded".to_owned()),
+        Err(_) => Some("a damaged `.waxc` file stopped instead of being refused".to_owned()),
     }
 }
 
@@ -157,48 +157,47 @@ fn damage_is_refused(source: &str, seed: u64) -> Option<String> {
 /// checksum remade, or signed with another key, it's always refused.
 fn signed_change_is_refused(source: &str, seed: u64) -> Option<String> {
     static KEYS: std::sync::OnceLock<[(Vec<u8>, Vec<u8>); 2]> = std::sync::OnceLock::new();
-    let [(public, secret), (_, other_secret)] = KEYS.get_or_init(|| {
-        [seal::host::signing::keys_from_seed(&[42; 32]), seal::host::signing::keys_from_seed(&[43; 32])]
-    });
+    let [(public, secret), (_, other_secret)] = KEYS
+        .get_or_init(|| [wax::host::signing::keys_from_seed(&[42; 32]), wax::host::signing::keys_from_seed(&[43; 32])]);
     let output = Arc::new(Mutex::new(String::new()));
     let plain_doors = doors(&output).ok()?;
-    let built = seal::build(&[("fuzz.seal", source)], &plain_doors).ok()?;
+    let built = wax::build(&[("fuzz.wax", source)], &plain_doors).ok()?;
     let mut doors = plain_doors.clone();
     doors.require_signature(public).ok()?;
     let randomness = [u8::try_from(seed % 256).unwrap_or(0); 32];
-    let signed = seal::host::signing::sign(&built, secret, &randomness).ok()?;
-    let unsigned_loads = Script::load_compiled(&built, "fuzz.seal", &plain_doors, LIMITS).is_ok();
-    if Script::load_compiled(&signed, "fuzz.seal", &doors, LIMITS).is_ok() != unsigned_loads {
-        return Some("a signed `.sealc` file loaded differently from the same file unsigned".to_owned());
+    let signed = wax::host::signing::sign(&built, secret, &randomness).ok()?;
+    let unsigned_loads = Script::load_compiled(&built, "fuzz.wax", &plain_doors, LIMITS).is_ok();
+    if Script::load_compiled(&signed, "fuzz.wax", &doors, LIMITS).is_ok() != unsigned_loads {
+        return Some("a signed `.waxc` file loaded differently from the same file unsigned".to_owned());
     }
     let mut changed = built.clone();
     tamper(&mut changed, seed);
     let mut forged = changed.clone();
     forged.extend_from_slice(signed.get(built.len()..).unwrap_or(&[]));
     let refused =
-        |bytes: &[u8]| matches!(Script::load_compiled(bytes, "fuzz.seal", &doors, LIMITS), Err(Error::Refused(_)));
+        |bytes: &[u8]| matches!(Script::load_compiled(bytes, "fuzz.wax", &doors, LIMITS), Err(Error::Refused(_)));
     if changed != built && !refused(&forged) {
-        return Some("a signed `.sealc` file changed after signing wasn't refused".to_owned());
+        return Some("a signed `.waxc` file changed after signing wasn't refused".to_owned());
     }
-    let elsewhere = seal::host::signing::sign(&built, other_secret, &randomness).ok()?;
+    let elsewhere = wax::host::signing::sign(&built, other_secret, &randomness).ok()?;
     if !refused(&elsewhere) || !refused(&built) {
-        return Some("a `.sealc` file not signed with the host's key wasn't refused".to_owned());
+        return Some("a `.waxc` file not signed with the host's key wasn't refused".to_owned());
     }
     None
 }
 
 /// Loads a script the way asked. Compiled plainly, it must give the same answers as with the compiler's shortcuts;
-/// from a `.sealc` file, exactly the same as from its text.
+/// from a `.waxc` file, exactly the same as from its text.
 fn load(source: &str, doors: &Doors, how: Loading) -> Result<Script, Error> {
     match how {
-        Loading::Text => Script::load("fuzz.seal", source, doors, LIMITS),
-        Loading::Plainly => Script::load_plainly("fuzz.seal", source, doors, LIMITS),
+        Loading::Text => Script::load("fuzz.wax", source, doors, LIMITS),
+        Loading::Plainly => Script::load_plainly("fuzz.wax", source, doors, LIMITS),
         Loading::Compiled | Loading::Tampered(_) => {
-            let mut bytes = seal::build(&[("fuzz.seal", source)], doors)?;
+            let mut bytes = wax::build(&[("fuzz.wax", source)], doors)?;
             if let Loading::Tampered(seed) = how {
                 tamper(&mut bytes, seed);
             }
-            Script::load_compiled(&bytes, "fuzz.seal", doors, LIMITS)
+            Script::load_compiled(&bytes, "fuzz.wax", doors, LIMITS)
         }
     }
 }
@@ -220,7 +219,7 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, how: Loadi
     };
     let loaded = load(source, &doors, how);
     // A tampered file that loads may mean anything; all that holds is that the host comes to no harm: no crash, no
-    // freeze, nothing past the memory cap. Its own bookkeeping, and Seal's messages about it, aren't judged.
+    // freeze, nothing past the memory cap. Its own bookkeeping, and Wax's messages about it, aren't judged.
     let tampered = matches!(how, Loading::Tampered(_));
     let mut script = match loaded {
         Ok(script) => script,
@@ -245,8 +244,8 @@ fn run_here(source: &str, call_procedures: bool, strict_memory: bool, how: Loadi
     for name in names {
         let before = script.memory_in_use();
         // Most procedures take other things than one whole number; those calls are refused, which must be safe too.
-        let mut called = script.call_values(&name, &[seal::Argument { label: None, value: Value::Whole(5) }]);
-        if matches!(called, Err(seal::Error::Refused(_))) {
+        let mut called = script.call_values(&name, &[wax::Argument { label: None, value: Value::Whole(5) }]);
+        if matches!(called, Err(wax::Error::Refused(_))) {
             // A procedure that takes nothing is called with nothing (D60).
             called = script.call_values(&name, &[]);
         }
@@ -394,7 +393,7 @@ fn judge(source: &str, generated: bool) -> Option<String> {
     if plain.broken.is_some() {
         return plain.broken;
     }
-    // trace: D141. Built into a `.sealc` file and loaded from that, it gives exactly the same, limits and all.
+    // trace: D141. Built into a `.waxc` file and loaded from that, it gives exactly the same, limits and all.
     let compiled = run_as(source, true, false, Loading::Compiled);
     if compiled.broken.is_none()
         && (compiled.output != second.output
@@ -402,14 +401,14 @@ fn judge(source: &str, generated: bool) -> Option<String> {
             || compiled.messages != second.messages)
     {
         return Some(format!(
-            "loaded from a `.sealc` file, the script gave different results:\n--- from its text ({})\n{}{}\n--- compiled ({})\n{}{}",
+            "loaded from a `.waxc` file, the script gave different results:\n--- from its text ({})\n{}{}\n--- compiled ({})\n{}{}",
             second.ending, second.output, second.messages, compiled.ending, compiled.output, compiled.messages
         ));
     }
     if compiled.broken.is_some() {
         return compiled.broken;
     }
-    let seed = seal::compile::file::hash(source.as_bytes());
+    let seed = wax::compile::file::hash(source.as_bytes());
     if let Some(damaged) = damage_is_refused(source, seed) {
         return Some(damaged);
     }
@@ -446,7 +445,7 @@ pub fn shrink(source: &str, still_fails: &dyn Fn(&str) -> bool) -> String {
 pub fn save(name: &str, source: &str, why: &str) {
     let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("found");
     let _ = std::fs::create_dir_all(&folder);
-    let _ = std::fs::write(folder.join(format!("{name}.seal")), source);
+    let _ = std::fs::write(folder.join(format!("{name}.wax")), source);
     let _ = std::fs::write(folder.join(format!("{name}.txt")), format!("{why}\n"));
 }
 
@@ -514,7 +513,7 @@ fn main() -> ExitCode {
     while count_limit.is_none_or(|limit| round < limit) && started.elapsed().as_secs() < seconds {
         round += 1;
         let script_seed = random.next();
-        let script = Generator::new(script_seed, Dialect::Seal).script();
+        let script = Generator::new(script_seed, Dialect::Wax).script();
         let mutated = mutate(&script, &mut random);
         let soup = soup(&mut random);
         if show {

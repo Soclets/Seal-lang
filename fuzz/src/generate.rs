@@ -1,4 +1,4 @@
-//! Making random Seal scripts from the decisions and the standard, never from the interpreter's own source
+//! Making random Wax scripts from the decisions and the standard, never from the interpreter's own source
 //! (Building rule 6). A generated script is meant to pass checking, so that it reaches the VM; what it does there
 //! may still stop on a failed check, a limit or a crash, all of which a host must survive.
 
@@ -119,12 +119,12 @@ struct ProcedureInfo {
     pauses: bool,
 }
 
-/// What the generator may use: everything, or only what Seal shares with Unio (D19), for comparing with Ralph.
+/// What the generator may use: everything, or only what Wax shares with Unio (D19), for comparing with Ralph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialect {
-    /// Everything Seal has.
-    Seal,
-    /// What Unio's oracle, Ralph, has built so far of what Seal shares with Unio: numbers, text, `if`, `while`,
+    /// Everything Wax has.
+    Wax,
+    /// What Unio's oracle, Ralph, has built so far of what Wax shares with Unio: numbers, text, `if`, `while`,
     /// procedures, maths and converting. Lists and `for_each` are shared too, but Ralph doesn't run them yet.
     Ralph,
 }
@@ -169,8 +169,8 @@ impl Generator {
         }
     }
 
-    fn seal(&self) -> bool {
-        self.dialect == Dialect::Seal
+    fn wax(&self) -> bool {
+        self.dialect == Dialect::Wax
     }
 
     /// Writes a line, now and then with a comment on the line before it or after its statement (D63). A comment
@@ -194,9 +194,9 @@ impl Generator {
         }
     }
 
-    /// Closes a block with `end`, now and then with its checked note in Seal's own dialect (D102).
+    /// Closes a block with `end`, now and then with its checked note in Wax's own dialect (D102).
     fn end(&mut self, note: &str) {
-        if self.seal() && self.random.chance(1, 4) {
+        if self.wax() && self.random.chance(1, 4) {
             self.line(&format!("end \\\\ {note}"));
         } else {
             self.line("end");
@@ -218,7 +218,7 @@ impl Generator {
     }
 
     fn kinds(&self) -> Vec<Kind> {
-        if self.seal() {
+        if self.wax() {
             vec![
                 Kind::Whole,
                 Kind::Whole,
@@ -286,8 +286,8 @@ impl Generator {
     // ---- values ----
 
     fn whole_literal(&mut self) -> String {
-        // Ralph doesn't read the biggest and smallest `Whole`s yet, so they're left to Seal's own scripts.
-        let first = if self.seal() { 0 } else { 2 };
+        // Ralph doesn't read the biggest and smallest `Whole`s yet, so they're left to Wax's own scripts.
+        let first = if self.wax() { 0 } else { 2 };
         match first + self.random.below(12 - first) {
             0 => "9223372036854775807".to_owned(),
             1 => "-9223372036854775808".to_owned(),
@@ -310,16 +310,16 @@ impl Generator {
     }
 
     fn text_literal(&mut self) -> String {
-        // Seal's own dialect now and then writes text beyond plain English characters, where a grapheme is more
+        // Wax's own dialect now and then writes text beyond plain English characters, where a grapheme is more
         // than a byte (D66), and a quote or a backslash made literal (D63).
-        if self.seal() && self.random.chance(1, 6) {
+        if self.wax() && self.random.chance(1, 6) {
             let text = self.random.pick(&["héllo", "👍🏽 ok", "e\u{301}a", "日本", "a \\\"b\\\" c", "back\\\\slash"]);
             return format!("\"{}\"", text.copied().unwrap_or("x"));
         }
         format!("\"{}\"", self.random.pick(&TEXTS).copied().unwrap_or("x"))
     }
 
-    /// A call to one of the generic procedures or methods every script in Seal's dialect has, giving `kind`.
+    /// A call to one of the generic procedures or methods every script in Wax's dialect has, giving `kind`.
     fn generic_call(&mut self, kind: Kind, level: usize) -> Option<String> {
         let inner = level.saturating_sub(1);
         // trace: D164. A method of the script's records and `one_of`, on a variable of the type.
@@ -380,7 +380,7 @@ impl Generator {
         }
         // trace: D161. Now and then a call to one of the script's generic procedures, filled in with this kind.
         if !simple
-            && self.seal()
+            && self.wax()
             && self.random.chance(1, 14)
             && let Some(call) = self.generic_call(kind, level)
         {
@@ -391,14 +391,14 @@ impl Generator {
                 if simple {
                     return self.whole_literal();
                 }
-                if self.seal() && self.random.chance(1, 10) {
+                if self.wax() && self.random.chance(1, 10) {
                     return self.measured(Kind::Whole);
                 }
-                if self.seal() && self.random.chance(1, 12) {
+                if self.wax() && self.random.chance(1, 12) {
                     return self.big_number(Kind::Whole);
                 }
                 // The maths built-ins and `**` on `Whole`s (D107, D108).
-                if self.seal() && self.random.chance(1, 8) {
+                if self.wax() && self.random.chance(1, 8) {
                     let a = self.operand(Kind::Whole, level - 1);
                     // The second value is made only where it's written, so a name it reads is really read.
                     return match self.random.below(5) {
@@ -421,7 +421,7 @@ impl Generator {
                             self.operand(Kind::Whole, level - 1)
                         )
                     }
-                    3 if self.seal() => {
+                    3 if self.wax() => {
                         let operator = *self
                             .random
                             .pick(&["div.floor", "div.trunc", "rem.floor", "rem.trunc", "/"])
@@ -433,7 +433,7 @@ impl Generator {
                         )
                     }
                     // A text's length, in graphemes, code points or bytes (D65, D66).
-                    4 if self.seal() && self.random.chance(1, 3) => match self.read_name(Kind::Text) {
+                    4 if self.wax() && self.random.chance(1, 3) => match self.read_name(Kind::Text) {
                         Some(text) => {
                             let unit = *self.random.pick(&["", "", ".egc", ".ucp", ".bytes"]).unwrap_or(&"");
                             format!("{text}.len{unit}")
@@ -452,20 +452,20 @@ impl Generator {
                         None => self.whole_literal(),
                     },
                     6 => format!("(be.Whole({}) ?? {})", self.argument(Kind::Text, level), self.whole_literal()),
-                    7 if self.seal() => {
+                    7 if self.wax() => {
                         let rounding = *self
                             .random
                             .pick(&["floor", "trunc", "ceil", "nearest", "nearest.even"])
                             .unwrap_or(&"floor");
                         format!("be.Whole.{rounding}({})", self.argument(Kind::Float, level))
                     }
-                    8 if self.seal() => match self.read_name(Kind::Dict) {
+                    8 if self.wax() => match self.read_name(Kind::Dict) {
                         Some(dict) => {
                             format!("({dict}[key: {}] ?? {})", self.value(Kind::Text, 0), self.whole_literal())
                         }
                         None => self.whole_literal(),
                     },
-                    9 if self.seal() && self.random.chance(1, 3) => {
+                    9 if self.wax() && self.random.chance(1, 3) => {
                         // A part of a part, read (D62).
                         if let Some(grid) = self.read_name(Kind::Grid) {
                             format!("{grid}[pos: 1].len")
@@ -477,7 +477,7 @@ impl Generator {
                             self.whole_literal()
                         }
                     }
-                    9 if self.seal() => match self.read_name(Kind::Maybe) {
+                    9 if self.wax() => match self.read_name(Kind::Maybe) {
                         Some(maybe) => format!("({maybe} ?? {})", self.whole_literal()),
                         None => match self.read_name(Kind::Spot) {
                             Some(spot) => format!("{spot}.x"),
@@ -491,10 +491,10 @@ impl Generator {
                 if simple {
                     return self.float_literal();
                 }
-                if self.seal() && self.random.chance(1, 8) {
+                if self.wax() && self.random.chance(1, 8) {
                     return self.measured(Kind::Float);
                 }
-                if self.seal() && self.random.chance(1, 10) {
+                if self.wax() && self.random.chance(1, 10) {
                     return self.big_number(Kind::Float);
                 }
                 match self.random.below(6) {
@@ -509,7 +509,7 @@ impl Generator {
                     3 => format!("sqrt({})", self.argument(Kind::Float, level)),
                     4 => format!("be.Float({})", self.argument(Kind::Whole, level)),
                     // The angle built-ins, `lerp`, `**` and `pi` on `Float`s (D108, D109, D114).
-                    5 if self.seal() && self.random.chance(1, 2) => {
+                    5 if self.wax() && self.random.chance(1, 2) => {
                         // Each value is made only where it's written, so a name it reads is really read.
                         let which = self.random.below(8);
                         let a = if which < 6 { self.argument(Kind::Float, level) } else { String::new() };
@@ -540,7 +540,7 @@ impl Generator {
                 }
                 match self.random.below(10) {
                     // Two bigger values compared by their contents (D95), or text read as a `Bool` (D101).
-                    8 if self.seal() => {
+                    8 if self.wax() => {
                         let kind = *self
                             .random
                             .pick(&[
@@ -558,13 +558,13 @@ impl Generator {
                         let right = self.read_name(kind).unwrap_or_else(|| self.value(kind, 1));
                         format!("{} {operator} {}", Self::bracketed(left), Self::bracketed(right))
                     }
-                    9 if self.seal() => {
+                    9 if self.wax() => {
                         let text =
                             *self.random.pick(&["\"true\"", "\"false\"", "\"yes\"", "\"\""]).unwrap_or(&"\"true\"");
                         format!("(be.Bool({text}) ?? false)")
                     }
-                    // Two texts compared exactly (D64); Unio leaves comparing text open, so only Seal's dialect has it.
-                    7 if self.seal() => {
+                    // Two texts compared exactly (D64); Unio leaves comparing text open, so only Wax's dialect has it.
+                    7 if self.wax() => {
                         let operator = if self.random.chance(1, 2) { "eq" } else { "not_eq" };
                         format!(
                             "{} {operator} {}",
@@ -581,7 +581,7 @@ impl Generator {
                             self.operand(Kind::Whole, level - 1)
                         )
                     }
-                    3 if self.seal() => {
+                    3 if self.wax() => {
                         let operator = *self.random.pick(&["<", ">", "at_least", "at_most"]).unwrap_or(&"<");
                         format!(
                             "{} {operator} {}",
@@ -599,7 +599,7 @@ impl Generator {
                     }
                     5 => format!("not ({})", self.value(Kind::Bool, level - 1)),
                     _ => match self.read_name(Kind::Dict) {
-                        Some(dict) if self.seal() => format!("{dict}.has(key: {})", self.value(Kind::Text, 0)),
+                        Some(dict) if self.wax() => format!("{dict}.has(key: {})", self.value(Kind::Text, 0)),
                         _ => "true".to_owned(),
                     },
                 }
@@ -610,7 +610,7 @@ impl Generator {
                 }
                 match self.random.below(6) {
                     2 => {
-                        let from = if self.seal() {
+                        let from = if self.wax() {
                             *self.random.pick(&[Kind::Whole, Kind::Float, Kind::Bool]).unwrap_or(&Kind::Whole)
                         } else {
                             *self.random.pick(&[Kind::Whole, Kind::Bool]).unwrap_or(&Kind::Whole)
@@ -623,13 +623,13 @@ impl Generator {
                         None => self.text_literal(),
                     },
                     _ => match self.read_name(Kind::Record) {
-                        Some(record) if self.seal() => format!("{record}.name"),
+                        Some(record) if self.wax() => format!("{record}.name"),
                         _ => self.text_literal(),
                     },
                 }
             }
             // A range kept as a list (D99).
-            Kind::WholeList if self.seal() && self.random.chance(1, 5) => {
+            Kind::WholeList if self.wax() && self.random.chance(1, 5) => {
                 let edge = if self.random.chance(1, 2) { "to" } else { "before" };
                 // Now and then a range whose numbers are only known while running, which may stop there.
                 if self.random.chance(1, 6) {
@@ -650,7 +650,7 @@ impl Generator {
                 format!("[{}]", items.join(", "))
             }
             // A text split into its pieces (D65).
-            Kind::TextList if self.seal() && self.random.chance(1, 4) => {
+            Kind::TextList if self.wax() && self.random.chance(1, 4) => {
                 let text = match self.read_name(Kind::Text) {
                     Some(text) => text,
                     None => "\"a b  c\"".to_owned(),
@@ -846,14 +846,14 @@ impl Generator {
         }
     }
 
-    /// Text with names that exist filled into its braces (D75, D77): in Seal's own dialect a name may be followed by
+    /// Text with names that exist filled into its braces (D75, D77): in Wax's own dialect a name may be followed by
     /// its fields and facts, or be any value at all, shown as it's written (D28, D100); Unio's braces hold only a
     /// plain number, `Bool` or text's name (Unio D200, D202).
     fn filled_text(&mut self) -> String {
         let mut text = String::from("\"");
         for _ in 0..=self.random.below(3) {
             text.push_str(self.random.pick(&["value ", "is ", "", "got: ", "= ", "\\{x} "]).copied().unwrap_or(""));
-            let kinds: &[Kind] = if self.seal() {
+            let kinds: &[Kind] = if self.wax() {
                 &[
                     Kind::Whole,
                     Kind::Text,
@@ -886,7 +886,7 @@ impl Generator {
                     }
                 }
             }
-            if self.seal() && self.random.chance(1, 8) {
+            if self.wax() && self.random.chance(1, 8) {
                 text.push_str(self.random.pick(&["{newln}", "{tab}"]).copied().unwrap_or(""));
             }
         }
@@ -936,8 +936,8 @@ impl Generator {
 
     fn show(&mut self, kind: Kind, name: &str) -> String {
         match kind {
-            // trace: D100. Every value shows as it's written in Seal.
-            _ if self.seal() && self.random.chance(1, 2) => format!("show_msg(\"{name}: {{{name}}}\")"),
+            // trace: D100. Every value shows as it's written in Wax.
+            _ if self.wax() && self.random.chance(1, 2) => format!("show_msg(\"{name}: {{{name}}}\")"),
             Kind::WholeList | Kind::TextList | Kind::Dict | Kind::Grid | Kind::Packs | Kind::Spots => {
                 format!("show_msg(\"{name} has {{{name}.len}}\")")
             }
@@ -1190,7 +1190,7 @@ impl Generator {
                 if typed {
                     // trace: D107. Now and then a ranged number, which checks or pulls back every value landing in it.
                     let written = match kind {
-                        Kind::Whole if self.seal() && self.random.chance(1, 3) => {
+                        Kind::Whole if self.wax() && self.random.chance(1, 3) => {
                             let edges = [
                                 "[min.clamp: -50, max.clamp: 50]",
                                 "[min: -1000000]",
@@ -1199,7 +1199,7 @@ impl Generator {
                             ];
                             format!("Whole{}", self.random.pick(&edges).copied().unwrap_or(""))
                         }
-                        Kind::Float if self.seal() && self.random.chance(1, 3) => {
+                        Kind::Float if self.wax() && self.random.chance(1, 3) => {
                             "Float[min.clamp: -2.5, max.clamp: 2.5]".to_owned()
                         }
                         _ => kind.written().to_owned(),
@@ -1218,7 +1218,7 @@ impl Generator {
                 }
             }
             8 | 9 => {
-                let last = if self.seal() { Kind::Float } else { Kind::Whole };
+                let last = if self.wax() { Kind::Float } else { Kind::Whole };
                 let kind = *self.random.pick(&[Kind::Whole, Kind::Text, Kind::Bool, last]).unwrap_or(&Kind::Whole);
                 let value = self.value(kind, 2);
                 let name = self.fresh();
@@ -1263,7 +1263,7 @@ impl Generator {
                 self.freeze(&counter, false);
                 self.end("while");
             }
-            13 if nested && self.seal() => {
+            13 if nested && self.wax() => {
                 let item = self.fresh();
                 let from = self.random.below(5);
                 let range = match self.random.below(4) {
@@ -1286,7 +1286,7 @@ impl Generator {
                 }
             }
             // Going through a text, one grapheme at a time (D66).
-            14 if nested && self.seal() && self.random.chance(1, 5) => {
+            14 if nested && self.wax() && self.random.chance(1, 5) => {
                 if let Some(text) = self.read_name(Kind::Text) {
                     let item = self.fresh();
                     self.freeze(&text, true);
@@ -1301,7 +1301,7 @@ impl Generator {
                     self.freeze(&text, false);
                 }
             }
-            14 if nested && self.seal() => {
+            14 if nested && self.wax() => {
                 let text_list = self.random.chance(1, 3);
                 let list_kind = if text_list { Kind::TextList } else { Kind::WholeList };
                 if let Some(list) = self.read_name(list_kind) {
@@ -1320,7 +1320,7 @@ impl Generator {
                     self.freeze(&list, false);
                 }
             }
-            15 if self.seal() => {
+            15 if self.wax() => {
                 let text_list = self.random.chance(1, 3);
                 let list_kind = if text_list { Kind::TextList } else { Kind::WholeList };
                 if let Some(list) = self.changeable_name(list_kind) {
@@ -1343,7 +1343,7 @@ impl Generator {
                     }
                 }
             }
-            16 if self.seal() => {
+            16 if self.wax() => {
                 if let Some(dict) = self.changeable_name(Kind::Dict) {
                     let key = self.value(Kind::Text, 0);
                     if self.random.chance(1, 3) {
@@ -1362,10 +1362,10 @@ impl Generator {
                 }
             }
             // Loops that read and change the fields of a list's records, through places that may be the same item.
-            17 if self.seal() && nested && self.random.chance(1, 3) => self.spots_loops(),
+            17 if self.wax() && nested && self.random.chance(1, 3) => self.spots_loops(),
             // A change to a part of a part, through fields and places (D62).
-            17 if self.seal() && self.random.chance(1, 2) => self.nested_change(),
-            17 if self.seal() => {
+            17 if self.wax() && self.random.chance(1, 2) => self.nested_change(),
+            17 if self.wax() => {
                 if let Some(record) = self.changeable_name(Kind::Record) {
                     let value = self.value(Kind::Whole, 1);
                     if self.random.chance(1, 4) {
@@ -1390,7 +1390,7 @@ impl Generator {
                     self.line(&format!("wait(seconds: {seconds})"));
                 }
             }
-            18 if self.seal() && nested && !self.visible().any(|name| name.text == "amount") => {
+            18 if self.wax() && nested && !self.visible().any(|name| name.text == "amount") => {
                 if let Some(event) = self.read_name(Kind::Event) {
                     self.freeze(&event, true);
                     self.match_event(&event, true);
@@ -1435,9 +1435,9 @@ impl Generator {
                 }
             }
             // trace: D107, D115. A `HugeWhole` whose limits are past a `Whole`'s range.
-            20 if self.seal() && self.random.chance(1, 3) => self.ranged_huge(),
+            20 if self.wax() && self.random.chance(1, 3) => self.ranged_huge(),
             _ => {
-                let kind = if self.seal() {
+                let kind = if self.wax() {
                     *self.random.pick(&[Kind::Whole, Kind::Float]).unwrap_or(&Kind::Whole)
                 } else {
                     Kind::Whole
@@ -1515,7 +1515,7 @@ impl Generator {
         // One procedure in six takes nothing, and so has no brackets (D60).
         let parameter_count = if self.random.chance(1, 6) { 0 } else { self.random.below(3) + 1 };
         let scalar =
-            [Kind::Whole, Kind::Whole, if self.seal() { Kind::Float } else { Kind::Whole }, Kind::Bool, Kind::Text];
+            [Kind::Whole, Kind::Whole, if self.wax() { Kind::Float } else { Kind::Whole }, Kind::Bool, Kind::Text];
         let parameters: Vec<Kind> = (0..parameter_count)
             .map(|_| {
                 if self.random.chance(1, 5) {
@@ -1529,15 +1529,15 @@ impl Generator {
             Some(
                 *self
                     .random
-                    .pick(&[Kind::Whole, if self.seal() { Kind::Float } else { Kind::Whole }, Kind::Text])
+                    .pick(&[Kind::Whole, if self.wax() { Kind::Float } else { Kind::Whole }, Kind::Text])
                     .unwrap_or(&Kind::Whole),
             )
         } else {
             None
         };
-        let fails = self.seal() && self.random.chance(1, 3);
+        let fails = self.wax() && self.random.chance(1, 3);
         // A procedure that pauses takes one `Whole`, which is what the fuzzer's host calls every procedure with.
-        let pauses = self.seal() && self.random.chance(1, 4);
+        let pauses = self.wax() && self.random.chance(1, 4);
         let parameters = if pauses { vec![Kind::Whole] } else { parameters };
         // A procedure that fails on purpose does so when its first parameter says so, so it takes one.
         let fails = fails && !parameters.is_empty();
@@ -1549,10 +1549,10 @@ impl Generator {
             let parameter = self.fresh();
             header.push_str(if index > 0 { ", " } else { "[" });
             // trace: D88. Now and then a parameter shares the next one's type, written once for the group.
-            let grouped = self.seal() && parameters.get(index + 1) == Some(kind) && self.random.chance(1, 3);
+            let grouped = self.wax() && parameters.get(index + 1) == Some(kind) && self.random.chance(1, 3);
             let typed = if grouped { String::new() } else { format!(": {}", kind.written()) };
             // Now and then a parameter after the first is never read, and says so (D61); the body can't reach it.
-            if index > 0 && self.seal() && self.random.chance(1, 6) {
+            if index > 0 && self.wax() && self.random.chance(1, 6) {
                 let _ = write!(header, "unused {parameter}{typed}");
                 continue;
             }
@@ -1658,13 +1658,13 @@ impl Generator {
     /// A whole script.
     #[must_use]
     pub fn script(mut self) -> String {
-        if self.seal() {
+        if self.wax() {
             self.out.push_str("requirement Powered\n    proc power[of: ?Self] -> Whole\nend\n\nrecord Hero\n    meets [Powered]\n    name: Text\n    hp: Whole\n\n    proc power[of_hero: Hero] -> Whole\n        return of_hero.hp div.floor 2 + 1\n    end\n\n    proc renamed[of_hero: Hero, new_name: Text] -> Hero\n        return Hero[name: new_name, hp: of_hero.hp]\n    end\n\n    proc heal[mut of_hero: Hero, by: Whole]\n        of_hero.hp = _ + by\n    end\nend\n\nrecord Spot\n    x: Whole\n    y: Float\n\n    proc size[of_spot: Spot] -> Whole\n        return of_spot.x\n    end\nend\n\nrecord Pack\n    items: List<Whole>\n    tags: List<Text>\n    stock: Dict<key: Text, value: Whole>\nend\n\nrecord Crate\n    pack: Pack\n    spot: Spot\nend\n\none_of Tree\n    leaf\n    node[left: Tree, right: Tree]\n\n    proc size[of_tree: Tree] -> Whole\n        match of_tree\n            case leaf\n                return 1\n            case node[left, right]\n                return 1 + left.size() + right.size()\n        end\n    end\nend\n\nproc tree_size[of: Tree] -> Whole\n    match of\n        case leaf\n            return 1\n        case node[left, right]\n            return 1 + tree_size(left) + tree_size(right)\n    end\nend\n\none_of Event\n    idle\n    hurt[amount: Whole]\n    healed[amount: Whole, by: Text]\nend\n\n");
             // trace: D161. Generic procedures, one calling another, filled in with whatever their calls give.
             self.out.push_str("proc generic_pick<?Item>[items: List<?Item>, fallback: ?Item] -> ?Item\n    for_each item in items\n        return item\n    end\n    return fallback\nend\n\nproc generic_pair<?Item>[value: ?Item] -> List<?Item>\n    return [value, value]\nend\n\nproc generic_first<?Item>[items: List<?Item>] -> Maybe<?Item>\n    for_each item in items\n        return Maybe.some[value: item]\n    end\n    return Maybe.none\nend\n\nproc generic_pairs<?Item>[value: ?Item] -> List<List<?Item>>\n    return generic_pair(generic_pair(value))\nend\n\nproc generic_bigger<?Item: Number>[a: ?Item, b: ?Item] -> ?Item\n    if a > b\n        return a\n    else\n        return b\n    end\nend\n\nproc generic_power<?Thing: Powered>[thing: ?Thing] -> Whole\n    return thing.power()\nend\n\n");
         }
         // trace: D123. Now and then a unit group of the script's own.
-        if self.seal() && self.random.chance(1, 3) {
+        if self.wax() && self.random.chance(1, 3) {
             self.out.push_str("group.unit coins\n    _::bits base\n    _::stacks = 12 bits\nend\n\n");
             self.coins = true;
         }
@@ -1680,7 +1680,7 @@ impl Generator {
             .filter(|procedure| procedure.fails)
             .map(|procedure| procedure.name.clone())
             .collect();
-        if self.seal() && !failing.is_empty() {
+        if self.wax() && !failing.is_empty() {
             let _ = write!(
                 self.out,
                 "group.handler low_failed\n    handles [{}]\n    _::zero\n        case too_low\n            instead 0\n    end\n    _::with[value: Whole]\n        case too_low\n            instead value\n    end \\\\ _::with\n    _::note\n        case too_low\n            show_msg(\"too low\")\n    end\nend\n\n",
@@ -1697,7 +1697,7 @@ impl Generator {
     }
 }
 
-/// The words and symbols of Seal, for scripts made of nothing but them.
+/// The words and symbols of Wax, for scripts made of nothing but them.
 pub const VOCABULARY: [&str; 83] = [
     "mut",
     "unused",

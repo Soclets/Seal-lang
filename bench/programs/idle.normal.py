@@ -1,4 +1,4 @@
-# trace: D155. The idle game of `idle.normal.seal` in Python's `int`.
+# trace: D155. The idle game of `idle.normal.wax` in Python's `int`.
 def run(n):
     gold = 0
     earned = 0

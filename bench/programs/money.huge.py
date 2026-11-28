@@ -1,4 +1,4 @@
-# trace: D155, D159. The sums of `money.huge.seal` in Python's `decimal`, with room for every digit.
+# trace: D155, D159. The sums of `money.huge.wax` in Python's `decimal`, with room for every digit.
 import decimal
 from decimal import Decimal
 decimal.setcontext(decimal.Context(prec=decimal.MAX_PREC, Emax=decimal.MAX_EMAX, Emin=decimal.MIN_EMIN, traps=[decimal.Inexact, decimal.Overflow, decimal.InvalidOperation]))

@@ -118,64 +118,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 
 [[package]]
-name = "seal"
-version = "0.1.0"
-dependencies = [
- "fips204",
- "seal-derive",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "seal-bench"
-version = "0.1.0"
-dependencies = [
- "seal",
-]
-
-[[package]]
-name = "seal-c"
-version = "0.1.0"
-dependencies = [
- "seal",
-]
-
-[[package]]
-name = "seal-check-all"
-version = "0.1.0"
-
-[[package]]
-name = "seal-command"
-version = "0.1.0"
-dependencies = [
- "getrandom",
- "seal",
-]
-
-[[package]]
-name = "seal-derive"
-version = "0.1.0"
-
-[[package]]
-name = "seal-fuzzer"
-version = "0.1.0"
-dependencies = [
- "seal",
- "seal-to-unio",
-]
-
-[[package]]
-name = "seal-language-server"
-version = "0.1.0"
-
-[[package]]
-name = "seal-to-unio"
-version = "0.1.0"
-dependencies = [
- "seal",
-]
-
-[[package]]
 name = "sha3"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -226,6 +168,64 @@ name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+
+[[package]]
+name = "wax-bench"
+version = "0.1.0"
+dependencies = [
+ "wax-lang",
+]
+
+[[package]]
+name = "wax-c"
+version = "0.1.0"
+dependencies = [
+ "wax-lang",
+]
+
+[[package]]
+name = "wax-check-all"
+version = "0.1.0"
+
+[[package]]
+name = "wax-command"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "wax-lang",
+]
+
+[[package]]
+name = "wax-derive"
+version = "0.1.0"
+
+[[package]]
+name = "wax-fuzzer"
+version = "0.1.0"
+dependencies = [
+ "wax-lang",
+ "wax-to-unio",
+]
+
+[[package]]
+name = "wax-lang"
+version = "0.1.0"
+dependencies = [
+ "fips204",
+ "unicode-segmentation",
+ "wax-derive",
+]
+
+[[package]]
+name = "wax-language-server"
+version = "0.1.0"
+
+[[package]]
+name = "wax-to-unio"
+version = "0.1.0"
+dependencies = [
+ "wax-lang",
+]
 
 [[package]]
 name = "zeroize"

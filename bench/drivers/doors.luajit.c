@@ -1,5 +1,5 @@
-/* The door-call benchmark on LuaJIT's C API, beside Seal's (D136, D152): a C function registered with the state, called
- * from a Lua loop `count` times, with its two numbers read the checked way, as Seal's door reads its kinds. Run as
+/* The door-call benchmark on LuaJIT's C API, beside Wax's (D136, D152): a C function registered with the state, called
+ * from a Lua loop `count` times, with its two numbers read the checked way, as Wax's door reads its kinds. Run as
  * `doors MODE COUNT`, where MODE is `joff` (the interpreter alone) or `jit`. Prints the best of seven runs' time per
  * call, and the total the calls added up, for checking. */
 #include <stdint.h>

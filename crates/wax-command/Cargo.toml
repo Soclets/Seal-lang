@@ -1,0 +1,19 @@
+[package]
+name = "wax-command"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wax = { package = "wax-lang", path = "../wax" }
+# trace: D175. Randomness for `wax keygen`'s keys and for signing, from the system; Tankun allowed its `unsafe`.
+getrandom = "0.2"
+
+[[bin]]
+name = "wax"
+path = "src/main.rs"

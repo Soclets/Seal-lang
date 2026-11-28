@@ -1,0 +1,12 @@
+[package]
+name = "wax-check-all"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

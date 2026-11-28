@@ -1,4 +1,4 @@
-//! Runs every benchmark of D57 in every kind of D58, on Seal, Luau, `LuaJIT` and Node, and writes `bench/RESULTS.md`.
+//! Runs every benchmark of D57 in every kind of D58, on Wax, Luau, `LuaJIT` and Node, and writes `bench/RESULTS.md`.
 //!
 //! Each program runs in a process of its own, under `/usr/bin/time -l`, so its peak memory is its own. A result is
 //! checked before its time counts: every engine must give the same answer, and the Normal programs the answers
@@ -286,7 +286,7 @@ fn bytes(value: u64) -> String {
     }
 }
 
-/// The engines other than Seal: its name in the report, its program, its flags, and its scripts' extension.
+/// The engines other than Wax: its name in the report, its program, its flags, and its scripts' extension.
 struct Engine {
     name: &'static str,
     program: &'static str,
@@ -309,8 +309,8 @@ struct Report {
     root: PathBuf,
     scratch: PathBuf,
     runs: usize,
-    seal: String,
-    /// Other builds of Seal's benchmark host: the kind each stands for, and where it is.
+    wax: String,
+    /// Other builds of Wax's benchmark host: the kind each stands for, and where it is.
     variants: Vec<(String, String)>,
     out: String,
     /// Each Normal row's mean time, by benchmark and engine, for the goals.
@@ -332,11 +332,11 @@ impl Report {
         }
     }
 
-    fn seal_row(&self, binary: &str, program: &Path, argument: i64) -> Result<Measured, String> {
+    fn wax_row(&self, binary: &str, program: &Path, argument: i64) -> Result<Measured, String> {
         measure(
             binary,
             &[
-                "seal".to_owned(),
+                "wax".to_owned(),
                 program.display().to_string(),
                 argument.to_string(),
                 "2".to_owned(),
@@ -407,18 +407,18 @@ impl Report {
             _ => ("ceil", benchmark.argument),
         };
         let mut rows: Vec<(String, String, Measured, u64, String, String)> = Vec::new();
-        // Seal, in this kind's build.
+        // Wax, in this kind's build.
         let binaries: Vec<(String, String)> = if kind.starts_with("Ceil") {
-            let mut binaries = vec![("Ceil.source".to_owned(), self.seal.clone())];
+            let mut binaries = vec![("Ceil.source".to_owned(), self.wax.clone())];
             binaries.extend(self.variants.iter().filter(|(label, _)| label.starts_with("Ceil.")).cloned());
             binaries
         } else {
-            vec![(kind.to_owned(), self.seal.clone())]
+            vec![(kind.to_owned(), self.wax.clone())]
         };
-        if let Some((program, stand_in)) = self.program_or_normal(benchmark.name, program_kind, "seal") {
+        if let Some((program, stand_in)) = self.program_or_normal(benchmark.name, program_kind, "wax") {
             let size = std::fs::metadata(&program).map_or(0, |metadata| metadata.len());
             for (label, binary) in &binaries {
-                match self.seal_row(binary, &program, argument) {
+                match self.wax_row(binary, &program, argument) {
                     Ok(measured) => {
                         let warm = measured.numbers.get("load_warm").copied().unwrap_or(0.0);
                         let cold = measured.numbers.get("load").copied().unwrap_or(0.0);
@@ -429,13 +429,13 @@ impl Report {
                         let counted = measured.numbers.get("memory").map_or(0, |memory| *memory as u64);
                         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a count of bytes
                         let code = measured.numbers.get("code").map_or(0, |code| *code as u64);
-                        let mut note = format!("{} counted by Seal; {} compiled", bytes(counted), bytes(code));
+                        let mut note = format!("{} counted by Wax; {} compiled", bytes(counted), bytes(code));
                         if stand_in {
                             note.push_str("; the Normal program stands in");
                         }
-                        rows.push(("Seal".to_owned(), label.clone(), measured, size, load, note));
+                        rows.push(("Wax".to_owned(), label.clone(), measured, size, load, note));
                     }
-                    Err(why) => self.problems.push(format!("{} {label} on Seal: {why}", benchmark.name)),
+                    Err(why) => self.problems.push(format!("{} {label} on Wax: {why}", benchmark.name)),
                 }
             }
         }
@@ -518,9 +518,9 @@ impl Report {
              paused in its patrol; then every one is resumed {} times, and then a procedure of each is called {} \
              times. Purpose isolates pausing: one script, resumed {} times. Each row is {} whole processes. Loading is timed three \
              ways: every script from a text of its own, so that nothing compiled is reused; every script from the \
-             same text, where Seal reuses what it compiled, and the other engines compile once and make each script from \
-             that; and every script from a compiled file of its own, a `.sealc` for Seal and `string.dump`'s bytecode, as \
-             `luajit -b` writes it, for LuaJIT (D171). Seal frees each script loaded from a text or a \
+             same text, where Wax reuses what it compiled, and the other engines compile once and make each script from \
+             that; and every script from a compiled file of its own, a `.waxc` for Wax and `string.dump`'s bytecode, as \
+             `luajit -b` writes it, for LuaJIT (D171). Wax frees each script loaded from a text or a \
              file of its own inside its timing, before loading the next.\n",
             PATROL.1, PATROL.1, PATROL_PURPOSE.1, self.runs
         );
@@ -529,15 +529,15 @@ impl Report {
             "| Engine | Kind | Load, each from its own text | Load, each from the same text | Load, each from a compiled file (D141) | Resume, each | Call, each | Memory, each script | Peak memory | Notes |"
         );
         let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|---|---|");
-        let script = self.root.join("bench/programs/patrol.normal.seal");
+        let script = self.root.join("bench/programs/patrol.normal.wax");
         for (kind, (count, rounds)) in [("Purpose", PATROL_PURPOSE), ("Normal", PATROL), ("Ceil", PATROL)] {
             let wanted = (count + 2 * count * rounds).to_string();
             let mut binaries: Vec<(String, String)> = Vec::new();
             if kind == "Ceil" {
-                binaries.push(("Ceil.source".to_owned(), self.seal.clone()));
+                binaries.push(("Ceil.source".to_owned(), self.wax.clone()));
                 binaries.extend(self.variants.iter().filter(|(label, _)| label.starts_with("Ceil.")).cloned());
             } else {
-                binaries.push((kind.to_owned(), self.seal.clone()));
+                binaries.push((kind.to_owned(), self.wax.clone()));
             }
             let stand_in = if kind == "Ceil" { "the Normal program stands in" } else { "" };
             let mut rows = Vec::new();
@@ -545,8 +545,8 @@ impl Report {
                 let arguments =
                     ["patrol".to_owned(), script.display().to_string(), count.to_string(), rounds.to_string()];
                 match self.patrol_runs(&binary, &arguments) {
-                    Ok(run) => rows.push(("Seal".to_owned(), label, run, "counted by Seal".to_owned())),
-                    Err(why) => self.problems.push(format!("patrol {label} on Seal: {why}")),
+                    Ok(run) => rows.push(("Wax".to_owned(), label, run, "counted by Wax".to_owned())),
+                    Err(why) => self.problems.push(format!("patrol {label} on Wax: {why}")),
                 }
             }
             for engine in ENGINES.iter().filter(|engine| !engine.name.contains("warmed")) {
@@ -599,10 +599,10 @@ impl Report {
                 };
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a count of bytes
                 let memory = numbers.get("memory_each").map_or(0, |values| mean(values) as u64);
-                // Seal times loading from a text of its own apart, and reuses what it compiled for the same text. The
+                // Wax times loading from a text of its own apart, and reuses what it compiled for the same text. The
                 // others compile each time unless told otherwise, and time the compiled-once way apart.
                 let (own_text, same_text) =
-                    if engine == "Seal" { ("load_fresh_each", "load_each") } else { ("load_each", "load_shared_each") };
+                    if engine == "Wax" { ("load_fresh_each", "load_each") } else { ("load_each", "load_shared_each") };
                 if label == "Normal" {
                     for (name, kept_as) in [
                         (own_text, "load_own_text"),
@@ -636,17 +636,17 @@ impl Report {
         }
     }
 
-    /// What Seal's checks cost (D58): the Normal programs on builds with a check left out, for measuring only.
+    /// What Wax's checks cost (D58): the Normal programs on builds with a check left out, for measuring only.
     fn checks(&mut self) {
         let builds: Vec<(String, String)> =
             self.variants.iter().filter(|(label, _)| label.starts_with("Checks.")).cloned().collect();
         if builds.is_empty() {
             return;
         }
-        let _ = writeln!(self.out, "\n## What Seal's checks cost (Purpose)\n");
+        let _ = writeln!(self.out, "\n## What Wax's checks cost (Purpose)\n");
         let _ = writeln!(
             self.out,
-            "D58 asks for the cost of Seal's checks to be measured, not guessed. Each row runs a Normal program on a \
+            "D58 asks for the cost of Wax's checks to be measured, not guessed. Each row runs a Normal program on a \
              build of the VM with one kind of check left out. Those builds exist only for this table: a script never \
              runs without its checks (D17).\n"
         );
@@ -657,12 +657,12 @@ impl Report {
         );
         let _ = writeln!(self.out, "|---|---|{}", "---|".repeat(builds.len()));
         for benchmark in &BENCHMARKS {
-            let Some(program) = self.program(benchmark.name, "normal", "seal") else { continue };
-            let Ok(usual) = self.seal_row(&self.seal, &program, benchmark.argument) else { continue };
+            let Some(program) = self.program(benchmark.name, "normal", "wax") else { continue };
+            let Ok(usual) = self.wax_row(&self.wax, &program, benchmark.argument) else { continue };
             let base = mean(&usual.times);
             let mut cells = Vec::new();
             for (_, binary) in &builds {
-                cells.push(match self.seal_row(binary, &program, benchmark.argument) {
+                cells.push(match self.wax_row(binary, &program, benchmark.argument) {
                     Ok(measured) if base > 0.0 => {
                         let time = mean(&measured.times);
                         format!("{} ({:+.1}%)", seconds(time), (time / base - 1.0) * 100.0)
@@ -692,26 +692,26 @@ impl Report {
         Ok(program.display().to_string())
     }
 
-    /// trace: D136, D152. A script calling a host door in a loop, through Seal's C API and with a Rust door, beside
+    /// trace: D136, D152. A script calling a host door in a loop, through Wax's C API and with a Rust door, beside
     /// `LuaJIT`'s C API calling a C function from a Lua loop. Every engine's calls are added up and checked.
     fn doors(&mut self) {
         let _ = writeln!(self.out, "\n## Door calls through C (D136, D152), Purpose\n");
         let _ = writeln!(
             self.out,
             "A loop calling a host door {} times, each call handing it two whole numbers it multiplies and adds \
-             to a total; the time is the best of seven runs, divided by the calls. Seal's door is written in C, through \
-             Seal's C API (`crates/seal-c/tests/api_test.c`), and in Rust, which the C API aims to match. `LuaJIT`'s is \
-             a C function registered with its C API, reading its numbers with `luaL_checkinteger`, as Seal's door checks \
+             to a total; the time is the best of seven runs, divided by the calls. Wax's door is written in C, through \
+             Wax's C API (`crates/wax-c/tests/api_test.c`), and in Rust, which the C API aims to match. `LuaJIT`'s is \
+             a C function registered with its C API, reading its numbers with `luaL_checkinteger`, as Wax's door checks \
              their kinds (`bench/drivers/doors.luajit.c`). Luau's C library isn't installed here, so it has no row.\n",
             grouped(DOOR_CALLS)
         );
         let _ = writeln!(self.out, "| Engine | Door written in | Each call | Notes |");
         let _ = writeln!(self.out, "|---|---|---|---|");
-        let library = self.root.join("target/release/libseal_c.a");
-        let include = self.root.join("crates/seal-c/include");
-        let seal_c = self.build_c(
-            "doors-seal-c",
-            &[self.root.join("crates/seal-c/tests/api_test.c"), library],
+        let library = self.root.join("target/release/libwax_c.a");
+        let include = self.root.join("crates/wax-c/include");
+        let wax_c = self.build_c(
+            "doors-wax-c",
+            &[self.root.join("crates/wax-c/tests/api_test.c"), library],
             &["-I", &include.display().to_string()],
         );
         let luajit = self.build_c(
@@ -721,8 +721,8 @@ impl Report {
         );
         let count = DOOR_CALLS.to_string();
         let runs: [(&str, &str, &str, Result<Run, String>); 4] = [
-            ("Seal", "C", "doors.c", seal_c.map(|program| (program, vec!["bench".to_owned(), count.clone()]))),
-            ("Seal", "Rust", "doors.rust", Ok((self.seal.clone(), vec!["doors".to_owned(), count.clone()]))),
+            ("Wax", "C", "doors.c", wax_c.map(|program| (program, vec!["bench".to_owned(), count.clone()]))),
+            ("Wax", "Rust", "doors.rust", Ok((self.wax.clone(), vec!["doors".to_owned(), count.clone()]))),
             (
                 "LuaJIT `-joff`",
                 "C",
@@ -742,7 +742,7 @@ impl Report {
             match measured {
                 Ok(measured) if measured.result == expected => {
                     let Some(&each) = measured.numbers.get("door_call_each") else { continue };
-                    self.normal.insert((kept_as.to_owned(), "Seal".to_owned()), each);
+                    self.normal.insert((kept_as.to_owned(), "Wax".to_owned()), each);
                     let _ = writeln!(self.out, "| {engine} | {language} | {} | |", seconds(each));
                 }
                 Ok(measured) => {
@@ -759,7 +759,7 @@ impl Report {
         }
     }
 
-    /// trace: D155, D159. The big number types on Seal, Python's built-ins and `gmpy2`, every answer checked.
+    /// trace: D155, D159. The big number types on Wax, Python's built-ins and `gmpy2`, every answer checked.
     fn numbers(&mut self) {
         let _ = writeln!(self.out, "\n## The big number types against Python (D155, D159), Normal\n");
         let _ = writeln!(
@@ -771,11 +771,11 @@ impl Report {
         );
         let _ = writeln!(
             self.out,
-            "| Program | Seal mean | Seal deviation | Seal least | Seal peak memory | Python mean | Python least | `gmpy2` mean |"
+            "| Program | Wax mean | Wax deviation | Wax least | Wax peak memory | Python mean | Python least | `gmpy2` mean |"
         );
         let _ = writeln!(self.out, "|---|---|---|---|---|---|---|---|");
         for benchmark in &NUMBER_BENCHMARKS {
-            let program = self.root.join(format!("bench/programs/{}.seal", benchmark.name));
+            let program = self.root.join(format!("bench/programs/{}.wax", benchmark.name));
             let checked = |engine: &str, measured: Result<Measured, String>, problems: &mut Vec<String>| match measured
             {
                 Ok(measured) if same_answer(&measured.result, benchmark.expected) => Some(measured),
@@ -791,8 +791,8 @@ impl Report {
                     None
                 }
             };
-            let seal = self.seal_row(&self.seal, &program, benchmark.argument);
-            let seal = checked("Seal", seal, &mut self.problems);
+            let wax = self.wax_row(&self.wax, &program, benchmark.argument);
+            let wax = checked("Wax", wax, &mut self.problems);
             let python =
                 if benchmark.python { Some(self.python_row(benchmark.name, benchmark.argument)) } else { None };
             let python = python.and_then(|measured| checked("Python", measured, &mut self.problems));
@@ -806,19 +806,19 @@ impl Report {
             let time = |measured: &Option<Measured>, of: fn(&[f64]) -> f64| {
                 measured.as_ref().map_or_else(|| "–".to_owned(), |measured| seconds(of(&measured.times)))
             };
-            let peak = seal.as_ref().and_then(|measured| measured.peak).map_or_else(|| "?".to_owned(), bytes);
+            let peak = wax.as_ref().and_then(|measured| measured.peak).map_or_else(|| "?".to_owned(), bytes);
             let _ = writeln!(
                 self.out,
                 "| {} | {} | {} | {} | {peak} | {} | {} | {} |",
                 benchmark.title,
-                time(&seal, mean),
-                time(&seal, deviation),
-                time(&seal, least),
+                time(&wax, mean),
+                time(&wax, deviation),
+                time(&wax, least),
                 time(&python, mean),
                 time(&python, least),
                 time(&gmpy2, mean),
             );
-            for (engine, measured) in [("Seal", &seal), ("Python", &python)] {
+            for (engine, measured) in [("Wax", &wax), ("Python", &python)] {
                 if let Some(measured) = measured {
                     self.normal.insert((benchmark.name.to_owned(), engine.to_owned()), mean(&measured.times));
                 }
@@ -831,13 +831,13 @@ impl Report {
         let mut out = String::new();
         let time = |benchmark: &str, engine: &str| self.normal.get(&(benchmark.to_owned(), engine.to_owned())).copied();
         let _ = writeln!(out, "## D57's goals, judged Normal against Normal (D58)\n");
-        let _ = writeln!(out, "| Goal | Benchmark | Seal | Against | Verdict |");
+        let _ = writeln!(out, "| Goal | Benchmark | Wax | Against | Verdict |");
         let _ = writeln!(out, "|---|---|---|---|---|");
-        let verdict = |seal: Option<f64>, other: Option<f64>, limit: f64| match (seal, other) {
-            (Some(seal), Some(other)) if seal < other * limit => {
-                format!("**met**: Seal takes {} of its time", share(seal / other))
+        let verdict = |wax: Option<f64>, other: Option<f64>, limit: f64| match (wax, other) {
+            (Some(wax), Some(other)) if wax < other * limit => {
+                format!("**met**: Wax takes {} of its time", share(wax / other))
             }
-            (Some(seal), Some(other)) => format!("**not met**: Seal takes {} of its time", share(seal / other)),
+            (Some(wax), Some(other)) => format!("**not met**: Wax takes {} of its time", share(wax / other)),
             _ => "not measured".to_owned(),
         };
         let shown = |value: Option<f64>| value.map_or_else(|| "?".to_owned(), seconds);
@@ -853,25 +853,25 @@ impl Report {
         for (bar, engine) in [("Luau's interpreter", "Luau (interpreter)"), ("LuaJIT's interpreter", "LuaJIT `-joff`")]
         {
             for benchmark in &BENCHMARKS {
-                let (seal, other) = (time(benchmark.name, "Seal"), time(benchmark.name, engine));
+                let (wax, other) = (time(benchmark.name, "Wax"), time(benchmark.name, engine));
                 let _ = writeln!(
                     out,
                     "| 1. Faster than {bar} | {} | {} | {} | {} |",
                     benchmark.title,
-                    shown(seal),
+                    shown(wax),
                     shown(other),
-                    verdict(seal, other, 1.0)
+                    verdict(wax, other, 1.0)
                 );
             }
-            let (seal, other) = (whole_run("Seal"), whole_run(engine));
+            let (wax, other) = (whole_run("Wax"), whole_run(engine));
             let _ = writeln!(
                 out,
                 "| 1. Faster than {bar} | patrolling scripts, the whole run: loading {} from one text, resuming each {} times | {} | {} | {} |",
                 PATROL.0,
                 PATROL.1,
-                shown(seal),
+                shown(wax),
                 shown(other),
-                verdict(seal, other, 1.0)
+                verdict(wax, other, 1.0)
             );
             for (part, what) in [
                 ("resume_each", "resuming each"),
@@ -879,53 +879,53 @@ impl Report {
                 ("load_own_text", "loading each from a text of its own"),
             ] {
                 let name = format!("patrol.{part}");
-                let (seal, other) = (time(&name, "Seal"), time(&name, engine));
+                let (wax, other) = (time(&name, "Wax"), time(&name, engine));
                 // trace: D150. Loading from a text of its own is judged against Luau alone; LuaJIT's is for reference.
                 let judged = if part == "load_own_text" && engine.starts_with("LuaJIT") {
                     "for reference, no target (D150)".to_owned()
                 } else {
-                    verdict(seal, other, 1.0)
+                    verdict(wax, other, 1.0)
                 };
                 let _ = writeln!(
                     out,
                     "| 1. Faster than {bar} | patrolling scripts, {what} | {} | {} | {judged} |",
-                    shown(seal),
+                    shown(wax),
                     shown(other),
                 );
             }
         }
         // trace: D141, D171, D176. Loading a compiled file, checks and all, is met within twice LuaJIT's time for
         // loading its own bytecode, as `luajit -b` writes it, which it doesn't check.
-        let (seal, luajit) = (time("patrol.load_compiled", "Seal"), time("patrol.load_compiled", "LuaJIT `-joff`"));
+        let (wax, luajit) = (time("patrol.load_compiled", "Wax"), time("patrol.load_compiled", "LuaJIT `-joff`"));
         let _ = writeln!(
             out,
             "| D171, D176. Within twice LuaJIT loading its own bytecode | patrolling scripts, loading each from a compiled file of its own | {} | {} | {} |",
-            shown(seal),
+            shown(wax),
             shown(luajit),
-            verdict(seal, luajit, 2.0),
+            verdict(wax, luajit, 2.0),
         );
         // trace: D176. The same file loaded again reuses what was verified the first time; for reference.
         let _ = writeln!(
             out,
-            "| D176. Loading the same compiled file again | patrolling scripts, each loaded from one `.sealc` file, reusing what was verified | {} | | for reference, no target |",
-            shown(time("patrol.load_same_file", "Seal")),
+            "| D176. Loading the same compiled file again | patrolling scripts, each loaded from one `.waxc` file, reusing what was verified | {} | | for reference, no target |",
+            shown(time("patrol.load_same_file", "Wax")),
         );
         // trace: D169, D171. A signed file's first load checks its signature: shown for reference, since LuaJIT has none,
         // and paid once per file or bundle in a run.
         let _ = writeln!(
             out,
-            "| D171. Checking a `.sealc` file's signature, once per file | patrolling scripts, loading each signed file of its own, signature checked | {} | | for reference, no target |",
-            shown(time("patrol.load_signed", "Seal")),
+            "| D171. Checking a `.waxc` file's signature, once per file | patrolling scripts, loading each signed file of its own, signature checked | {} | | for reference, no target |",
+            shown(time("patrol.load_signed", "Wax")),
         );
         // trace: D152. A door call through C aims at a Rust door's speed; LuaJIT's C API is beside it.
-        let (c, rust) = (time("doors.c", "Seal"), time("doors.rust", "Seal"));
+        let (c, rust) = (time("doors.c", "Wax"), time("doors.rust", "Wax"));
         let _ = writeln!(
             out,
             "| D152. A door call through C as fast as a Rust door | {} door calls from a loop | {} | a Rust door: {}; LuaJIT's C API: {} | {} |",
             grouped(DOOR_CALLS),
             shown(c),
             shown(rust),
-            shown(time("doors.luajit_joff", "Seal")),
+            shown(time("doors.luajit_joff", "Wax")),
             match (c, rust) {
                 (Some(c), Some(rust)) if rust > 0.0 =>
                     format!("an aim, no target: {:.1}× a Rust door's time", c / rust),
@@ -934,14 +934,14 @@ impl Report {
         );
         // trace: D155, D159
         for benchmark in NUMBER_BENCHMARKS.iter().filter(|benchmark| benchmark.python) {
-            let (seal, python) = (time(benchmark.name, "Seal"), time(benchmark.name, "Python"));
+            let (wax, python) = (time(benchmark.name, "Wax"), time(benchmark.name, "Python"));
             let _ = writeln!(
                 out,
                 "| D155. Faster than Python's built-ins | {} | {} | {} | {} |",
                 benchmark.title,
-                shown(seal),
+                shown(wax),
                 shown(python),
-                verdict(seal, python, 1.0)
+                verdict(wax, python, 1.0)
             );
         }
         for (name, limit, goal) in [
@@ -951,16 +951,16 @@ impl Report {
             ("textbuild", 2.0, "2. Within twice V8 `--jitless`"),
         ] {
             let title = BENCHMARKS.iter().find(|benchmark| benchmark.name == name).map_or(name, |found| found.title);
-            let (seal, node) = (time(name, "Seal"), time(name, "Node `--jitless`"));
+            let (wax, node) = (time(name, "Wax"), time(name, "Node `--jitless`"));
             let _ = writeln!(
                 out,
                 "| {goal} | {title} | {} | {} | {} |",
-                shown(seal),
+                shown(wax),
                 shown(node),
-                verdict(seal, node, limit)
+                verdict(wax, node, limit)
             );
         }
-        let (resume, call) = (time("patrol.resume_each", "Seal"), time("patrol.call_each", "Seal"));
+        let (resume, call) = (time("patrol.resume_each", "Wax"), time("patrol.call_each", "Wax"));
         let _ = writeln!(
             out,
             "| 6. Pausing costs about as much as a call | patrolling scripts | resume {} | host call {} | {} |",
@@ -972,7 +972,7 @@ impl Report {
                 _ => "not measured".to_owned(),
             }
         );
-        if let Some(memory) = time("patrol.memory_each", "Seal") {
+        if let Some(memory) = time("patrol.memory_each", "Wax") {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a count of bytes
             let each = bytes(memory as u64);
             let _ = writeln!(
@@ -1059,16 +1059,16 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     }
     let root = std::env::current_dir().map_err(|error| error.to_string())?;
     if !root.join("bench/programs").exists() {
-        return Err("run `seal-bench report` from the repository's folder".to_owned());
+        return Err("run `wax-bench report` from the repository's folder".to_owned());
     }
-    let seal = std::env::current_exe().map_err(|error| error.to_string())?.display().to_string();
-    let scratch = std::env::temp_dir().join(format!("seal-bench-{}", std::process::id()));
+    let wax = std::env::current_exe().map_err(|error| error.to_string())?.display().to_string();
+    let scratch = std::env::temp_dir().join(format!("wax-bench-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
     let mut report = Report {
         root,
         scratch: scratch.clone(),
         runs,
-        seal,
+        wax,
         variants,
         out: String::new(),
         normal: BTreeMap::new(),
@@ -1093,15 +1093,15 @@ pub fn report(options: &[&str]) -> Result<String, String> {
         report.doors();
     }
     // D57's fourth goal: a 10,000-line script checked and compiled in under 100 ms.
-    let lines = measure(&report.seal, &["lines".to_owned(), "10000".to_owned()]).ok();
+    let lines = measure(&report.wax, &["lines".to_owned(), "10000".to_owned()]).ok();
     let busy_after = system("vm.loadavg");
     let _ = std::fs::remove_dir_all(&scratch);
 
     let mut text = String::new();
-    let _ = writeln!(text, "# Seal's benchmark results\n");
+    let _ = writeln!(text, "# Wax's benchmark results\n");
     let _ = writeln!(
         text,
-        "Written by `seal-bench report` (see `bench/run.sh`). The benchmarks are D57's, run by D58's rules: every \
+        "Written by `wax-bench report` (see `bench/run.sh`). The benchmarks are D57's, run by D58's rules: every \
          benchmark in every kind, every number saying its kind, and every answer checked before its time counts.\n"
     );
     let _ = writeln!(text, "## Setup\n");
@@ -1116,7 +1116,7 @@ pub fn report(options: &[&str]) -> Result<String, String> {
         writeln!(text, "- **System:** macOS {} ({}).", version("sw_vers", "-productVersion"), system("kern.osrelease"));
     let _ = writeln!(
         text,
-        "- **Seal:** this repository, built by `{}`, release profile (optimised, link-time optimisation, one code unit).",
+        "- **Wax:** this repository, built by `{}`, release profile (optimised, link-time optimisation, one code unit).",
         version("rustc", "--version")
     );
     let _ = writeln!(
@@ -1153,11 +1153,11 @@ pub fn report(options: &[&str]) -> Result<String, String> {
     );
     let _ = writeln!(
         text,
-        "- **Peak memory** is the whole process's, as the system reports it. **Load** is how long loading the script takes: inside the process for Seal (cold, then warm, when Seal reuses what it compiled for the same text), and as a whole process that starts, loads and stops for every engine."
+        "- **Peak memory** is the whole process's, as the system reports it. **Load** is how long loading the script takes: inside the process for Wax (cold, then warm, when Wax reuses what it compiled for the same text), and as a whole process that starts, loads and stops for every engine."
     );
     let _ = writeln!(
         text,
-        "- **Kinds:** Purpose isolates one thing; Normal is written plainly; Ceil is tuned. `Ceil.source` runs the tuned program on the usual build. `Ceil.machine` builds Seal's VM for this exact CPU, `Ceil.program` builds it with a profile of the benchmarks' own run, and `Ceil.machine.program` does both; a script is never compiled for a CPU (D46), so those apply to the VM. Luau, LuaJIT and Node are the installed builds in every kind.\n"
+        "- **Kinds:** Purpose isolates one thing; Normal is written plainly; Ceil is tuned. `Ceil.source` runs the tuned program on the usual build. `Ceil.machine` builds Wax's VM for this exact CPU, `Ceil.program` builds it with a profile of the benchmarks' own run, and `Ceil.machine.program` does both; a script is never compiled for a CPU (D46), so those apply to the VM. Luau, LuaJIT and Node are the installed builds in every kind.\n"
     );
     text.push_str(&report.goals());
     if let Some(lines) = lines {

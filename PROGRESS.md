@@ -1,22 +1,22 @@
-# Seal's implementation: progress
+# Wax's implementation: progress
 
 Kept by the building session: "seal claude" built D1 to D73; "seal opus claude" carries it on from 2026-11-25. After a
 compaction, read this, `test-status.json` and `git log` to carry on.
 
-**The one command** for the whole build, lint and test run: `cargo run -j 3 --release -p seal-check-all`. It checks
+**The one command** for the whole build, lint and test run: `cargo run -j 3 --release -p wax-check-all`. It checks
 formatting, lints with warnings as errors, builds, runs the packages' own tests, runs the fuzzer and the comparison
 with Ralph, runs every test in `tests/` as `tests/README.md` describes, and writes `test-status.json`.
 
-**The benchmarks:** `sh bench/run.sh` builds Seal's benchmark host in each way D58's kinds need, runs every benchmark
-on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.md`.
+**The benchmarks:** `sh bench/run.sh` builds Wax's benchmark host in each way D58's kinds need, runs every benchmark
+on Wax, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.md`.
 
 ## The finish line (from the prompt), and where each point stands
 
-1. **Four parts work.** The `seal` library, the `seal` command, the fuzzer, and the Unio translator with the
+1. **Four parts work.** The `wax` library, the `wax` command, the fuzzer, and the Unio translator with the
    comparison against Ralph all work. The language server is an empty package.
 2. **Decisions built.** D1 to D178 are built (D178 only names this implementation Ngin1), except the language server's
    parts and what's listed under "Not built yet" below. All 31 tests in `tests/` pass, from text and from compiled files.
-3. **The host's side** is built as D48 sketches, with an example game host in `crates/seal/tests/host.rs`.
+3. **The host's side** is built as D48 sketches, with an example game host in `crates/wax/tests/host.rs`.
 4. **The fuzzer** runs in the one command and by hand, and has never been left failing.
 5. **The comparison with Ralph** runs in the one command. No difference found.
 6. **Performance goals.** See `bench/RESULTS.md` for the numbers and "Benchmarks" below for what's met and what isn't.
@@ -26,12 +26,12 @@ on Seal, Luau, LuaJIT and Node, checks every answer, and writes `bench/RESULTS.m
 - [x] **C0. Workspace.** Toolchain pinned (1.96.1), eight packages, Building rule 3's lints in each, the one command.
 - [x] **C1. Reading, checking, running.** Lexer, parser, checker, bytecode compiler, register VM.
 - [x] **C2. The host's side** (D48, D49, D51 to D54): `Doors`, `Script::load`, `call`, `resume`, `cancel`, `Limits`,
-  `#[derive(Seal)]`.
+  `#[derive(Wax)]`.
 - [x] **C3. The fuzzer** (`fuzz/`): random valid, changed and nonsense scripts against loading and running, under the
   limits, with a check that nothing leaks and that every value's count of holders is right. By hand:
-  `cargo run --release -p seal-fuzzer -- --seed N --count N`.
-- [x] **C4. The Unio translator and the comparison with Ralph** (D19): `crates/seal-to-unio`, and
-  `seal-fuzzer --ralph`.
+  `cargo run --release -p wax-fuzzer -- --seed N --count N`.
+- [x] **C4. The Unio translator and the comparison with Ralph** (D19): `crates/wax-to-unio`, and
+  `wax-fuzzer --ralph`.
 - [x] **C5. Benchmarks** (`bench/`): D57's seven and binary-trees, which D72 let join, in D58's kinds, against Luau
   and Node; `bench/RESULTS.md`.
 - [x] **C6. Performance work.** Every goal of D57 is met, Normal against Normal. See "Benchmarks" and
@@ -59,7 +59,7 @@ checker, compiler or VM.
   `*`, parameters.
 - [x] **C11. Maths:** ranged numbers and `abs`, `min`, `max`, `clamp` (D107), `**` (D108), `sin` to `atan2` and `pi`
   (D109), `lerp` (D114), each correctly rounded (D50).
-- [x] **C12. Units** (D111 to D113, D120 to D123): numbers with units, Seal's three groups, a script's and a host's own
+- [x] **C12. Units** (D111 to D113, D120 to D123): numbers with units, Wax's three groups, a script's and a host's own
   groups, conversions, rates, points, `in`, the angle built-ins taking angles, and units at a host's doors.
 - [x] **C13. `HugeWhole`, `Decimal`, `HugeDecimal`** (D115, D116, D119, D124 to D127), timed in the benchmarks.
 - [ ] **C14. Finish:** the fuzzer covers every new feature; the benchmarks re-run; the draft wordings brought up to date
@@ -67,7 +67,7 @@ checker, compiler or VM.
 
 ## Plan from 2026-11-26 (seal opus claude): D152 to D159
 
-From the prompt in `design/seal-next-prompt.md`, in this order, each step committed and pushed:
+From the prompt in `design/wax-next-prompt.md`, in this order, each step committed and pushed:
 
 - [x] **C15. Catching up.** D157's `return`, `include` and `instead`; D158's `eq` and `not_eq` as keywords, with `==`
   and `!=` gone; D156's licence on every crate (set once in the workspace); D131's missing case after `??` worded
@@ -75,9 +75,9 @@ From the prompt in `design/seal-next-prompt.md`, in this order, each step commit
 - [x] **C16. Big numbers against Python (D155, D159).** Fixed benchmarks for `HugeWhole`, `Decimal` and
   `HugeDecimal`, Python's `int` and `decimal` as the bar, `gmpy2` for reference; faster than Python on each, at 48% to
   88% of its time.
-- [x] **C17. `.sealc` files (D141, D153, D154).** `seal build`, bundles, loading by name, the verifier, the cache;
+- [x] **C17. `.waxc` files (D141, D153, D154).** `wax build`, bundles, loading by name, the verifier, the cache;
   fuzzing damaged and tampered files; a loading row with LuaJIT's `string.dump` bytecode beside it.
-- [x] **C18. The C API (D136, D151, D152).** `seal-c`, a C test program under AddressSanitizer, fuzzing through it, a
+- [x] **C18. The C API (D136, D151, D152).** `wax-c`, a C test program under AddressSanitizer, fuzzing through it, a
   door-call row with LuaJIT's C API beside it. Luau's C library isn't installed; Tankun was asked whether it may be
   built in `target/`.
 
@@ -96,7 +96,7 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - **D64** `==` and `!=` on two texts; `<` and `>` on text stop as not designed yet.
 - **D65, D66** Text counts and is reached by graphemes: `.len`, `.len.egc`, `.len.ucp`, `.len.bytes`, `[pos:]`,
   `[offset:]`, `for each`, `.split(by:)` and `.split.no_empty(by:)`. Unicode's tables come from the crate
-  `unicode-segmentation`, which has no `unsafe`; its version is pinned exactly, so this Seal version pins Unicode 17.
+  `unicode-segmentation`, which has no `unsafe`; its version is pinned exactly, so this Wax version pins Unicode 17.
 - **D67** At the top level: reaching a name before it's made, pausing, `return`, `fail` and `?` are refused.
 - **D68** Every way through a value-giving procedure ends in a `return`; nothing follows a leaving line or an `if`
   that can leave; a bare `return` can't be a procedure's last line.
@@ -174,13 +174,13 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   `-` allowed, or a top-level plain name), one per edge. A ranged type resolves to its plain type for every type rule;
   the checker wraps each value landing where one is written (a name, a field, a list or `Dict` item, a `return`, a
   handler's parameter) in a check, and a procedure checks its ranged parameters as it starts, so the host's calls are
-  held too; such a procedure isn't written out in place. A value Seal can see past a hard edge is refused while
+  held too; such a procedure isn't written out in place. A value Wax can see past a hard edge is refused while
   loading.
 - **D107, D108, D109, D114** `abs`, `min`, `max`, `clamp` on two `Whole`s or `Float`s; `**`, binding tighter than `*`;
   `sin`, `cos`, `tan`, `asin`, `acos`, `atan2(y:, x:)`, `lerp(a, to:, by:)` and `pi`. A negative power of a written
   `Whole` is refused; one only known while running is a failed check. `pi` can be filled into braces.
-- **D50: correctly rounded maths.** `crates/seal/src/big.rs` is a whole number of any size, written here with no
-  `unsafe` (every candidate crate, `num-bigint`, `astro-float`, `dashu`, uses some). `crates/seal/src/maths.rs` works
+- **D50: correctly rounded maths.** `crates/wax/src/big.rs` is a whole number of any size, written here with no
+  `unsafe` (every candidate crate, `num-bigint`, `astro-float`, `dashu`, uses some). `crates/wax/src/maths.rs` works
   each answer out in big fixed point with an error bound and keeps the `Float` the whole interval rounds to, doubling
   the precision when it can't tell (Ziv's strategy); `**` finds exact answers and ties first, `lerp` is worked out
   exactly and rounded once. 600 answers checked against Python's 120-digit decimals: all the same. The platform's own
@@ -188,7 +188,7 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 - An unclosed `{` in text is refused with `\\{` as the fix (D75: a brace shown as it is, is written `\\{`).
 - **D111 to D113, D120 to D123: units.** A unit is part of a number's type (`Type::Measured`), written bare after a
   number (`2 secs`, `5.0 px per secs`, `100.0 px.point`) or in a type (`Float[unit: secs]`), with its group only to
-  settle a clash (`time::secs`). Seal's groups are `time` (`ms`, `secs`, `mins`, `frames`), `angle` (`degs`,
+  settle a clash (`time::secs`). Wax's groups are `time` (`ms`, `secs`, `mins`, `frames`), `angle` (`degs`,
   `turns`, `rads`) and `distance` (`px`, `tiles`); a radian is 180/π degrees, held exactly, so `rads` converts to
   the others correctly rounded, while `frames` and `tiles` have no fixed size and convert to nothing. A unit's size
   is a fraction times a power of π, marked inexact when it has π or was written with `~`. Values convert by
@@ -233,11 +233,11 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   division if that ever takes more than a few steps), and text both ways in halves past 48, each switch-over
   measured. `tests/reference.rs` checks whole numbers, `Decimal` (as decimal128) and `HugeDecimal` against Python;
   `tests/gmp.rs` checks whole numbers from 60 to 12,000 digits against GMP 6.3, through a small C program built at
-  test time, so no binding and no `unsafe` reaches Seal. Each says so and compares nothing where Python, a C compiler
+  test time, so no binding and no `unsafe` reaches Wax. Each says so and compares nothing where Python, a C compiler
   or GMP isn't installed.
 - **D150** Loading a script from a text of its own is judged against Luau alone; `bench/RESULTS.md` shows LuaJIT's
   time beside it for reference.
-- **D151** The C API gives every message whole and in parts; `crates/seal-c/PROPOSAL.md` names the functions.
+- **D151** The C API gives every message whole and in parts; `crates/wax-c/PROPOSAL.md` names the functions.
 - **D156** Every crate is under Apache-2.0 WITH LLVM-exception, set once in the workspace's `Cargo.toml`.
 - **D160** No macros and no comptime: nothing to build.
 - **D161** Generic procedures, `proc first<?Item>[items: List<?Item>] -> Maybe<?Item>`. `?Item` is lexed as one type
@@ -249,14 +249,14 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   themselves; that's what's compiled, so a generic procedure runs as fast as one written for its types. A
   generic procedure itself compiles to a stub a host can't call yet. Maths, comparing, converting, showing or
   reaching into a type parameter's value stops as not designed yet; a list of them can still be gone through,
-  reached and counted. The fuzzer's Seal scripts have four generic procedures, one calling another, called with
+  reached and counted. The fuzzer's Wax scripts have four generic procedures, one calling another, called with
   `Whole`s, texts, lists and `Maybe`s; the Unio translator leaves scripts with generics out.
 - **D162** Messages call a named value a variable, mutable with `mut` and immutable without, and keep "name" for
   the spelling itself.
 - **D163, D164** Methods: `proc`s inside a record or `one_of`, after its fields or cases, called only with a dot.
   Each is declared under its type, out of the global names, so two types can each have `size`; its first parameter
   is a value of the type. A dot call on a value whose type is plain to see (a variable, a record being built, a
-  field, a call's result) finds the method and passes the value as the first argument; anything else goes to Seal's
+  field, a call's result) finds the method and passes the value as the first argument; anything else goes to Wax's
   own methods. A host calling a method stops as not designed yet. The fuzzer's `Hero`, `Spot` and `Tree` have
   methods, `size` on two of them.
 - **D165** A method whose first parameter is `mut` is lent the mutable variable it's called on: the caller hands
@@ -275,10 +275,10 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   instance for a type points at that type's own method. `meets [ … ]` checks every listed method: same name, types
   (`?Self` as the type), labels, result and written failures; each call to a generic checks its types meet what its
   type parameters require. The fuzzer's `Hero` meets a `Powered` requirement, used by a generic.
-- **D141, D153, D154** `.sealc` files (`compile/file.rs`, `host/compiled.rs`): `seal build a.seal [b.seal …]
-  [-o out.sealc]` and `seal::build` write one script or a bundle with an index; `Script::load_compiled` loads one by
-  name; `Cache` and `Script::load_cached` keep them in a folder the host names, keyed by text, this Seal and the
-  doors, falling back to the text when a cache file is bad. Each load checks this exact Seal's fingerprint (its
+- **D141, D153, D154** `.waxc` files (`compile/file.rs`, `host/compiled.rs`): `wax build a.wax [b.wax …]
+  [-o out.waxc]` and `wax::build` write one script or a bundle with an index; `Script::load_compiled` loads one by
+  name; `Cache` and `Script::load_cached` keep them in a folder the host names, keyed by text, this Wax and the
+  doors, falling back to the text when a cache file is bad. Each load checks this exact Wax's fingerprint (its
   version and the source of what decides a script's meaning), the doors' key, a checksum, every count against the
   file and every text as UTF-8; then the verifier checks every register against its frame, every jump inside its
   procedure, every table number (constants, texts, layouts, sites, globals, procedures, failures) and the type
@@ -288,14 +288,14 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   with a remade checksum (never harming the host). Not done: following each register's kind, so a tampered file
   that swaps registers can still pass and stop with an internal message, which then says the file may have been
   changed. `bench/RESULTS.md` has a loading row, with LuaJIT's bytecode beside it.
-- **D136, D151, D152: the C API** (`crates/seal-c`, `include/seal.h`), the one package where `unsafe` is allowed.
+- **D136, D151, D152: the C API** (`crates/wax-c`, `include/wax.h`), the one package where `unsafe` is allowed.
   Doors, scripts and values are handles: numbers into tables kept per thread, each with a generation, so a freed,
   made-up or wrong-kind handle is refused as a host mistake, never trusted. A door is a C function with the host's
-  pointer; its arguments are an array of plain tagged values (`seal_arg`), `Whole`, `Float`, `Bool` and `Nothing`
+  pointer; its arguments are an array of plain tagged values (`wax_arg`), `Whole`, `Float`, `Bool` and `Nothing`
   inline and anything else as a value handle lent for the call, and its kinds are worked out when it's opened. A
   door call through C takes about 11 ns, against 8 ns for a Rust door. Every reader of a value says when it's the
-  wrong kind (`SEAL_HOST_MISTAKE` with a message), and messages are kept per thread, read whole or in parts (D151)
-  until the thread's next call. Every function is guarded, so a panic inside Seal comes back as a status, never
+  wrong kind (`WAX_HOST_MISTAKE` with a message), and messages are kept per thread, read whole or in parts (D151)
+  until the thread's next call. Every function is guarded, so a panic inside Wax comes back as a status, never
   across into C. `tests/api_test.c` runs under AddressSanitizer from `cargo test` (built with the system's `cc`; it
   says so and compares nothing where there's none); `tests/fuzz.rs` makes 20,000 random calls, with handles made up,
   freed or of the wrong kind, arguments of any kind and bits, damaged scripts and doors that answer anything.
@@ -307,27 +307,27 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   the first number, so measuring there is bracketed, and `-` after `from`, `to`, `before` or `step_by` is a sign. A
   counter never read is marked `for unused i` (sent to the design session to check). The benchmarks' programs, the
   fuzzer and the tests count with `for`.
-- **D173** A script loaded from a `.sealc` keeps its bytes as one block; each instruction's place, the procedures and
+- **D173** A script loaded from a `.waxc` keeps its bytes as one block; each instruction's place, the procedures and
   their names, the failures' names, the pause maps and the source text stay in it, checked at load without being
   built, and are read the first time they're wanted (`Kept` and `ScriptText`). Loading a compiled patrolling script
   makes 8 allocations, from 26, in about 0.60 µs. LuaJIT's is 0.28 to 0.32 µs; the design session has the numbers,
   where the rest goes, the floor (about 0.4 µs) and a recommendation, as D173 asks. Leaving the type table in the block
   too was tried and saved nothing, so it's read at load.
-- **D170** No type-following verifier: what `.sealc` loading checks (this Seal, the doors, a checksum, every text,
+- **D170** No type-following verifier: what `.waxc` loading checks (this Wax, the doors, a checksum, every text,
   register, jump and table number in range) stays as it is, and the VM's checks keep the host safe whatever a file
   holds.
 - **D171** Loading a compiled patrolling script went from 2.1 µs to 0.83 µs: a checksum taking four words at a time
-  and no second hash of the source; Seal's own unit groups one flag in a file and Seal's own failures a number; names
+  and no second hash of the source; Wax's own unit groups one flag in a file and Wax's own failures a number; names
   and the source read where they are; the index read without making a list; pause maps in two flat lists; and a
   verifier that makes nothing for each instruction or type. LuaJIT loads its own bytecode in 0.28 µs. What's left is
   mostly the compiled script's ~25 separate lists, each an allocation; the design session has the numbers and a
   recommendation. The fuzzer caught a script's own unit groups being lost by the new format; a test covers it.
-- **D169, D175, D177: signed `.sealc` files** (`host/signing.rs`), ML-DSA-44 from `fips204` without its
-  random-number feature. `seal keygen NAME` writes `NAME.public` and `NAME.secret` from the system's randomness;
-  `seal build --sign NAME.secret` appends the signature over the whole file and `SEALSIG\x01`; `seal run --key
+- **D169, D175, D177: signed `.waxc` files** (`host/signing.rs`), ML-DSA-44 from `fips204` without its
+  random-number feature. `wax keygen NAME` writes `NAME.public` and `NAME.secret` from the system's randomness;
+  `wax build --sign NAME.secret` appends the signature over the whole file and `WAXSIG\x01`; `wax run --key
   NAME.public` loads only a file signed with it. The secret key is written readable by its owner only, never over
-  another, and `seal keygen` says to keep it off repositories. A host calls `Doors::require_signature` (C:
-  `seal_doors_require_signature`); a file that isn't signed, is changed in any byte, or is signed with another key is
+  another, and `wax keygen` says to keep it off repositories. A host calls `Doors::require_signature` (C:
+  `wax_doors_require_signature`); a file that isn't signed, is changed in any byte, or is signed with another key is
   refused, and each file that passes is kept whole, so it's checked once in a run (about 43 µs). A host that doesn't
   require signatures loads a signed file as it is. The fuzzer signs one script in four and checks a change after
   signing, or another key, is always refused.
@@ -345,7 +345,7 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   edges, so equal limits are one type, and it's checked, clamped to and shown as any edge is.
 - **D115, D116, D119, D124 to D127: `HugeWhole`, `Decimal`, `HugeDecimal`.** A `Decimal` is held in its heap
   entry itself, in two 64-bit halves, so working with one allocates nothing beyond the entry; the money benchmark
-  went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/seal/src/decimal.rs` holds
+  went from 224 ms to 172 ms (16 times the `Float` sums' 11 ms). `crates/wax/src/decimal.rs` holds
   decimal128, with IEEE 754's rounding (34 digits, to the nearest, a tie to even, exponents -6176 to 6111) and its
   preferred exponents, so places carry through (`1.50 + 1.50` is `3.00`), each operation worked out exactly on
   `Big` and rounded once; and the exact `HugeDecimal`, whose `/` and `sqrt` give the exact answer or stop. Checked
@@ -356,7 +356,7 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
   other side's (D119), exactly as written, refused with `~` or with more digits than a `Decimal` keeps. D127's
   operations, `abs`, `min`, `max`, `clamp`, `sqrt` and `lerp` as its table says, `places:` on decimals, `==` by
   amount. D126's conversions, with `too_big` and `not_a_number` as failures that `handles [ … ]` can name. A host
-  passes them as `seal::big::Big`, `seal::decimal::Decimal` and `seal::decimal::HugeDecimal`. Their work is paid for
+  passes them as `wax::big::Big`, `wax::decimal::Decimal` and `wax::decimal::HugeDecimal`. Their work is paid for
   before it's done, refused when the steps left can't pay, and a `HugeDecimal`'s exponent counts against the memory
   cap, since lining two up writes its zeros out. A `HugeWhole` takes limits, whose edges are `Whole`s, a clamp making
   a new number in place of the old, and units: a `Whole` with a unit widens beside one, and a change of unit
@@ -365,9 +365,9 @@ Each arrived while building; each is built, tested, fuzzed and pushed.
 
 ## How it's built (the building session's design)
 
-Packages: `crates/seal` (the library), `crates/seal-derive` (`#[derive(Seal)]`, re-exported by the library),
-`crates/seal-command` (the `seal` command), `crates/seal-language-server` (empty), `crates/seal-to-unio` (the
-translator), `crates/seal-check-all` (the one command), `fuzz/` (the fuzzer), `bench/` (the benchmark host).
+Packages: `crates/wax` (the library), `crates/wax-derive` (`#[derive(Wax)]`, re-exported by the library),
+`crates/wax-command` (the `wax` command), `crates/wax-language-server` (empty), `crates/wax-to-unio` (the
+translator), `crates/wax-check-all` (the one command), `fuzz/` (the fuzzer), `bench/` (the benchmark host).
 
 Inside the library:
 
@@ -408,7 +408,7 @@ The VM, and its optimizations (Building rule 5):
 - **Checks kept** (D17, D18): every `Whole` operation is checked for overflow, every `Float` operation for infinity and
   NaN, every position for range. `bench/RESULTS.md` has what the float check costs, measured.
 - **Steps** (D14, proposal): one step per jump taken and per call, plus one per 64 units of bulk work.
-- **Memory** (D14, D50, proposal): Seal's own sizes, counted on every allocation and growth.
+- **Memory** (D14, D50, proposal): Wax's own sizes, counted on every allocation and growth.
 - **Pausing** (D49): the VM's frames are data, not Rust stack, so a pause saves the task as it is and returns.
 
 ## Benchmarks
@@ -437,7 +437,7 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   `fib` by up to 5% from one build to the next.
 - **n-body, and what D62 changed.** Until D62, a body's fields could only be changed by copying the body out, changing
   it and putting it back. With D62 the plain way is `bodies[pos: i].vx = bodies[pos: i].vx - …`, so that's now the
-  Normal program, and the copy-out one is kept as `nbody.ceil.seal`, the Ceil.source program. Written the plain way it
+  Normal program, and the copy-out one is kept as `nbody.ceil.wax`, the Ceil.source program. Written the plain way it
   first took 167 ms against Luau's 70 ms. Three things brought it under Luau's time, each general, none knowing the
   benchmark: a field of a list's record read or changed in one instruction (106 ms); a list item's fields kept in
   registers through a run of plain statements, read once and written back once (74 ms); and two or three float
@@ -447,7 +447,7 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
 - **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met,** 532 ns against
   LuaJIT's 285 ns (187%). From 2.1 µs on 2026-11-26: D173's block, the lists a dropped script recycles, one look at
-  each instruction when verifying; then on 2026-11-27 Seal's own type table shared by every such script rather than
+  each instruction when verifying; then on 2026-11-27 Wax's own type table shared by every such script rather than
   copied and compared back, plain crossings read on the spot, and an eight-lane checksum. The same file loaded again
   reuses what was verified, in about 0.14 µs.
 - **`fib` against LuaJIT's interpreter: met, 30.8 against 36.1 ms (85%) on 2026-11-27.** After D173 it
@@ -458,7 +458,7 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   alignment flags didn't help, and a table for a base case's comparison made it slower (the branch is always
   predicted), so neither is in.
 - **Loading from a text of its own against Luau: met, thinly** (97% on 2026-11-27; 103% in a run earlier that day
-  with Luau measured faster, Seal's own time the same). The compiler now starts from the lists a dropped script left
+  with Luau measured faster, Wax's own time the same). The compiler now starts from the lists a dropped script left
   on the thread, about 4% off.
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
@@ -475,13 +475,13 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
 
 ## Plan from 2026-11-27 (seal opus claude): D171's last row and what's left unbuilt
 
-From `design/seal-next-prompt.md`, each step committed and pushed:
+From `design/wax-next-prompt.md`, each step committed and pushed:
 
 - [x] **C19. A change at a place works out its type from a later line (D5).** `name[pos: n] = v`, and a place on the
   way in to a deeper change, on a name whose type a later line settles, as after a generic call: it's a list or an
   array, either changed the same way, refused with the known-type wordings if the later line says otherwise.
 - [x] **C20. Types that hold themselves cross the doors (D72),** both ways, from text and from compiled files. A host
-  declares one with `#[derive(Seal)]`, through `Vec`, `Option`, `HashMap` or `Box`, and the description names the
+  declares one with `#[derive(Wax)]`, through `Vec`, `Option`, `HashMap` or `Box`, and the description names the
   type where it's met again (`HostType::Named`) rather than going on for ever. Copies are made with a list of what's
   left rather than by recursion; at most 256 levels cross (Building rule 1). A host type that can never end is refused
   as a script's is.
@@ -492,8 +492,19 @@ From `design/seal-next-prompt.md`, each step committed and pushed:
   indented one level deeper; a missing `;` is refused at the slide's last step with the `;` in the fix; a `;`
   anywhere else is refused.
 - [x] **C22. D171 within twice LuaJIT's time** in the full benchmark run: 532 ns against LuaJIT's 285 ns (187%). In a loop of 1,000 different files: about
-  650 ns a load this morning; 515 ns with Seal's own type table shared rather than copied and compared again; 474 ns
+  650 ns a load this morning; 515 ns with Wax's own type table shared rather than copied and compared again; 474 ns
   with plain crossings read on the spot and an eight-lane checksum.
+
+## Plan from 2026-11-28 (seal opus claude): the Wax rename (D183), D182, D181
+
+- [x] **C24. Wax (D183).** Every package, the command, the Rust and C APIs, messages, comments and docs say Wax;
+  scripts are `.wax` and compiled files `.waxc`. Packages: `wax-lang` (the library, used in Rust as `wax`),
+  `wax-derive`, `wax-command` (the `wax` command), `wax-language-server`, `wax-to-unio`, `wax-check-all`, `wax-c`
+  (C functions `wax_*`, header `wax.h`), `wax-fuzzer`, `wax-bench`. The derive is `#[derive(Wax)]`, with
+  `WaxType`, `IntoWax` and `FromWax`. A `.waxc` file starts `WAXC`, and a signed one ends `WAXSIG`.
+- [ ] **C25. `^` marks a handler that can jump (D182).**
+- [ ] **C26. Comment lines between a split slide's steps (D181).**
+- [ ] **C27. The design session's two wording changes** of 2026-11-28.
 
 ## Questions for the design session
 
@@ -514,18 +525,18 @@ Batch 2, sent 2026-11-25 after C12 (C7 to C10's first three were answered by D13
   points other than adding and subtracting a span (stop).
 - D131: two handlers brought into one `otherwise` that both have a case for a failure the call can't give: refused
   as handled twice (built), though neither case can run.
-- D111 says Seal follows Cyborg on "prefixes"; Seal's units have none, and nothing says what a prefix is in Seal.
+- D111 says Wax follows Cyborg on "prefixes"; Wax's units have none, and nothing says what a prefix is in Wax.
 
 ## What Ralph can't compare yet
 
 Ralph has no `Float`, lists, `for each`, `.len`, dividing or the biggest `Whole`s built yet, so the comparison covers
 `Whole` maths and overflow, `Bool`, `Text`, `&`, `be.Text`, `be.Whole`, comparisons, logic, `if`, `while`, procedures
-(with and without parameters), comments and `show_msg`. 2 of the 14 tests and every fuzzed script match. Seal's
+(with and without parameters), comments and `show_msg`. 2 of the 14 tests and every fuzzed script match. Wax's
 dialect alone has: comparing texts (D64), text by graphemes (D65, D66), `unused` parameters (D61), deeper changes
 (D62), and everything with records, `one_of`, `Dict` and failures.
 
 Sent 2026-11-25 on its own: whether D57's "loading each from a text of its own" counts as met within twice Luau's
-time, since Seal type-checks before running and Luau doesn't (recommended), or the reader, checker and compiler get
+time, since Wax type-checks before running and Luau doesn't (recommended), or the reader, checker and compiler get
 the rework (names as numbers, trees in one block) that closing the rest needs.
 
 Batch 3, sent 2026-11-25 after C13 with the draft wordings:
@@ -566,7 +577,7 @@ Batch 3, sent 2026-11-25 after C13 with the draft wordings:
 - Blocks nested more than 48 deep, and values nested more than 160 deep in one statement (bounded so that reading a
   script can't overrun the host's stack).
 - Values nested more than 256 deep crossing between a host and a script (D72), counting every list, `Maybe`, record
-  and case: Seal copies them without recursion, but the host's own code drops, copies, compares, prints and converts
+  and case: Wax copies them without recursion, but the host's own code drops, copies, compares, prints and converts
   a `Value` one level at a time on its stack, about 2 KB a level in a debug build.
 - The language server (D47): an empty package, as the prompt says.
 
@@ -601,7 +612,7 @@ C19 reuses the wordings a change with its type known already has. C20's, for D72
 - check failed, a script's value going to its host: this value is nested more than 256 deep, too deep to go to the host
   - why: a value reaches its host as a copy, which the host's own code goes through one level at a time on its stack, and that holds only so many.
 
-422 wordings, taken from the code by `crates/seal-check-all/wordings.py` on 2026-11-26, after both of the design
+422 wordings, taken from the code by `crates/wax-check-all/wordings.py` on 2026-11-26, after both of the design
 session's reviews (`design/wording-review-2026-11-26.md` and `-26b.md`) were built. The ones marked **(changed
 2026-11-26)** differ from the list the first review read (384d500), as that review and D157, D158 and D115 changed
 them. The 29 marked **(new since the second review)** came after it, and were sent to the design session: refusals for
@@ -609,7 +620,7 @@ what a type parameter's requirement doesn't allow, and the C API's host mistakes
 `{…}` stands for what the message fills in; a `why:` held in a constant (as a `Whole`'s and a `Float`'s range) isn't
 picked up by the script, so it doesn't show here.
 
-**`crates/seal/src/check/calls.rs`**
+**`crates/wax/src/check/calls.rs`**
 
 - refused: this isn't a procedure, so it can't be called
   - why: `( )` calls a procedure.
@@ -688,7 +699,7 @@ picked up by the script, so it doesn't show here.
   - why: an array holds exactly its length, so nothing is added or taken away; its items can still change.
 - not built yet: working out a type from a later line (D5), which this `.{}` needs, isn't built yet
 
-**`crates/seal/src/check/expressions.rs`**
+**`crates/wax/src/check/expressions.rs`**
 
 - refused: `{digits}` is too big for a `Whole`
   - why: a `Whole` goes up to 9223372036854775807.
@@ -799,7 +810,7 @@ picked up by the script, so it doesn't show here.
 - refused: this slide is a chain of {calls}, and one or two calls are written as calls
   - why: a chain of three or more calls is a slide; a shorter one is written with `( )`, as in `show_msg(be.Text(n))`.
 
-**`crates/seal/src/check/finish.rs`**
+**`crates/wax/src/check/finish.rs`**
 
 - refused: this can fail with {}, and nothing deals with the failure
   - why: every call that can fail is dealt with, by `?`, `??` or `otherwise`.
@@ -832,14 +843,14 @@ picked up by the script, so it doesn't show here.
 - refused: this pauses, and the top level can't pause
   - why: the host waits for loading to finish; a pause belongs in a procedure the host calls.
 
-**`crates/seal/src/check/generics.rs`**
+**`crates/wax/src/check/generics.rs`**
 
 - not built yet: a generic procedure filled in with more than 10,000 sets of types isn't built yet
 - not built yet: a generic procedure filled in with types nested more than 100 deep, as one calling itself with a list of what it was given, isn't built yet
 - refused: this call can't work out what `{name}` stands for in `{}`
   - why: a call works its types out from its arguments, or from where its result goes, as `top: Maybe<Whole> = first(scores)`; a type is written where nothing says it.
 
-**`crates/seal/src/check/handlers.rs`**
+**`crates/wax/src/check/handlers.rs`**
 
 - refused: the handler group `{}` is declared twice
   - why: each handler group is declared once.
@@ -863,11 +874,11 @@ picked up by the script, so it doesn't show here.
 - refused: `{}` is never used
   - why: a handler's parameter that's never read on purpose is marked, as `unused {}`.
 
-**`crates/seal/src/check/mod.rs`**
+**`crates/wax/src/check/mod.rs`**
 
 - refused: `{}` is one of the host's types, so the script can't declare it
   - why: the host opens its own types for a script, which uses them by name, as it uses a door.
-- refused: `{}` is one of Seal's own types, so a script can't declare it
+- refused: `{}` is one of Wax's own types, so a script can't declare it
   - why: each type has one meaning.
 - refused: the type `{}` is declared twice
   - why: each type is declared once.
@@ -932,7 +943,7 @@ picked up by the script, so it doesn't show here.
   - why: a method is called with a dot after its value, as `goblin.is_alive()`, so a narrowing would read as a field.
 - refused: `{word}`'s first parameter isn't a value of `{type_name}`, the type it's a method of
   - why: a method's first parameter is the value before the dot, as `goblin` in `goblin.is_alive()`.
-- refused: `{word}` is one of Seal's own words, so a procedure can't be named `{word}`
+- refused: `{word}` is one of Wax's own words, so a procedure can't be named `{word}`
 - refused: `{word}` is one of the host's doors, so a procedure can't be named `{word}`
 - refused: the procedure `{name}` is declared twice
 - refused: two type parameters are named `{}`
@@ -1044,7 +1055,7 @@ picked up by the script, so it doesn't show here.
 - refused: this `match` has no `case` for {}
   - why: a `match` covers every case; there's no catch-all.
 
-**`crates/seal/src/check/numbers.rs`**
+**`crates/wax/src/check/numbers.rs`**
 
 - refused: a `{name}` holds exactly what's written, so its number takes no `~`
   - why: a `~` marks a `Float` that's only close to what's written; a decimal counts in tens, so `0.1` is exact.
@@ -1077,10 +1088,10 @@ picked up by the script, so it doesn't show here.
 - refused: `{full}` rounds a fraction, and a `HugeWhole` has none
   - why: `be.Whole` converts a `HugeWhole`, failing with `too_big` when it doesn't fit.
 
-**`crates/seal/src/check/units.rs`**
+**`crates/wax/src/check/units.rs`**
 
-- refused: the unit group `{}` is declared twice, or is one of Seal's own
-  - why: each unit group is declared once; `time`, `angle` and `distance` are Seal's own.
+- refused: the unit group `{}` is declared twice, or is one of Wax's own
+  - why: each unit group is declared once; `time`, `angle` and `distance` are Wax's own.
 - refused: `{}` has {bases} units marked `base`, where it needs exactly one
   - why: a unit group's base is the unit every other one is counted in, so there's exactly one.
 - refused: the unit `::{}` is listed twice in `{}`
@@ -1121,24 +1132,24 @@ picked up by the script, so it doesn't show here.
 - refused: this can't be brought to the rate's unit: {why}
   - why: a rate times an amount of its own unit gives the rate's unit, as `px per secs` times `secs` gives `px`.
 
-**`crates/seal/src/compile/compiler.rs`**
+**`crates/wax/src/compile/compiler.rs`**
 
 - not built yet: more than 65,000 top-level variables used by procedures (D4) aren't built yet
 - not built yet: {what} aren't built yet
 
-**`crates/seal/src/host/doors.rs`**
+**`crates/wax/src/host/doors.rs`**
 
 - refused (at a door): `{name}` isn't spelt as a type: a capital first, then letters and digits
   - why: a type's name joins its words with capitals, as `HighScore`, so a capital always means a type.
-- refused (at a door): `{word}` is one of Seal's keywords, so it can't name a door or a label
-- refused (at a door): `{first}` is one of Seal's own words, so it can't name a door
+- refused (at a door): `{word}` is one of Wax's keywords, so it can't name a door or a label
+- refused (at a door): `{first}` is one of Wax's own words, so it can't name a door
   - why: each word has one meaning.
 - refused (at a door): the door `{name}` is opened twice
   - why: each door is opened once.
 - refused (at a door): only a record or a `one_of` is opened as a type
-  - why: a host opens its own records and `one_of`s for a script; Seal's own types are there already.
-- refused (at a door): the unit group `{name}` is declared twice, or is one of Seal's own
-  - why: each unit group is declared once; `time`, `angle` and `distance` are Seal's own.
+  - why: a host opens its own records and `one_of`s for a script; Wax's own types are there already.
+- refused (at a door): the unit group `{name}` is declared twice, or is one of Wax's own
+  - why: each unit group is declared once; `time`, `angle` and `distance` are Wax's own.
 - refused (at a door): the unit `{unit}` is listed twice in `{name}`
 - refused (at a door): `{unit}`'s size, `{size}`, isn't a whole number above 0 **(changed 2026-11-26)**
 - refused (at a door): `{name}` needs exactly one unit marked `base`
@@ -1153,12 +1164,12 @@ picked up by the script, so it doesn't show here.
 - refused (at a door): `{unit}` isn't written as a unit
   - why: a unit is written as a script writes it: `secs`, `px.point`, `px per secs`, or `time::secs`.
 
-**`crates/seal/src/host/script.rs`**
+**`crates/wax/src/host/script.rs`**
 
 - not designed yet: a host calling `{procedure}`, a method, which a script calls only with a dot isn't decided yet
 - not designed yet: a host calling `{procedure}`, a generic procedure, which needs its types worked out from the host's values isn't decided yet
 
-**`crates/seal/src/syntax/lexer.rs`**
+**`crates/wax/src/syntax/lexer.rs`**
 
 - refused: this `///` has no declaration after it
   - why: a `///` comment describes the declaration on the line after it.
@@ -1184,14 +1195,14 @@ picked up by the script, so it doesn't show here.
   - why: an `end` can carry a note naming its block, as `end \\ proc on_hit`; nothing else uses `\\`.
 - refused: this text is never closed with `"`
 - refused: `\{shown}` isn't something text can hold
-  - why: in text, `\` goes only before `"`, `\` or `{`; a line break is `{newln}` and a tab `{tab}`, so `\n` isn't a new line in Seal.
+  - why: in text, `\` goes only before `"`, `\` or `{`; a line break is `{newln}` and a tab `{tab}`, so `\n` isn't a new line in Wax.
 - refused: this text has a tab character in it
   - why: a tab can't be told from spaces, so a tab in text is written `{tab}`.
 - not designed yet: a comment inside an open bracket isn't decided yet
 - refused: a statement has no `;`
   - why: the end of a line ends its statement.
 - refused: a name has no `$`
-  - why: Seal's names are plain words.
+  - why: Wax's names are plain words.
 - refused: `{other}` is beyond the plain English letters a script is written in
   - why: outside text, a script is written in plain English letters, digits and symbols, for now.
 - refused: `{other}` can't be read here **(changed 2026-11-26)**
@@ -1208,7 +1219,7 @@ picked up by the script, so it doesn't show here.
   - why: only a `Float` can be inexact.
 - refused: this line's spacing isn't the fixed spacing (shown with a `fix:` line)
 
-**`crates/seal/src/syntax/parser.rs`**
+**`crates/wax/src/syntax/parser.rs`**
 
 - refused: this line is indented {} spaces, where its block's body is indented {wanted}
 - refused: this line is indented, but it isn't inside a block
@@ -1216,7 +1227,7 @@ picked up by the script, so it doesn't show here.
 - refused: {wanted} goes here, but {} was found
 - refused: {wanted} goes here, but the line ends
 - refused: `{}` is a keyword, so it can't be a name
-  - why: a name can't be one of Seal's own words.
+  - why: a name can't be one of Wax's own words.
 - refused: a type's name starts with a capital, but `{name}` doesn't
   - why: a capital always means a type.
 - refused: {} comes after the end of this line's statement
@@ -1238,7 +1249,7 @@ picked up by the script, so it doesn't show here.
 - refused: `labels` has one narrowing, `labels.any_order`
   - why: `labels.any_order [ … ]` lets a call write the labelled arguments in any order.
 - refused: a group is `group.handler`, a named set of handlers
-  - why: `group.handler name` declares a handler group; Seal has no other kind of group yet.
+  - why: `group.handler name` declares a handler group; Wax has no other kind of group yet.
 - refused: a handler group holds only handlers, each `::name`
   - why: a handler group's members are written with the `::` they're reached with, as `::start_over`.
 - refused: a unit group holds only units, each `::name`
@@ -1259,7 +1270,7 @@ picked up by the script, so it doesn't show here.
 - refused: this can't be given a value
   - why: `=` gives a value to a variable, a field or an item.
 - refused: `otherwise` opens a block of cases; on one line, a handler follows `??` (shown with a `fix:` line)
-- refused: Seal writes `elif`, not `else if`
+- refused: Wax writes `elif`, not `else if`
   - why: `elif` is short for "else if".
 - not built yet: values nested more than {MAX_EXPRESSION_DEPTH} deep in one statement aren't built yet
 - refused: {} comes after a slide's last step
@@ -1275,7 +1286,7 @@ picked up by the script, so it doesn't show here.
 - refused: this line ends where a value is still wanted
   - why: a line carries on only inside an open `(` or `[`, so wrap the value in `( )`.
 
-**`crates/seal/src/vm/machine.rs`**
+**`crates/wax/src/vm/machine.rs`**
 
 - check failed: the result is too big for a `Whole`
 - check failed: this divides by zero
@@ -1304,7 +1315,7 @@ picked up by the script, so it doesn't show here.
 - check failed: this range's step points away from its end
   - why: a range's step points towards its end; a negative `step_by:` counts down.
 
-**`crates/seal/src/vm/numbers.rs`**
+**`crates/wax/src/vm/numbers.rs`**
 
 - check failed: the result is too big for a `Decimal`
   - why: a `Decimal` keeps 34 digits, up to almost 10 to the 6145; a `HugeDecimal` has no limit.
@@ -1317,27 +1328,27 @@ picked up by the script, so it doesn't show here.
 - check failed: this value is {side} its type's `{word}: {edge_text}`
   - why: a ranged number's `min:` and `max:` are hard limits; `min.clamp:` and `max.clamp:` pull a value back instead.
 
-**`crates/seal-c/src/lib.rs`**
+**`crates/wax-c/src/lib.rs`**
 
 - host mistake (C API): `{function}`: `{parameter}` is null **(new since the second review)**
 - host mistake (C API): `{function}`: `{parameter}` isn't UTF-8 **(new since the second review)**
 - host mistake (C API): `{function}`: `{parameter}` is null, but `{counted_by}` says there are {count} **(new since the second review)**
 - host mistake (C API): `{function}`: `{parameter}` is null, so there's nowhere to write {what} **(new since the second review)**
 - host mistake (C API): `{function}`: a {what} handle that's freed, or was never one **(new since the second review)**
-- host mistake (C API): `seal_doors_add`: `function` is null **(new since the second review)**
+- host mistake (C API): `wax_doors_add`: `function` is null **(new since the second review)**
 - host mistake (C API): `{ADD}`: `value_types[{place}]` is {why} **(new since the second review)**
 - host mistake (C API): `{ADD}`: `result_type` is {why} **(new since the second review)**
-- host mistake (C API): `seal_doors_labels`: there's no open door named `{name}` **(new since the second review)**
-- host mistake (C API): `seal_script_load`: `source` isn't UTF-8 **(new since the second review)**
+- host mistake (C API): `wax_doors_labels`: there's no open door named `{name}` **(new since the second review)**
+- host mistake (C API): `wax_script_load`: `source` isn't UTF-8 **(new since the second review)**
 - host mistake (C API): `{function}`: the script is running, and was called again from one of its doors **(new since the second review)**
 - host mistake (C API): `{CALL}`: `args[{place}]` is {why} **(new since the second review)**
-- host mistake (C API): `seal_script_resume`: `value` is {why} **(new since the second review)**
-- host mistake (C API): `seal_value_text`: `text` isn't UTF-8 **(new since the second review)**
-- host mistake (C API): `seal_value_number`: `kind` is {kind}, but it makes only `SEAL_HUGE_WHOLE`, `SEAL_DECIMAL` or `SEAL_HUGE_DECIMAL`; a plain number goes in a `seal_arg` itself **(new since the second review)**
-- host mistake (C API): `seal_value_number`: `{written}` isn't a number written as a script writes one **(new since the second review)**
-- host mistake (C API): `seal_value_list`: `items[{}]` is {why} **(new since the second review)**
-- host mistake (C API): `seal_value_maybe`: `inner` is {why} **(new since the second review)**
-- host mistake (C API): `seal_value_get_text`: `value` is {}, which has no text; it reads a `SEAL_TEXT` or a big number **(new since the second review)**
-- host mistake (C API): `seal_value_count`: `value` is {}, which has no items **(new since the second review)**
-- host mistake (C API): `seal_value_item`: `position` is {position}, but `value` has {count} items, counted from 0 **(new since the second review)**
-- host mistake (C API): `seal_value_item`: `value` is {}, which has no items **(new since the second review)**
+- host mistake (C API): `wax_script_resume`: `value` is {why} **(new since the second review)**
+- host mistake (C API): `wax_value_text`: `text` isn't UTF-8 **(new since the second review)**
+- host mistake (C API): `wax_value_number`: `kind` is {kind}, but it makes only `WAX_HUGE_WHOLE`, `WAX_DECIMAL` or `WAX_HUGE_DECIMAL`; a plain number goes in a `wax_arg` itself **(new since the second review)**
+- host mistake (C API): `wax_value_number`: `{written}` isn't a number written as a script writes one **(new since the second review)**
+- host mistake (C API): `wax_value_list`: `items[{}]` is {why} **(new since the second review)**
+- host mistake (C API): `wax_value_maybe`: `inner` is {why} **(new since the second review)**
+- host mistake (C API): `wax_value_get_text`: `value` is {}, which has no text; it reads a `WAX_TEXT` or a big number **(new since the second review)**
+- host mistake (C API): `wax_value_count`: `value` is {}, which has no items **(new since the second review)**
+- host mistake (C API): `wax_value_item`: `position` is {position}, but `value` has {count} items, counted from 0 **(new since the second review)**
+- host mistake (C API): `wax_value_item`: `value` is {}, which has no items **(new since the second review)**

@@ -1,5 +1,5 @@
-//! Comparing Seal with Unio's oracle, Ralph, as a black box (D19, Building rule 7): a script made of what the two
-//! languages share is run on Seal's VM and, translated, on Ralph. A difference is a bug in one of them.
+//! Comparing Wax with Unio's oracle, Ralph, as a black box (D19, Building rule 7): a script made of what the two
+//! languages share is run on Wax's VM and, translated, on Ralph. A difference is a bug in one of them.
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -32,7 +32,7 @@ impl RalphRun {
 
 /// Runs Ralph on a Unio program, alone in a folder of its own, since a Unio program is every file in its folder.
 fn ralph(unio: &str, input: &str) -> Option<RalphRun> {
-    let folder = std::env::temp_dir().join(format!("seal-ralph-{}", std::process::id()));
+    let folder = std::env::temp_dir().join(format!("wax-ralph-{}", std::process::id()));
     std::fs::create_dir_all(&folder).ok()?;
     std::fs::write(folder.join("program.unio"), unio).ok()?;
     let mut child = Command::new(ralph_path())
@@ -71,7 +71,7 @@ fn ralph(unio: &str, input: &str) -> Option<RalphRun> {
     })
 }
 
-/// How one script compared between Seal and Ralph.
+/// How one script compared between Wax and Ralph.
 #[derive(Debug, PartialEq)]
 enum Compared {
     Same,
@@ -80,19 +80,19 @@ enum Compared {
     Different(String),
 }
 
-/// Runs a script on Seal and, translated, on Ralph, and compares what a player would see.
+/// Runs a script on Wax and, translated, on Ralph, and compares what a player would see.
 fn compare(source: &str) -> Compared {
-    let seal_run = run_top_level(source);
-    if seal_run.broken.is_some() {
-        return Compared::Different("Seal broke a rule of its own".to_owned());
+    let wax_run = run_top_level(source);
+    if wax_run.broken.is_some() {
+        return Compared::Different("Wax broke a rule of its own".to_owned());
     }
-    let wanted_status = match seal_run.ending.as_str() {
+    let wanted_status = match wax_run.ending.as_str() {
         "ok" => 0,
         "check failed" => 4,
-        "refused" | "not designed yet" | "not built yet" => return Compared::Skipped("Seal doesn't load it"),
-        _ => return Compared::Skipped("Seal stops it at a limit, which Unio doesn't have"),
+        "refused" | "not designed yet" | "not built yet" => return Compared::Skipped("Wax doesn't load it"),
+        _ => return Compared::Skipped("Wax stops it at a limit, which Unio doesn't have"),
     };
-    let Ok(unio) = seal_to_unio::translate(source, &seal_to_unio::test_host_doors()) else {
+    let Ok(unio) = wax_to_unio::translate(source, &wax_to_unio::test_host_doors()) else {
         return Compared::Skipped("it uses something Unio doesn't have");
     };
     // The fuzzer's `ask` door always answers 7.
@@ -104,14 +104,14 @@ fn compare(source: &str) -> Compared {
     }
     if ralph_run.status != wanted_status {
         return Compared::Different(format!(
-            "Seal ends with `{}`, and Ralph with status {}\n--- Seal says\n{}--- Ralph says\n{}--- the Unio program\n{unio}",
-            seal_run.ending, ralph_run.status, seal_run.messages, ralph_run.messages
+            "Wax ends with `{}`, and Ralph with status {}\n--- Wax says\n{}--- Ralph says\n{}--- the Unio program\n{unio}",
+            wax_run.ending, ralph_run.status, wax_run.messages, ralph_run.messages
         ));
     }
-    if ralph_run.output != seal_run.output {
+    if ralph_run.output != wax_run.output {
         return Compared::Different(format!(
-            "the output differs\n--- Seal shows\n{}--- Ralph shows\n{}--- the Unio program\n{unio}",
-            seal_run.output, ralph_run.output
+            "the output differs\n--- Wax shows\n{}--- Ralph shows\n{}--- the Unio program\n{unio}",
+            wax_run.output, ralph_run.output
         ));
     }
     Compared::Same
@@ -134,16 +134,16 @@ fn compare_tests() -> (u64, u64) {
         .unwrap_or_default();
     folders.sort();
     for folder in folders {
-        let Ok(source) = std::fs::read_to_string(folder.join("program.seal")) else { continue };
+        let Ok(source) = std::fs::read_to_string(folder.join("program.wax")) else { continue };
         let name = folder.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        let unio = match seal_to_unio::translate(&source, &seal_to_unio::test_host_doors()) {
+        let unio = match wax_to_unio::translate(&source, &wax_to_unio::test_host_doors()) {
             Ok(unio) => unio,
-            Err(seal_to_unio::Untranslatable::NotShared(what)) => {
+            Err(wax_to_unio::Untranslatable::NotShared(what)) => {
                 println!("test {name}: not compared, it uses {what}");
                 continue;
             }
-            Err(seal_to_unio::Untranslatable::Refused(_)) => {
-                println!("test {name}: not compared, Seal refuses it");
+            Err(wax_to_unio::Untranslatable::Refused(_)) => {
+                println!("test {name}: not compared, Wax refuses it");
                 continue;
             }
         };
@@ -168,7 +168,7 @@ fn compare_tests() -> (u64, u64) {
     (same, different)
 }
 
-/// Compares Seal with Ralph on the tests in `tests/`, and on random scripts made of what the two share.
+/// Compares Wax with Ralph on the tests in `tests/`, and on random scripts made of what the two share.
 pub fn ralph_mode(seed: u64, rounds: u64, seconds: u64) -> ExitCode {
     if !Path::new(&ralph_path()).exists() {
         println!("Ralph isn't on this machine (looked at `{}`), so the comparison is skipped", ralph_path());
@@ -195,7 +195,7 @@ pub fn ralph_mode(seed: u64, rounds: u64, seconds: u64) -> ExitCode {
                 };
                 let name = format!("ralph_seed{seed}_{round}");
                 save(&name, &small, &why);
-                println!("DIFFERENT {name}: {why}\n--- the Seal script\n{small}");
+                println!("DIFFERENT {name}: {why}\n--- the Wax script\n{small}");
             }
         }
     }

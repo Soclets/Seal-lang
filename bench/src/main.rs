@@ -1,12 +1,12 @@
-//! Seal's benchmark host: runs the benchmarks of D57 by the rules of D58, and writes `bench/RESULTS.md`.
+//! Wax's benchmark host: runs the benchmarks of D57 by the rules of D58, and writes `bench/RESULTS.md`.
 //!
 //! ```text
-//! seal-bench report [--runs N] [--variant LABEL=PATH]...   run everything and write bench/RESULTS.md
-//! seal-bench seal FILE ARGUMENT WARMUPS RUNS                one benchmark on Seal, as the report runs it
-//! seal-bench patrol COUNT ROUNDS                            the patrolling-scripts benchmark on Seal
-//! seal-bench load FILE                                      load a script and stop
-//! seal-bench lines COUNT                                    load a generated script of about COUNT lines
-//! seal-bench doors COUNT                                    COUNT calls of a Rust door from a script's loop
+//! wax-bench report [--runs N] [--variant LABEL=PATH]...   run everything and write bench/RESULTS.md
+//! wax-bench wax FILE ARGUMENT WARMUPS RUNS                one benchmark on Wax, as the report runs it
+//! wax-bench patrol COUNT ROUNDS                            the patrolling-scripts benchmark on Wax
+//! wax-bench load FILE                                      load a script and stop
+//! wax-bench lines COUNT                                    load a generated script of about COUNT lines
+//! wax-bench doors COUNT                                    COUNT calls of a Rust door from a script's loop
 //! ```
 //!
 //! Every result is checked for correctness before it's timed (D58): a wrong answer is reported as wrong, never as a
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use seal::{Argument, Called, Doors, Limits, Pause, Script, TaskId, Value};
+use wax::{Argument, Called, Doors, Limits, Pause, Script, TaskId, Value};
 
 /// How many files the patrol benchmark signs and loads, each checked once (D169).
 const SIGNED_FILES: usize = 200;
@@ -49,13 +49,13 @@ fn shown(value: &Value) -> String {
 }
 
 /// Runs `run(argument)` of a script: once cold, then the warm-ups, then the timed runs.
-fn seal(path: &str, argument: i64, warmups: usize, runs: usize) -> Result<String, String> {
+fn wax(path: &str, argument: i64, warmups: usize, runs: usize) -> Result<String, String> {
     let source = std::fs::read_to_string(path).map_err(|_| format!("`{path}` can't be read"))?;
     let doors = Doors::new();
     let started = Instant::now();
     let mut script = Script::load(path, &source, &doors, LIMITS).map_err(|error| error.to_string())?;
     let load = started.elapsed().as_secs_f64();
-    // The same text loaded again with the same doors: Seal keeps what it compiled, so this is the warm load (D58).
+    // The same text loaded again with the same doors: Wax keeps what it compiled, so this is the warm load (D58).
     let started = Instant::now();
     let again = Script::load(path, &source, &doors, LIMITS).map_err(|error| error.to_string())?;
     let load_warm = started.elapsed().as_secs_f64();
@@ -127,11 +127,11 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     }
     let loaded_fresh = started.elapsed().as_secs_f64();
 
-    // trace: D141. Each of those texts built into a `.sealc` of its own first, then each loaded from its bytes.
+    // trace: D141. Each of those texts built into a `.waxc` of its own first, then each loaded from its bytes.
     let mut files = Vec::with_capacity(count);
     for guard in 0..count {
         let own_text = format!("// guard {guard}\n{source}");
-        files.push(seal::build(&[(path, &own_text)], &doors).map_err(|error| error.to_string())?);
+        files.push(wax::build(&[(path, &own_text)], &doors).map_err(|error| error.to_string())?);
     }
     let started = Instant::now();
     for bytes in &files {
@@ -150,13 +150,13 @@ fn patrol(path: &str, count: usize, rounds: usize) -> Result<String, String> {
     // trace: D169, D171. Each file signed, then loaded where a signature is required: a file's first load checks its
     // signature, which is timed for reference, apart from loading. Each file is checked once in a run, so every one
     // here is new.
-    let (public, secret) = seal::host::signing::keys_from_seed(&[7; 32]);
+    let (public, secret) = wax::host::signing::keys_from_seed(&[7; 32]);
     let mut signing_doors = doors.clone();
     signing_doors.require_signature(&public).map_err(|message| message.to_string())?;
     let signed: Vec<Vec<u8>> = files
         .iter()
         .take(SIGNED_FILES)
-        .map(|bytes| seal::host::signing::sign(bytes, &secret, &[1; 32]).map_err(|message| message.to_string()))
+        .map(|bytes| wax::host::signing::sign(bytes, &secret, &[1; 32]).map_err(|message| message.to_string()))
         .collect::<Result<_, _>>()?;
     let started = Instant::now();
     for bytes in &signed {
@@ -263,7 +263,7 @@ fn lines(count: usize) -> Result<String, String> {
         // A set of doors of its own each time, so that nothing is reused from the load before.
         let doors = Doors::new();
         let started = Instant::now();
-        Script::load("big.seal", &source, &doors, LIMITS).map_err(|error| error.to_string())?;
+        Script::load("big.wax", &source, &doors, LIMITS).map_err(|error| error.to_string())?;
         times.push(started.elapsed().as_secs_f64());
         let _ = round;
     }
@@ -286,7 +286,7 @@ fn doors(count: usize) -> Result<String, String> {
         })
         .map_err(|message| message.to_string())?;
     let source = "proc run[n: Whole]\n    for round from 1 to n\n        damage(round, 2)\n    end\nend\n";
-    let mut script = Script::load("doors.seal", source, &doors, LIMITS).map_err(|error| error.to_string())?;
+    let mut script = Script::load("doors.wax", source, &doors, LIMITS).map_err(|error| error.to_string())?;
     let count = i64::try_from(count).map_err(|_| "too many calls".to_owned())?;
     let mut best = f64::MAX;
     for _ in 0..7 {
@@ -305,8 +305,8 @@ fn main() -> ExitCode {
     let text: Vec<&str> = arguments.iter().map(String::as_str).collect();
     let number = |text: &str| text.parse::<usize>().unwrap_or(0);
     let outcome = match text.as_slice() {
-        ["seal", path, argument, warmups, runs] => {
-            seal(path, argument.parse().unwrap_or(0), number(warmups), number(runs))
+        ["wax", path, argument, warmups, runs] => {
+            wax(path, argument.parse().unwrap_or(0), number(warmups), number(runs))
         }
         ["patrol", path, count, rounds] => patrol(path, number(count), number(rounds)),
         ["load", path] => std::fs::read_to_string(path)
@@ -319,7 +319,7 @@ fn main() -> ExitCode {
         ["lines", count] => lines(number(count)),
         ["doors", count] => doors(number(count)),
         ["report", options @ ..] => report::report(options),
-        _ => Err("usage: seal-bench report | seal FILE ARGUMENT WARMUPS RUNS | patrol FILE COUNT ROUNDS | load FILE | lines COUNT | doors COUNT".to_owned()),
+        _ => Err("usage: wax-bench report | wax FILE ARGUMENT WARMUPS RUNS | patrol FILE COUNT ROUNDS | load FILE | lines COUNT | doors COUNT".to_owned()),
     };
     match outcome {
         Ok(out) => {

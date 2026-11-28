@@ -1,0 +1,24 @@
+[package]
+# trace: D183. `wax` on crates.io is someone else's; the library is still used as `wax` in Rust.
+name = "wax-lang"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+name = "wax"
+
+[lints]
+workspace = true
+
+[dependencies]
+wax-derive = { path = "../wax-derive" }
+# Unicode's grapheme tables, with no `unsafe`. Pinned exactly: its version is the Unicode version Wax pins (D65).
+unicode-segmentation = "=1.13.3"
+# trace: D169, D175, D177. ML-DSA-44 for signing `.waxc` files, pure Rust with no `unsafe` of its own; without its
+# default features it makes no random numbers. Tankun allowed the `unsafe` below it: `zeroize`, which wipes a secret key
+# from memory, `rand_core`, and through `sha3` the RustCrypto crates `generic-array` and `block-buffer`, which every
+# signature check runs, and `cpufeatures` and `libc`, built in on Apple's ARM chips.
+fips204 = { version = "=0.5.0", default-features = false, features = ["ml-dsa-44"] }

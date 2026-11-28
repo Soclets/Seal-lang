@@ -1,5 +1,5 @@
 [package]
-name = "seal-fuzzer"
+name = "wax-fuzzer"
 edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
@@ -10,5 +10,5 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-seal = { path = "../crates/seal" }
-seal-to-unio = { path = "../crates/seal-to-unio" }
+wax = { package = "wax-lang", path = "../crates/wax" }
+wax-to-unio = { path = "../crates/wax-to-unio" }

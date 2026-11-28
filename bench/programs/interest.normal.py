@@ -1,4 +1,4 @@
-# trace: D155, D159. The exact interest of `interest.normal.seal` in Python's `decimal`, with room for every digit, so
+# trace: D155, D159. The exact interest of `interest.normal.wax` in Python's `decimal`, with room for every digit, so
 # nothing is ever rounded (an inexact step would stop it).
 import decimal
 from decimal import Decimal
