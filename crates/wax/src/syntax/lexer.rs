@@ -580,7 +580,15 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
         if lexer.open_brackets.is_empty() {
             // trace: D180. A statement holding a slide carries on to a line starting with `|>`, and otherwise ends
             // with `;`.
-            if !lexer.slide_ended {
+            // The next line, looked at for a split slide: only one that's blank or a comment needs looking past.
+            let looked = physical.peek().map(|(_, next)| next.trim_start());
+            let slide_next = looked.is_some_and(|next| next.starts_with("|>"));
+            let past = looked.is_some_and(|next| next.is_empty() || next.starts_with("//"));
+            if !lexer.slide_ended && slide_next {
+                lexer.carrying = true;
+                continue;
+            }
+            if !lexer.slide_ended && past {
                 // trace: D181. Comment lines may stand between a split slide's steps; a blank line may not.
                 let mut ahead = physical.clone();
                 let mut blank = None;
@@ -602,9 +610,9 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
                     lexer.carrying = true;
                     continue;
                 }
-                if lexer.holds_slide() {
-                    return Err(lexer.missing_semicolon(text));
-                }
+            }
+            if !lexer.slide_ended && lexer.holds_slide() {
+                return Err(lexer.missing_semicolon(text));
             }
             lexer.finish_line(source)?;
         }
