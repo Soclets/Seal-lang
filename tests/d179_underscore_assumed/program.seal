@@ -24,7 +24,7 @@ group.unit coins
 end
 
 proc best_level[name: Text] -> Whole
-    level = load_level(name) ?? _::*give_up
+    level = load_level(name) ?? _::^give_up
     return level * 10
 end
 

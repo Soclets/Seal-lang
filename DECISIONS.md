@@ -5518,6 +5518,8 @@ read `*` as times?", "Why for the sake of matching Unio and Cyborg? Ask Unio des
 from the sensible direction in separate situations?", then, asked "allowed only in those three places, each with the
 direction in the table", the owner chose: "yea"
 
+(Changed by D182: a handler that can jump is marked `^`, as `?? _::^give_up`.)
+
 ## D180. A statement holding a slide ends with `;`
 
 2026-11-27.
@@ -5587,3 +5589,29 @@ needs most, and a line of its own can't be mistaken for code.
 
 **Tankun's words.** Asked "allow whole-line comments between a split slide's steps, but not blank lines", the owner
 chose: "yea, back to MC?"
+
+## D182. A handler that can jump is marked `^`
+
+2026-11-28.
+
+**Chosen.** A handler that can `return`, `break` or `fail` is marked `^` where it's used, in place of D179's `*`:
+
+```
+level = load_level(name) ?? _::^give_up
+level = load_level(name) ?? level_failed::^give_up
+```
+
+The mark is required on a handler that can jump and refused on one that can't, as before (Unio D42, D129). `*` now
+only multiplies in Seal's code; `^` had no job there, since D108 turned it down for powers. Seal's messages still use
+`^` to point under the source line.
+
+**Weighed.**
+- Keeping `*`, as Unio and Cyborg mark it, which Tankun first chose (D179). Cyborg's design session said Cyborg took
+  `*` only because Cyborg multiplies with `x`, and saw no reason for Seal to keep it.
+- How noticeable `^` is next to `*`: about the same, one small mark always in the same place after `::`, and the
+  language server colours it.
+
+**Why this won.** Each mark in Seal's code has one job: `*` multiplies, and `^` says a handler can jump out.
+
+**Tankun's words.** has code (a C+ sketch, then asking to change the handler jump marker to `^` in Seal), "It's still
+the same noticability, right?", then, asked "still:** Seal's jump mark becomes `^`", the owner chose: "yea"

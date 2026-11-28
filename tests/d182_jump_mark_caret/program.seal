@@ -1,0 +1,24 @@
+proc load_level[name: Text] -> Whole ! [not_found]
+    if name eq "cave"
+        return 5
+    else
+        fail not_found
+    end
+end
+
+group.handler level_failed
+    handles [load_level]
+    _::give_up
+        case not_found
+            return 0
+    end
+end
+
+proc best_level[name: Text] -> Whole
+    level = load_level(name) ?? _::^give_up
+    return level * 10
+end
+
+high = best_level("cave")
+low = best_level("swamp")
+show_msg("{high} {low}")

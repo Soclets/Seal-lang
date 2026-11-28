@@ -9,6 +9,8 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 
 ## Since the third prompt was pasted (2026-11-27)
 
+- D182 to build: a handler that can jump is marked `^`, as `?? _::^give_up`, in place of `*` (D179); `d179` now uses
+  it and `d182_jump_mark_caret` is new.
 - D181 to build, answering its comment-line reading: a comment on a line of its own may stand between a split slide's
   steps; a blank line may not. `d181_comment_in_slide` tests it.
 - Its D180 wordings: fine, but the missing-`;` example, `x = 3 |> doubled;`, is a one-step slide D128 refuses; use a
