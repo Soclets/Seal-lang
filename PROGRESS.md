@@ -413,7 +413,7 @@ The VM, and its optimizations (Building rule 5):
 
 ## Benchmarks
 
-`bench/RESULTS.md` has every number; it was re-run on 2026-11-27 at about 9:30 AM, at 0bdbc62, every goal met.
+`bench/RESULTS.md` has every number; it was re-run on 2026-11-28 at about 11:20 AM, at c64bdff, every goal met.
 
 In short, judged Normal against Normal (D58), against both of goal 1's bars, Luau's interpreter and, by D142,
 LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
@@ -445,21 +445,23 @@ LuaJIT's interpreter (`luajit -joff`, running the Luau programs as they are):
   about 4%.
 - **The fuzzer checks those shortcuts:** it compiles every script a second, plain way, with none of them, and the two
   must give the same output and the same messages. Breaking either shortcut on purpose was caught at once.
-- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met,** 532 ns against
-  LuaJIT's 285 ns (187%). From 2.1 µs on 2026-11-26: D173's block, the lists a dropped script recycles, one look at
+- **D171, D176, loading a compiled file within twice LuaJIT's time for its own bytecode: met,** 536 ns against
+  LuaJIT's 288 ns (186%) on 2026-11-28. From 2.1 µs on 2026-11-26: D173's block, the lists a dropped script recycles, one look at
   each instruction when verifying; then on 2026-11-27 Wax's own type table shared by every such script rather than
   copied and compared back, plain crossings read on the spot, and an eight-lane checksum. The same file loaded again
   reuses what was verified, in about 0.14 µs.
-- **`fib` against LuaJIT's interpreter: met, 30.8 against 36.1 ms (85%) on 2026-11-27.** After D173 it
+- **`fib` against LuaJIT's interpreter: met, 31.1 against 33.9 ms (92%) on 2026-11-28.** After D173 it
   fell to LuaJIT's time with the same instructions: D173's lists left in a file made each about 120 bytes inline in a
   compiled script, which changed how the whole run loop was compiled (about 10% more cycles). With those lists behind
   one shared allocation, the script is near its old size and `fib` is back, at the cost of about 37 ns on loading a
   compiled file. Memory placement was ruled out first: shifting it moved neither build out of its range. LLVM's
   alignment flags didn't help, and a table for a base case's comparison made it slower (the branch is always
   predicted), so neither is in.
-- **Loading from a text of its own against Luau: met, thinly** (97% on 2026-11-27; 103% in a run earlier that day
-  with Luau measured faster, Wax's own time the same). The compiler now starts from the lists a dropped script left
-  on the thread, about 4% off.
+- **Loading from a text of its own against Luau: met,** 4.45 against 4.90 µs (91%) on 2026-11-28, where it had
+  hovered between 97% and 103%. About 5% came off on 2026-11-28: the checker's walks over a body are generic over
+  their visitor rather than calling through a table at each node, procedure names sit in the short-list table, and a
+  door call's check copies no types; on 2026-11-27 the compiler began starting from the lists a dropped script left.
+  A checksum kept with each remembered text was tried and dropped: it made loading the same text again slower.
 - **D155, faster than Python's built-ins on the big number types: met** on all six, at 46% to 90% of Python's time.
 - **Faster than V8 `--jitless` on `fib` and n-body, within twice on word count and text building:** met.
 - **A 10,000-line script loads in under 100 ms:** met, about 5.5 ms (its generated script used `&`, which D77
