@@ -71,13 +71,13 @@ From Unio's rules:
 1. **The host is never harmed** (D14). No script, however wrong or hostile, may crash the host, freeze it past its
    step budget, take more memory than its cap, or reach anything but the doors the host opened (D11). A bug that breaks
    this is the worst kind, and is fixed before anything else. (Wax's own.)
-2. **No `unsafe` at all, except in `seal-c`.** The sandbox's walls are the Rust compiler's guarantees, so every crate
+2. **No `unsafe` at all, except in `wax-c`.** The sandbox's walls are the Rust compiler's guarantees, so every crate
    forbids `unsafe_code`, dependencies are chosen to need none where one exists, and any that do are listed with why
-   they're trusted. The one exception is `seal-c`, the C API (D136), since crossing into C needs it: its `unsafe` is
+   they're trusted. The one exception is `wax-c`, the C API (D136), since crossing into C needs it: its `unsafe` is
    kept as small as it can be, each block says why it's sound, and it's tested hard. (Wax's own, from Cyborg's D65,
    with the exception by Tankun's OK, 2026-11-25.)
 3. **Style and checks.** `rustfmt`, `clippy`, and comments that say why. Every crate but
-   `seal-c` has `#![forbid(unsafe_code)]`, `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` and
+   `wax-c` has `#![forbid(unsafe_code)]`, `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]` and
    `#![warn(clippy::pedantic)]`, with warnings as errors. No `unwrap`, `expect`, indexing that can panic, or panic of
    any kind on a path a script can reach: failures are `Result`, checked. If Wax itself goes wrong, it says so and how
    to report it, and the host carries on. (From Cyborg's rules 6 and 7, and its D65.)

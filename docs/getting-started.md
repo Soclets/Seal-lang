@@ -11,25 +11,25 @@ Run a script with the test host, which opens `show_msg`, `ask`, `rand` and `wait
 `calls.txt` beside the script:
 
 ```
-cargo run --release -p seal-command -- run tests/d004_host_calls/program.wax
+cargo run --release -p wax-command -- run tests/d004_host_calls/program.wax
 ```
 
 Check a script without running it:
 
 ```
-cargo run --release -p seal-command -- check tests/d004_host_calls/program.wax
+cargo run --release -p wax-command -- check tests/d004_host_calls/program.wax
 ```
 
 Build, lint and test everything, the fuzzer and the comparison with Ralph included:
 
 ```
-cargo run --release -p seal-check-all
+cargo run --release -p wax-check-all
 ```
 
 ## Using it from a Rust program
 
 ```rust
-use seal::{Doors, Limits, Script};
+use wax::{Doors, Limits, Script};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = std::fs::read_to_string("goblin.wax")?;
@@ -49,4 +49,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 A fuller example, a small game host with records, failures and a door that pauses, is in
-[crates/seal/tests/host.rs](../crates/seal/tests/host.rs).
+[crates/wax/tests/host.rs](../crates/wax/tests/host.rs).

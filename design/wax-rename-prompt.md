@@ -1,6 +1,6 @@
 # Prompt for Seal Opus Claude's next job: Seal becomes Wax, then D181 and D182
 
-**Not pasted yet.** Tankun pastes it when they choose.
+**Pasted by Tankun on 2026-11-28.**
 
 Paste the block below into the existing "Seal Opus Claude" session, on Claude Opus 5.5 at `high` effort, as it already
 runs. Written by the design session on 2026-11-28, after reading Anthropic's "Prompting Claude Opus 5.5", the

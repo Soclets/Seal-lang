@@ -31,9 +31,9 @@ The top level runs once, when the script is loaded. After that the host calls th
 
 ## Licences
 
-- [`LICENSE`](LICENSE): Apache-2.0 WITH LLVM-exception, for the implementation: the `seal` library, its C API, the
-  `seal` command and the other tools. It allows commercial use and gives a patent promise; a game shipping Wax
-  includes this licence, as Apache-2.0 asks, and scripts Wax compiles owe nothing.
+- [`LICENSE`](LICENSE): Apache-2.0 WITH LLVM-exception, for the implementation: the `wax-lang` library (`wax` in Rust),
+  its C API, the `wax` command and the other tools. It allows commercial use and gives a patent promise; a game shipping
+  Wax includes this licence, as Apache-2.0 asks, and scripts Wax compiles owe nothing.
 - [`LICENSE-MIT-0`](LICENSE-MIT-0): MIT-0, for examples and demos: the test scripts in `tests/`, the benchmark programs
   in `bench/programs/`, and every code sample inside the Markdown files. Copy and remix them freely, with no credit
   needed.

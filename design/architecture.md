@@ -6,7 +6,7 @@ How Wax is built, as decided so far. The language itself is in `standard/`; this
 for the building session. The details inside each part are the building session's to propose (IMPLEMENTATION.md,
 Building rule 5).
 
-- **Language:** Rust, with no `unsafe` outside `seal-c` (D1, D136, IMPLEMENTATION.md, Building rules 2 to 4).
+- **Language:** Rust, with no `unsafe` outside `wax-c` (D1, D136, IMPLEMENTATION.md, Building rules 2 to 4).
 - **Memory:** every value owned by one holder, counted holders and copy-on-write for big values, no garbage collector
   (D15).
 - **Running a script** (D46):
@@ -17,7 +17,7 @@ run:   a register VM runs the bytecode, counting steps
 ```
 
   No JIT. The instruction set, its names and the optimizations are the building session's to propose (D17, D46).
-- **Ahead of time** (D141): `seal build` can compile a script to a bytecode file once, when a game is built; loading
+- **Ahead of time** (D141): `wax build` can compile a script to a bytecode file once, when a game is built; loading
   one always verifies it first, so a damaged or out-of-date file is refused, and a host can require an ML-DSA
   signature from its own key, so any change is refused (D169). Built after the current work.
 - **Checks:** at load time and while running, always on, with no build modes (D17, D18).
@@ -25,12 +25,12 @@ run:   a register VM runs the bytecode, counting steps
 
 | Part | What it is |
 |---|---|
-| `seal` | the library a host embeds, and the only part hosts depend on |
-| `seal` command | checks a script, and runs it with a test host whose stand-in doors use the terminal |
+| `wax-lang` (`wax` in Rust) | the library a host embeds, and the only part hosts depend on |
+| `wax` command | checks a script, and runs it with a test host whose stand-in doors use the terminal |
 | language server | errors as you type, worked-out types, colours (D7) |
 | fuzzer | random scripts against the library (Building rule 6) |
 | Unio translator | for checking against Ralph (D19) |
-| `seal-c` | the C API, for hosts not written in Rust, a thin layer over the library and the only part with `unsafe`; built after the current work (D136) |
+| `wax-c` | the C API, for hosts not written in Rust, a thin layer over the library and the only part with `unsafe`; built after the current work (D136) |
 
   The four tools are built on the library, never copying its insides. How the library is split inside is the building
   session's to propose.

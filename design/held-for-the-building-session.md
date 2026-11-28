@@ -9,7 +9,7 @@ All of them are now in `design/seal-next-prompt.md` (2026-11-26), for Tankun to 
 
 ## Since the third prompt was pasted (2026-11-27)
 
-All of these are now in `design/wax-rename-prompt.md` (2026-11-28), for Tankun to paste.
+All of these were in `design/wax-rename-prompt.md`, pasted by Tankun and built on 2026-11-28 (7a1b0b8).
 
 - D183, Seal renamed Wax, to carry out on the code side: the crates and the command (your names, suggested
   `wax-lang` on crates.io, where `wax` is taken, and `wax` for the command), `.seal` scripts read as `.wax` and
