@@ -708,14 +708,14 @@ impl<'a> Checker<'a> {
                 signature.parameters.get(position).map_or(ERROR, |parameter| self.host_type(&parameter.host_type));
             let value = self.expression(&entry.value, Some(parameter_type));
             // A list with `len.max` and an array both cross a door as a Rust `Vec` (the standard, chapter 6).
-            let crossing =
-                match (self.program.types.get(value.type_id).clone(), self.program.types.get(parameter_type).clone()) {
-                    (
-                        Type::List { item, max: Some(_) } | Type::Array { item, .. },
-                        Type::List { item: wanted_item, max: None },
-                    ) => self.program.types.unify(item, wanted_item),
-                    _ => false,
-                };
+            let items = match (self.program.types.get(value.type_id), self.program.types.get(parameter_type)) {
+                (
+                    Type::List { item, max: Some(_) } | Type::Array { item, .. },
+                    Type::List { item: wanted_item, max: None },
+                ) => Some((*item, *wanted_item)),
+                _ => None,
+            };
+            let crossing = items.is_some_and(|(item, wanted_item)| self.program.types.unify(item, wanted_item));
             if !crossing && !self.program.types.unify(value.type_id, parameter_type) {
                 self.expect(&value, parameter_type, &format!("`{name}`'s argument"));
             }

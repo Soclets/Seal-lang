@@ -171,7 +171,7 @@ pub(crate) struct Checker<'a> {
     program: Program,
     procedure_syntax: Vec<&'a syntax::Procedure<'a>>,
     procedure_state: Vec<ProcedureState>,
-    procedure_names: HashMap<std::borrow::Cow<'a, str>, ProcedureId>,
+    procedure_names: names::NameTable<std::borrow::Cow<'a, str>, ProcedureId>,
     /// The first word of every procedure and door, for telling an unknown narrowing from an unknown word.
     words: Names<'a, ()>,
     record_names: Names<'a, u32>,
@@ -246,7 +246,7 @@ pub fn check(
         },
         procedure_syntax: Vec::new(),
         procedure_state: Vec::new(),
-        procedure_names: HashMap::new(),
+        procedure_names: names::NameTable::default(),
         words: Names::default(),
         record_names: Names::default(),
         one_of_names: Names::default(),
@@ -325,6 +325,12 @@ thread_local! {
 }
 
 /// A table of names emptied for keeping, or a new one in its place when it grew too big to keep.
+/// A dotted name's first word, as `walk` of `walk.to`, found with a plain look at its bytes (D140).
+fn first_word(name: &str) -> &str {
+    let end = name.bytes().position(|byte| byte == b'.').unwrap_or(name.len());
+    name.get(..end).unwrap_or(name)
+}
+
 fn keep_names<V>(mut names: Names<'_, V>) -> Names<'_, V> {
     if names.capacity() > SPARE_LIMIT {
         return Names::default();
@@ -1423,7 +1429,7 @@ impl<'a> Checker<'a> {
             );
             return;
         }
-        if method_of.is_none() && self.doors.iter().any(|door| door.name.split('.').next() == Some(word)) {
+        if method_of.is_none() && self.doors.iter().any(|door| first_word(&door.name) == word) {
             self.refuse_why(
                 name_place,
                 format!("`{word}` is one of the host's doors, so a procedure can't be named `{word}`"),

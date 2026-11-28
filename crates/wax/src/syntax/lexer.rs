@@ -581,9 +581,9 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
             // trace: D180. A statement holding a slide carries on to a line starting with `|>`, and otherwise ends
             // with `;`.
             // The next line, looked at for a split slide: only one that's blank or a comment needs looking past.
-            let looked = physical.peek().map(|(_, next)| next.trim_start());
-            let slide_next = looked.is_some_and(|next| next.starts_with("|>"));
-            let past = looked.is_some_and(|next| next.is_empty() || next.starts_with("//"));
+            let looked = physical.peek().map(|(_, next)| after_indentation(next));
+            let slide_next = looked.is_some_and(|next| next.starts_with(b"|>"));
+            let past = looked.is_some_and(|next| next.is_empty() || next.starts_with(b"//"));
             if !lexer.slide_ended && slide_next {
                 lexer.carrying = true;
                 continue;
@@ -594,14 +594,14 @@ pub fn lex(source: &str) -> Result<Lexed<'_>, Message> {
                 let mut blank = None;
                 let next_code = loop {
                     match ahead.next() {
-                        Some((at, next)) if next.trim().is_empty() => {
+                        Some((at, next)) if after_indentation(next).is_empty() => {
                             blank.get_or_insert(at);
                         }
-                        Some((_, next)) if next.trim_start().starts_with("//") => {}
+                        Some((_, next)) if after_indentation(next).starts_with(b"//") => {}
                         other => break other,
                     }
                 };
-                if next_code.is_some_and(|(_, next)| next.trim_start().starts_with("|>")) {
+                if next_code.is_some_and(|(_, next)| after_indentation(next).starts_with(b"|>")) {
                     if let Some(at) = blank {
                         let line = u32::try_from(at).unwrap_or(u32::MAX).saturating_add(1);
                         return Err(Message::refused(Place::new(line, 1, 1), "this blank line is inside a split slide")
@@ -693,6 +693,13 @@ struct SpacingMistake {
 }
 
 /// The comment's name, when a line, past its indentation, is `comment name` and nothing else (D63).
+/// A line's bytes after its leading spaces.
+fn after_indentation(line: &str) -> &[u8] {
+    let bytes = line.as_bytes();
+    let leading = bytes.iter().take_while(|&&byte| byte == b' ').count();
+    bytes.get(leading..).unwrap_or_default()
+}
+
 fn comment_opener(rest: &[char]) -> Option<String> {
     let name = rest.strip_prefix(&['c', 'o', 'm', 'm', 'e', 'n', 't', ' '])?;
     let well_formed = name.first().is_some_and(|first| first.is_ascii_lowercase() || *first == '_')

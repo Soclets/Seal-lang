@@ -22,10 +22,12 @@ trait Visitor {
 /// Why a type that can't be worked out is written (D30).
 const TYPE_WRITTEN: &str = "a type is written where nothing says it, as `name: Type = …`.";
 
-/// Two visitors looking at a block in one walk, each seeing everything in the order it would alone.
-struct Both<'v>(&'v mut dyn Visitor, &'v mut dyn Visitor);
+/// Two visitors looking at a block in one walk, each seeing everything in the order it would alone. Walks are
+/// generic over their visitor, so each visitor's checks are compiled into its walk rather than called through a
+/// table at every node (D140).
+struct Both<'v, A: Visitor + ?Sized, B: Visitor + ?Sized>(&'v mut A, &'v mut B);
 
-impl Visitor for Both<'_> {
+impl<A: Visitor + ?Sized, B: Visitor + ?Sized> Visitor for Both<'_, A, B> {
     fn statement(&mut self, statement: &Statement) {
         self.0.statement(statement);
         self.1.statement(statement);
@@ -83,7 +85,7 @@ impl Visitor for Concerns<'_> {
 }
 
 /// Looks at what a way into a part works out: its hidden names' values and its steps' places (D62).
-fn walk_inside(path: &Inside, visitor: &mut dyn Visitor) {
+fn walk_inside<V: Visitor + ?Sized>(path: &Inside, visitor: &mut V) {
     for (_, value) in &path.lets {
         walk_expression(value, false, visitor);
     }
@@ -94,7 +96,7 @@ fn walk_inside(path: &Inside, visitor: &mut dyn Visitor) {
     }
 }
 
-fn walk_block(block: &[Statement], visitor: &mut dyn Visitor) {
+fn walk_block<V: Visitor + ?Sized>(block: &[Statement], visitor: &mut V) {
     for statement in block {
         visitor.statement(statement);
         match &statement.kind {
@@ -152,7 +154,7 @@ fn walk_block(block: &[Statement], visitor: &mut dyn Visitor) {
     }
 }
 
-fn walk_expression(expression: &Expression, handled: bool, visitor: &mut dyn Visitor) {
+fn walk_expression<V: Visitor + ?Sized>(expression: &Expression, handled: bool, visitor: &mut V) {
     visitor.expression(expression, handled);
     let mut plain = |child: &Expression| walk_expression(child, false, visitor);
     match &expression.kind {
